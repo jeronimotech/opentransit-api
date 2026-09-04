@@ -16,9 +16,10 @@ async def healthz(request: Request):
 @router.get("/v1/cities")
 async def list_cities(request: Request):
     cities = [r.city.public() for r in request.app.state.cities.values()]
-    return JSONResponse({"cities": cities}, headers={"Cache-Control": "public, max-age=3600"})
+    return JSONResponse({"cities": cities}, headers={"Cache-Control": "public, max-age=60"})
 
 
 @router.get("/v1/cities/{city}")
 async def get_city(rt: CityRuntime = Depends(city_runtime)):
-    return JSONResponse(rt.city.public(), headers={"Cache-Control": "public, max-age=3600"})
+    # max-age=60: admins can change fares/config at runtime and clients pick it up within a minute
+    return JSONResponse(rt.city.public(), headers={"Cache-Control": "public, max-age=60"})

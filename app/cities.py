@@ -112,7 +112,7 @@ class ServiceTile(BaseModel):
     label: str
     icon: str = "link"
     url: str
-    kind: Literal["external", "deeplink"] = "external"
+    kind: Literal["external", "internal", "deeplink"] = "external"
 
 
 class City(BaseModel):

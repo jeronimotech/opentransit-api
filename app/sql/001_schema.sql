@@ -131,3 +131,23 @@ CREATE TABLE IF NOT EXISTS service_exception (
   exception_type SMALLINT NOT NULL,  -- 1 added, 2 removed
   PRIMARY KEY (feed_version_id, service_id, date)
 );
+
+-- Admin-editable city configuration (fares, client config, links, services, primary colour).
+-- The YAML stays the base; the override is deep-merged on top and served from memory.
+CREATE TABLE IF NOT EXISTS city_config_override (
+  city_id    TEXT PRIMARY KEY,
+  data       JSONB NOT NULL,
+  revision   INT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by TEXT
+);
+CREATE TABLE IF NOT EXISTS city_config_history (
+  id         BIGSERIAL PRIMARY KEY,
+  city_id    TEXT NOT NULL,
+  revision   INT NOT NULL,
+  data       JSONB NOT NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  changed_by TEXT,
+  note       TEXT
+);
+CREATE INDEX IF NOT EXISTS city_config_history_city ON city_config_history (city_id, revision DESC);

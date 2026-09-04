@@ -103,7 +103,8 @@ Departures come from OTP (`stopTimes` with RT applied). Because Bogotá TripUpda
 - `GET /v1/cities/{city}/routes?component=&q=` → `{ "routes": [RouteRef] }`
 - `GET /v1/cities/{city}/routes/{routeId}` → `RouteRef & { "patterns": [ {"id": "...", "headsign": "...", "directionId": 0|1|null, "geometry": {...}, "stops": [Stop] } ], "alerts": [Alert] }`
   - `headsign` falls back to the name of the pattern's last stop when the feed has none (Bogotá feeders); `directionId` is `null` when the feed does not set it.
-- `GET /v1/cities/{city}/network` → `{ "feedVersion": "...", "shapes": [ {"id": "...", "routeId": "...", "component": "trunk", "color": "#..", "geometry": {"encoded": "...", "precision": 5}} ] }` (Douglas-Peucker ~20 m simplified, cache 1h; for the map "network" layer)
+- `GET /v1/cities/{city}/network?all=false` → `{ "feedVersion": "...", "count": 719, "shapes": [ {"id": "...", "routeId": "bogota:12873", "routeIds": ["bogota:12873", "bogota:12874"], "component": "trunk", "color": "#..", "directionId": 0|1|null, "lengthMeters": 6700, "geometry": {"encoded": "...", "precision": 5}} ] }` (Douglas-Peucker ~20 m simplified, cache 1h; for the map "network" layer).
+  **Server-side dedupe (v1.1.1):** feeds like Bogotá's model one commercial route as many GTFS routes with near-identical shapes. At ingest, shapes are grouped by component + route short name (+ `direction_id` when the feed has it); exact duplicates collapse, the longest shape is kept, and any other shape ≥ 90 % covered (points within 30 m) by an already-kept shape of the group is marked non-canonical. Only canonical shapes are returned; `routeIds` lists every route a shape stands for, so clients can still match a selected route. `?all=true` returns all shapes with `canonical` and `canonicalId` for debugging. Bogotá: 1,052 → 719 shapes (dual 715 → 523, feeder 179 → 72, trunk 113 → 98, zonal 44 → 25).
 
 ### Realtime vehicles
 - `GET /v1/cities/{city}/vehicles?routeId=&component=&bbox=minLon,minLat,maxLon,maxLat` → `VehicleFrame`
@@ -129,6 +130,14 @@ Alert { "id": "...", "cause": "UNKNOWN_CAUSE"|..., "effect": "DETOUR"|..., "seve
 ### Admin (header `X-Admin-Token`)
 - `POST /v1/admin/cities/{city}/ingest-static?force=true`
 - `POST /v1/admin/cities/{city}/purge`
+- `GET /v1/admin/me` → `{ "ok": true, "cities": ["bogota"] }` (token check for the admin UI login)
+
+### Admin configuration (v1.1.1) — editable at runtime, no redeploy
+The city YAML stays the base. Admins can override these sections only: `fares`, `config` (vehiclePollSeconds, departuresRefreshSeconds, features, minAppVersion, maintenance), `links`, `services`, `branding.primaryColor`. The override is stored in Postgres (`city_config_override` + `city_config_history`), deep-merged over the YAML, validated strictly, and swapped into memory, so `/v1/cities/{city}` and the `/plan` fare estimate reflect it immediately. Public city endpoints are served with `Cache-Control: public, max-age=60`, so cached clients see changes within a minute.
+- `GET /v1/admin/cities/{city}/config` → `{ "effective": City, "override": {...}|null, "yaml": {fares, config, links, services, branding}, "revision": n, "updatedAt": "...", "updatedBy": "...", "editable": ["fares","config","links","services","branding"] }`
+- `PUT /v1/admin/cities/{city}/config` body `{ "fares"?: {...}, "config"?: {...}, "links"?: {...}, "services"?: [...], "branding"?: {"primaryColor"}, "note"?: string, "updatedBy"?: string }` → partial deep-merge into the override (dicts merge, lists replace, a JSON `null` for a section or key removes that override so the YAML applies again). Validation runs on the *effective* result before anything is saved; errors use the standard envelope with the field path, e.g. `fares.maxTransfers: Input should be less than or equal to 5`. Rules: fares `currency` = 3 uppercase letters, `base`/`transfer` ≥ 0, `transferWindowMinutes` 0..600, `maxTransfers` 0..5, `note` ≤ 300; config poll/refresh seconds 5..120, `minAppVersion` semver `x.y.z`, `maintenance.message` ≤ 500; links https or null; services `id` slug, `label` ≤ 60, `icon` ∈ card|report|help|link|bike|parking|taxi|ticket|info|map, `url` https, `kind` external|internal|deeplink, unique ids; branding `primaryColor` `#RRGGBB`. Unknown sections (e.g. `feeds`) are rejected. Returns the GET shape; writes a history row.
+- `DELETE /v1/admin/cities/{city}/config?updatedBy=` → clears the override (history row with note `reset`).
+- `GET /v1/admin/cities/{city}/config/history?limit=20` → `{ "items": [ {"revision", "changedAt", "changedBy", "note", "data"} ] }` newest first.
 
 ## OTP integration
 - OTP 2.10 Docker image `opentripplanner/opentripplanner:2.10.0_2026-09-04T13-20` (pin), graph built once with `--build --save`, served with `--load`. GraphQL endpoint `POST http://otp-bogota:8080/otp/gtfs/v1` (GTFS GraphQL API; verify exact path/schema for 2.10 via docs `https://docs.opentripplanner.org/`).

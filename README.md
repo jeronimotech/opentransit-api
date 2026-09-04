@@ -102,13 +102,24 @@ the VM): `docker compose --profile full up -d` runs Postgres, `otp-bogota` and t
 | `GET …/stops/nearby`, `GET …/stops/{id}`, `GET …/stops/{id}/departures` | stops |
 | `GET …/stops/{id}/board`, `GET …/stops/{id}/routes/{routeId}/next` | arrival board, "Ubica tu bus" (v1.1) |
 | `GET …/pois?bbox=&type=` | station services layer from OSM (v1.1) |
-| `GET …/routes`, `GET …/routes/{id}`, `GET …/network` | routes & map layer |
+| `GET …/routes`, `GET …/routes/{id}`, `GET …/network` | routes & map layer (network shapes are deduped server-side; `?all=true` for every shape) |
 | `GET …/vehicles`, `GET …/vehicles/stream?bbox=&routeIds=` (SSE), `GET …/vehicles/{id}` | realtime |
 | `GET …/alerts`, `GET …/health` | realtime & health |
 | `POST /v1/admin/cities/{city}/ingest-static`, `…/purge` | admin (`X-Admin-Token`) |
+| `GET /v1/admin/me`, `GET/PUT/DELETE …/admin/cities/{city}/config`, `…/config/history` | runtime-editable fares, client config, links, services (`X-Admin-Token`) |
 
 Full schema and examples: [`docs/API.md`](docs/API.md). Errors are always
 `{"error": {"code": "…", "message": "…"}}`.
+
+### Editing fares and client config without a redeploy
+
+Set `ADMIN_TOKEN` in `.env` (any long random string; the admin web UI sends it as `X-Admin-Token`).
+`PUT /v1/admin/cities/{city}/config` deep-merges an override over the city YAML for `fares`, `config`,
+`links`, `services` and `branding.primaryColor`; it is validated, stored in Postgres with a history, and
+applied in memory at once — `/plan` estimates fares with the new values on the next request, and
+`/v1/cities/{city}` serves them with `Cache-Control: max-age=60`, so cached clients catch up within a
+minute. `DELETE` resets to the YAML. The YAML remains the base for new deployments and for everything
+that is not in that list (feeds, OTP, agencies, bbox…).
 
 ## v1.1 features (from the TransMi App / Maas analysis)
 

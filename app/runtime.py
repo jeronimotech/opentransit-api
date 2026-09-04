@@ -22,6 +22,12 @@ class CityRuntime:
     ingest_error: str | None = None
     meta: dict = field(default_factory=dict)
     services: ServiceIndex = field(default_factory=ServiceIndex)
+    # admin-editable config: `city` is the effective city, `base_city` the YAML one
+    base_city: City | None = None
+    override: dict | None = None
+    config_revision: int = 0
+    config_updated_at: str | None = None
+    config_updated_by: str | None = None
 
     # ---- v1.1 helpers ----
     def service_window(self, route_id: str | None) -> dict | None:

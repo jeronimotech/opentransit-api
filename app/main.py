@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from . import __version__
+from .admin_config import PgConfigStore, load_overrides
 from .cities import load_registry
 from .config import settings
 from .db import close_pool, init_pool
@@ -54,6 +55,8 @@ async def lifespan(app: FastAPI):
     await init_pool()
     registry = load_registry(cfg.CITIES_DIR)
     app.state.cities = {cid: CityRuntime(city=c, rt=RTCache(c), otp=OtpClient(c)) for cid, c in registry.items()}
+    app.state.config_store = PgConfigStore()
+    await load_overrides(app.state.config_store, app.state.cities)
     stop = asyncio.Event()
     tasks: list[asyncio.Task] = []
     for rt in app.state.cities.values():
