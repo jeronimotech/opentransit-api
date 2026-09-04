@@ -100,13 +100,33 @@ the VM): `docker compose --profile full up -d` runs Postgres, `otp-bogota` and t
 | `GET /v1/cities/{city}/plan` | itineraries (modes, arriveBy, wheelchair, numItineraries, locale) |
 | `GET …/geocode?q=`, `GET …/reverse?lat&lon` | search |
 | `GET …/stops/nearby`, `GET …/stops/{id}`, `GET …/stops/{id}/departures` | stops |
+| `GET …/stops/{id}/board`, `GET …/stops/{id}/routes/{routeId}/next` | arrival board, "Ubica tu bus" (v1.1) |
+| `GET …/pois?bbox=&type=` | station services layer from OSM (v1.1) |
 | `GET …/routes`, `GET …/routes/{id}`, `GET …/network` | routes & map layer |
-| `GET …/vehicles`, `GET …/vehicles/stream` (SSE), `GET …/vehicles/{id}` | realtime |
+| `GET …/vehicles`, `GET …/vehicles/stream?bbox=&routeIds=` (SSE), `GET …/vehicles/{id}` | realtime |
 | `GET …/alerts`, `GET …/health` | realtime & health |
 | `POST /v1/admin/cities/{city}/ingest-static`, `…/purge` | admin (`X-Admin-Token`) |
 
 Full schema and examples: [`docs/API.md`](docs/API.md). Errors are always
 `{"error": {"code": "…", "message": "…"}}`.
+
+## v1.1 features (from the TransMi App / Maas analysis)
+
+| Feature | Endpoint / field |
+|---|---|
+| Estimated fare per itinerary ("Tarifa estimada") | `Itinerary.fare` from `city.fares` |
+| Service hours per route ("Fuera de horario · próximo 04:30") | `RouteRef.serviceWindow` |
+| Arrival board grouped by route with next 3 times | `GET /stops/{id}/board` |
+| "Ubica tu bus": stop + route → next buses, live / estimated / scheduled | `GET /stops/{id}/routes/{routeId}/next` |
+| Realtime freshness / stale flag | `health.realtime.stale`, `freshness` on board/next |
+| Alert severity always present (inferred from effect when the feed omits it) | `Alert.severity`, `severitySource` |
+| Station services layer from OSM (bike parking, toilets, ATMs, health, libraries…) | `GET /pois`, `scripts/build-pois.sh` |
+| Honest accessibility ("no verificado" when the feed value is a constant) | `Stop.accessibility` |
+| Server-side bbox / route filter on the vehicle stream | `GET /vehicles/stream?bbox=&routeIds=` |
+| Nearby-first search | `GET /geocode?q=&lat=&lon=` |
+| Remote config, component palette, official links, hand-off tiles | `city.config`, `components`, `links`, `services` |
+
+Details and JSON shapes: [`docs/API.md`](docs/API.md) · plan: [`docs/ROADMAP-v1.1.md`](docs/ROADMAP-v1.1.md).
 
 ## Add a city in five steps
 
@@ -123,6 +143,10 @@ Full schema and examples: [`docs/API.md`](docs/API.md). Errors are always
    Check `GET /v1/cities/<slug>/health`.
 5. **Document the quirks** in `docs/cities/<slug>.md` (what the feed lacks: fares, transfers, pathways…)
    so app developers know what to expect. Open a PR.
+
+Optional but recommended (v1.1): fill `components`, `fares` (flat-fare estimate; mark it "verify"), `config`,
+`links` (official PQRS / recharge / support pages only) and `services` tiles in the YAML, then run
+`scripts/build-pois.sh <slug>` and commit `cities/<slug>/pois.geojson`.
 
 ## Bogotá data notes (read before trusting the data)
 

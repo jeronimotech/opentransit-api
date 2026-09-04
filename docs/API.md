@@ -1,4 +1,4 @@
-# opentransit-api — API contract (v1)
+# opentransit-api — API contract (v1.1)
 
 > Source of truth for the web and mobile apps. Deviations from the original shared contract are listed at the end.
 > Interactive docs: `GET /docs` (OpenAPI) on the running service.
@@ -142,6 +142,90 @@ Planner: origin/destination inputs with geocode autocomplete + "use my location"
 ## Mobile app (opentransit-mobile) scope v1
 Screens: city picker (first launch, remembered) · Home map (nearby stops, live vehicles toggle, search bar) · Plan trip sheet · Results list · Itinerary detail (map + timeline) · Stop detail (departures, auto-refresh 20s) · Route detail · Alerts · Favorites (stops, routes, places; local storage) · Settings (city, language, accessibility, theme). Location via geolocator. Deep links `opentransit://{city}/plan?...`.
 
+## v1.1 additions (implemented 2026-09-04)
+
+Everything below is live in this repo and covered by tests. Ideas come from the TransMi App / Maas analysis
+(`docs/ROADMAP-v1.1.md`). Nothing here needs data the city does not publish.
+
+### City (extended)
+```jsonc
+City {
+  ...v1 fields...,
+  "components": [ {"id": "trunk", "label": "Troncal", "color": "#D32F2F", "icon": "brt"}, ... ],   // icon: brt|bus|cable|rail|tram|ferry
+  "fares": {"currency": "COP", "base": 3200, "transfer": 0, "transferWindowMinutes": 110, "maxTransfers": 2,
+            "note": "Valor estimado…", "estimated": true} | null,
+  "config": {"vehiclePollSeconds": 15, "departuresRefreshSeconds": 20,
+             "features": {"liveVehicles": true, "board": true, "pois": true, "followAlong": true, "bike": true},
+             "minAppVersion": {"ios": "1.0.0", "android": "1.0.0"}, "maintenance": {"active": false, "message": null}},
+  "links": {"pqrs": "https://…", "recharge": "https://…", "support": "https://…", "privacy": "https://…"},
+  "services": [ {"id": "recharge", "label": "Recargar tullave", "icon": "card", "url": "https://…", "kind": "external"} ]
+}
+```
+`components` is derived from `agencies` when the YAML does not declare it. `features.fares` (GTFS fares) stays
+`false` for Bogotá; `fares` is the flat-fare **estimate** config.
+
+### Itinerary.fare (was always null)
+`{"amount": 3200, "currency": "COP", "estimated": true, "breakdown": [{"label": "Pasaje", "amount": 3200, "route": "G12"}, {"label": "Transbordo", "amount": 0, "route": "TC14"}]}`.
+Rule: first boarding pays `base`; later boardings within `transferWindowMinutes` of that boarding pay `transfer`
+(at most `maxTransfers` of them); anything else pays `base` again and restarts the window. Walk-only itineraries
+get `amount: 0`. `null` only when the city has no `fares`. Labels follow `locale` (es/en).
+
+### RouteRef.serviceWindow
+```jsonc
+"serviceWindow": {"start": "04:30", "end": "23:53", "endsNextDay": false, "active": true,
+                  "nextStart": null | "04:30", "nextStartDay": null | "today" | "tomorrow",
+                  "hasServiceToday": true, "source": "gtfs"}
+```
+Computed at ingest per route × service_id from `stop_times` (first/last departure) widened by `frequencies.txt`,
+resolved at request time against `calendar` + `calendar_dates` in the city timezone. Windows that cross midnight
+stay `active` after 00:00 (`endsNextDay: true`; `end` is shown mod 24 h). Present on `/routes`, `/routes/{id}`,
+`Departure.route`, board rows, next-bus route and plan legs; `null` for routes unknown to the static feed.
+
+### Board and next buses
+- `GET /v1/cities/{city}/stops/{stopId}/board?minutes=60&perRoute=3`
+  `{ "stop": Stop, "generatedAt", "freshness": {"realtime": true, "ageSeconds": 18, "staleSeconds": 4, "stale": false},
+     "rows": [ {"route": RouteRef, "headsign": string|null, "next": [ {"time", "minutes", "realtime", "delaySeconds", "tripId", "vehicleId"} ]} ] }`
+  Rows are grouped by (route, headsign), sorted by the first `minutes`; stations aggregate their platforms.
+  Routes that serve the stop but have nothing in the window are appended with `next: []` so the client can show
+  "Fuera de horario · próximo HH:MM" from `route.serviceWindow`.
+- `GET /v1/cities/{city}/stops/{stopId}/routes/{routeId}/next?limit=3&minutes=90`
+  `{ "stop", "route", "generatedAt", "freshness", "servesStop": true, "vehiclesOnRoute": 13,
+     "next": [ {"minutes": 4, "time", "source": "live"|"estimated"|"scheduled", "vehicle": Vehicle|null,
+                "stopsAway": 2|null, "distanceMeters": 2442|null, "tripId", "delaySeconds"} ] }`
+  `live`/`estimated` rows come from vehicles of that route located upstream of the stop on one of its patterns
+  (by the RT `stop_id`, else by projecting the position onto the pattern geometry, ≤ 250 m off-line).
+  ETA is OTP's realtime departure for that trip (`live`) or distance ÷ component speed + 20 s dwell per stop
+  (`estimated`). Remaining slots are filled with scheduled departures (`scheduled`). `servesStop: false` when no
+  pattern of the route calls at the stop (then `next` is empty).
+
+### Health, alerts
+- `health.realtime.stale` (true when the last fetch failed, is older than 90 s, or the p50 entity age > 90 s) and
+  `health.realtime.staleSeconds` (seconds since the last successful fetch). The same block is `freshness` on board/next.
+- `Alert.severity` is always one of `INFO|WARNING|SEVERE`; `severitySource: "feed"|"inferred"` says whether it came
+  from the feed or was derived from `effect` (NO_SERVICE/REDUCED_SERVICE/SIGNIFICANT_DELAYS → SEVERE;
+  DETOUR/MODIFIED_SERVICE/STOP_MOVED/ACCESSIBILITY_ISSUE → WARNING; else INFO).
+
+### POIs (station services layer)
+`GET /v1/cities/{city}/pois?bbox=minLon,minLat,maxLon,maxLat&type=bike_parking,toilets&limit=2000` → GeoJSON
+FeatureCollection; properties `{id, type, name?, source: "osm", osmId, wheelchair?, operator?, openingHours?, capacity?, fee?, covered?}`;
+`meta: {count, total, types}`. Types: `bike_parking, toilets, atm, health, library, police, pharmacy`.
+Data file `cities/<slug>/pois.geojson` (Bogotá: 3,288 features) is built by `scripts/build-pois.sh <slug>`
+(Overpass API, bbox from the YAML, one retry) and committed; override the path with `pois_file` in the YAML.
+
+### Stop.accessibility
+`{"wheelchair": "accessible"|"not_accessible"|"unknown", "source": "gtfs"|"osm"|"none", "verified": false, "note": "Dato del feed no verificado…"|null}`.
+`verified` is `false` when the ingest finds one informative `wheelchair_boarding` value on ≥ 99 % of stops
+(Bogotá: `1` on 8,335/8,335). The legacy `wheelchair` field is kept. `source: "osm"` is reserved (not produced yet).
+
+### Vehicles stream filter
+`GET /vehicles/stream?bbox=…&routeIds=a,b` filters the first frame and every delta server-side; a vehicle that
+leaves the filter is reported in `removed` so clients keep a plain id-keyed map. `count` is the number of
+vehicles currently inside the filter for that connection.
+
+### Geocode ranking
+With `lat/lon`, GTFS stops/stations within 800 m come first (closest first, `distanceMeters` filled), then
+stations, then other stop matches, then Photon. Without a position: stations first (as before).
+
 ## Implementation notes & deviations (what this repo actually does)
 
 | Topic | Contract said | Implemented |
@@ -162,3 +246,8 @@ Screens: city picker (first launch, remembered) · Home map (nearby stops, live 
 | `Alert.routes` | RouteRef list | Filled for alerts served from our RT cache (`/alerts`, `/vehicles/{id}`); empty for alerts embedded in OTP legs/routes (ids are still in `routeIds`). |
 | Admin `purge` | DB purge | Clears in-memory vehicle history (there is no DB series to purge). |
 | Time zone of timestamps | offset | Realtime timestamps (`generatedAt`, `Vehicle.timestamp`, alert `start`/`end`, departures) are UTC `Z`; OTP itinerary times carry the city offset. Both are valid ISO-8601. |
+| `serviceWindow.end` / `nextStart` format | "HH:MM" | "HH:MM" local, hours mod 24; `endsNextDay: true` marks windows that end after midnight. Extra fields `nextStartDay`, `hasServiceToday`. |
+| `next` `source` | `live`/`scheduled` | adds `estimated` (vehicle upstream but no realtime time for its trip: distance-based ETA). Extra `servesStop`, `vehiclesOnRoute`. |
+| `Alert.severity` | may be null | never null; `severitySource` tells feed vs inferred. |
+| `Stop.accessibility.source: "osm"` | OSM `wheelchair=*` | not produced yet (only `gtfs`/`none`); OSM accessibility lives in the POI layer (`properties.wheelchair`). |
+| `GeocodeResult.distanceMeters` | – | added when `lat/lon` are given. |
