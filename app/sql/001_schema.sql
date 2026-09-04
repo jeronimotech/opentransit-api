@@ -12,8 +12,10 @@ CREATE TABLE IF NOT EXISTS feed_version (
   feed_info     JSONB,
   n_routes INT, n_trips INT, n_stops INT, n_shapes INT,
   is_active     BOOLEAN NOT NULL DEFAULT FALSE,
+  meta          JSONB,
   UNIQUE (city, sha256)
 );
+ALTER TABLE feed_version ADD COLUMN IF NOT EXISTS meta JSONB;
 CREATE INDEX IF NOT EXISTS feed_version_active ON feed_version (city) WHERE is_active;
 
 CREATE TABLE IF NOT EXISTS route (
@@ -90,4 +92,29 @@ CREATE TABLE IF NOT EXISTS feed_health (
   fetch_ms          INT,
   http_status       INT,
   PRIMARY KEY (city, minute)
+);
+
+-- v1.1: per-route service windows (first/last departure per service_id) + calendars, for "Fuera de horario".
+CREATE TABLE IF NOT EXISTS route_service_window (
+  feed_version_id BIGINT NOT NULL REFERENCES feed_version(id) ON DELETE CASCADE,
+  route_id    TEXT NOT NULL,
+  service_id  TEXT NOT NULL,
+  first_dep_s INT NOT NULL,          -- seconds since service-day midnight (may exceed 86400)
+  last_dep_s  INT NOT NULL,
+  PRIMARY KEY (feed_version_id, route_id, service_id)
+);
+CREATE TABLE IF NOT EXISTS service_calendar (
+  feed_version_id BIGINT NOT NULL REFERENCES feed_version(id) ON DELETE CASCADE,
+  service_id  TEXT NOT NULL,
+  days        SMALLINT[] NOT NULL,   -- 7 flags, Monday first
+  start_date  DATE NOT NULL,
+  end_date    DATE NOT NULL,
+  PRIMARY KEY (feed_version_id, service_id)
+);
+CREATE TABLE IF NOT EXISTS service_exception (
+  feed_version_id BIGINT NOT NULL REFERENCES feed_version(id) ON DELETE CASCADE,
+  service_id  TEXT NOT NULL,
+  date        DATE NOT NULL,
+  exception_type SMALLINT NOT NULL,  -- 1 added, 2 removed
+  PRIMARY KEY (feed_version_id, service_id, date)
 );

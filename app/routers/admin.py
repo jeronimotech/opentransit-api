@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, Header
 
 from ..config import settings
 from ..errors import Unauthorized
-from ..gtfs_static import ingest, load_route_index
+from ..gtfs_static import ingest, load_route_index, load_service_index
+from ..normalize import set_feed_flags
 from ..runtime import CityRuntime, city_runtime
 
 router = APIRouter(tags=["admin"])
@@ -19,6 +20,8 @@ def require_admin(x_admin_token: str | None = Header(None)) -> None:
 async def ingest_static(rt: CityRuntime = Depends(city_runtime), force: bool = False):
     result = await ingest(rt.city, force=force)
     rt.rt.set_static(*await load_route_index(rt.city))
+    rt.services = await load_service_index(rt.city)
+    set_feed_flags(rt.city.id, rt.services.flags)
     rt.static_ready = True
     return result
 

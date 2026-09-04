@@ -11,10 +11,11 @@ from .cities import load_registry
 from .config import settings
 from .db import close_pool, init_pool
 from .errors import install_error_handlers
-from .gtfs_static import ingest, load_route_index
+from .gtfs_static import ingest, load_route_index, load_service_index
 from .logging_setup import setup_logging
+from .normalize import set_feed_flags
 from .otp import OtpClient
-from .routers import admin, alerts, geocode, health, plan, platform, routes, stops, vehicles
+from .routers import admin, alerts, board, geocode, health, plan, platform, pois, routes, stops, vehicles
 from .rt import RTCache, poller_loop
 from .runtime import CityRuntime
 
@@ -26,6 +27,8 @@ async def _bootstrap_static(rt: CityRuntime, do_ingest: bool) -> None:
         if do_ingest:
             await ingest(rt.city)
         rt.rt.set_static(*await load_route_index(rt.city))
+        rt.services = await load_service_index(rt.city)
+        set_feed_flags(rt.city.id, rt.services.flags)
         rt.static_ready = bool(rt.rt.route_index)
         rt.ingest_error = None
     except Exception as e:  # noqa: BLE001
@@ -88,7 +91,7 @@ def create_app() -> FastAPI:
     app.add_middleware(CORSMiddleware, allow_origins=origins or ["*"], allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
-    for r in (platform, plan, geocode, stops, routes, vehicles, alerts, health, admin):
+    for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, admin):
         app.include_router(r.router)
 
     @app.get("/", include_in_schema=False)
