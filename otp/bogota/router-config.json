@@ -1,0 +1,57 @@
+{
+  "server": {
+    "apiProcessingTimeout": "30s"
+  },
+  "routingDefaults": {
+    "_comment": "Bogot\u00e1 publishes no trip/stop accessibility data (wheelchair_boarding=1 everywhere, no wheelchair_accessible on trips). With OTP's defaults every trip would be excluded in wheelchair mode; unknown is allowed with a cost instead.",
+    "wheelchairAccessibility": {
+      "trip": {
+        "onlyConsiderAccessible": false,
+        "unknownCost": 600,
+        "inaccessibleCost": 3600
+      },
+      "stop": {
+        "onlyConsiderAccessible": false,
+        "unknownCost": 600,
+        "inaccessibleCost": 3600
+      },
+      "elevator": {
+        "onlyConsiderAccessible": false,
+        "unknownCost": 20,
+        "inaccessibleCost": 3600
+      },
+      "inaccessibleStreetReluctance": 25.0,
+      "maxSlope": 0.083,
+      "slopeExceededReluctance": 1.0,
+      "stairsReluctance": 100.0
+    },
+    "maxDirectStreetDuration": "PT3H"
+  },
+  "updaters": [
+    {
+      "type": "stop-time-updater",
+      "frequency": "20s",
+      "url": "https://gtfs.transmilenio.gov.co/tripupdates.pb",
+      "feedId": "bogota",
+      "backwardsDelayPropagationType": "ALWAYS"
+    },
+    {
+      "type": "real-time-alerts",
+      "frequency": "60s",
+      "url": "https://gtfs.transmilenio.gov.co/alerts.pb",
+      "feedId": "bogota"
+    },
+    {
+      "type": "vehicle-positions",
+      "frequency": "20s",
+      "url": "https://gtfs.transmilenio.gov.co/positions.pb",
+      "feedId": "bogota",
+      "fuzzyTripMatching": false,
+      "features": [
+        "position",
+        "stop-position",
+        "occupancy"
+      ]
+    }
+  ]
+}

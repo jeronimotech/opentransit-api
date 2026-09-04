@@ -1,0 +1,45 @@
+# Bogotá, Colombia — TransMilenio + SITP (troncal, zonal, alimentador, dual, TransMiCable)
+id: bogota
+name: Bogotá
+country: CO
+timezone: America/Bogota
+locale: es-CO
+center: { lat: 4.6534, lon: -74.0836 }
+bbox: [-74.45, 3.95, -73.85, 4.90]   # minLon, minLat, maxLon, maxLat
+default_zoom: 12
+modes: [WALK, BUS, CABLE_CAR, BICYCLE]
+branding:
+  primary_color: "#D32F2F"
+  logo_url: null
+features:
+  realtime_vehicles: true
+  trip_updates: true
+  alerts: true
+  fares: false
+  bike_share: false
+attribution: "Datos: TRANSMILENIO S.A. (GTFS) · Mapa: © OpenMapTiles © OpenStreetMap contributors"
+
+feeds:
+  gtfs_static_url: https://gtfs.transmilenio.gov.co/GTFS.zip
+  rt_positions_url: https://gtfs.transmilenio.gov.co/positions.pb
+  rt_tripupdates_url: https://gtfs.transmilenio.gov.co/tripupdates.pb
+  rt_alerts_url: https://gtfs.transmilenio.gov.co/alerts.pb
+  poll_seconds: 15            # upstream refreshes every ~15 s
+  static_refresh_hours: 24
+
+otp:
+  base_url: ${OTP_BOGOTA_URL:-http://localhost:8080}
+  feed_id: bogota             # must match build-config.json transitFeeds[].feedId
+
+geocoder:
+  photon_url: https://photon.komoot.io   # null disables Photon (GTFS stops only)
+
+# agency_id -> component. Component drives colors/icons in the apps.
+agencies:
+  - { id: "1", name: "TransMilenio Troncal",  component: trunk,  color: "#D32F2F" }
+  - { id: "2", name: "Alimentadores",         component: feeder, color: "#2E7D32" }
+  - { id: "3", name: "Dual",                  component: dual,   color: "#6A1B9A" }
+  - { id: "4", name: "SITP Zonal Urbano",     component: zonal,  color: "#1565C0" }
+  - { id: "5", name: "SITP Complementario",   component: zonal,  color: "#F57C00" }
+  - { id: "6", name: "SITP Especial",         component: zonal,  color: "#00838F" }
+  - { id: "7", name: "TransMiCable",          component: cable,  color: "#5D4037" }

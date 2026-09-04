@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.log
+.pytest_cache/
+.ruff_cache/
+# big inputs and built graphs live outside git
+data/
+vendor/*.jar
+.DS_Store

@@ -1,0 +1,13 @@
+{
+  "transitModelTimeZone": "America/Bogota",
+  "transitServiceStart": "-P1M",
+  "transitServiceEnd": "P6M",
+  "maxDataImportIssuesPerFile": 1000,
+  "osmCacheDataInMem": true,
+  "osm": [
+    { "source": "file:///var/opentripplanner/bogota.osm.pbf", "osmTagMapping": "default" }
+  ],
+  "transitFeeds": [
+    { "type": "gtfs", "feedId": "bogota", "source": "file:///var/opentripplanner/bogota-gtfs.zip" }
+  ]
+}

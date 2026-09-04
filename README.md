@@ -1,0 +1,153 @@
+# opentransit-api
+
+Open-source, **multi-city**, **multimodal** trip-planning backend: static GTFS + GTFS-Realtime +
+[OpenTripPlanner 2](https://www.opentripplanner.org/), behind one small FastAPI service with a clean,
+app-friendly JSON contract. First city: **Bogotá** (TransMilenio troncal, alimentadores, dual, SITP zonal,
+TransMiCable).
+
+It is the backend of the `opentransit` family (`opentransit-web`, `opentransit-mobile`). Anyone can run it
+for their own city with two config files and a GTFS feed — no API keys, no proprietary services.
+
+```
+GET /v1/cities/bogota/plan?fromLat=4.7546&fromLon=-74.0459&toLat=4.5978&toLon=-74.1616
+→ 5 itineraries · legs with realtime delays · encoded geometries · alerts, in ~1 s
+```
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph upstream["Per city: open data"]
+    GTFS[GTFS.zip]
+    RT[GTFS-RT<br/>positions · tripupdates · alerts]
+    OSM[OpenStreetMap extract]
+  end
+  subgraph otp["OpenTripPlanner 2.9 (one per city)"]
+    GRAPH[graph.obj]
+    UPD[RT updaters]
+  end
+  subgraph api["opentransit-api (FastAPI)"]
+    REG[City registry<br/>cities/*.yaml]
+    POLL[GTFS-RT poller<br/>in-memory frame + deltas]
+    ING[Static ingest<br/>routes · stops · shapes]
+    NORM[Normalizer<br/>OTP → contract]
+    PG[(PostGIS)]
+  end
+  WEB[opentransit-web]
+  MOB[opentransit-mobile]
+  PHOTON[Photon geocoder]
+
+  GTFS --> GRAPH
+  OSM --> GRAPH
+  RT --> UPD
+  RT --> POLL
+  GTFS --> ING --> PG
+  GRAPH -->|GraphQL /otp/gtfs/v1| NORM
+  PG --> NORM
+  POLL --> NORM
+  PHOTON -.-> NORM
+  REG --> NORM
+  NORM -->|/v1/cities/{city}/…| WEB & MOB
+```
+
+- **One tenant = one city.** Every endpoint is `/v1/cities/{city}/…`. City config lives in `cities/<city>.yaml`
+  (feeds, timezone, bbox, agencies → components, OTP URL). Nothing in `app/` knows about Bogotá.
+- **OTP does the routing and the timetable.** The API never exposes raw OTP; `app/normalize.py` turns
+  `planConnection`, stops, routes and alerts into the contract in [`docs/API.md`](docs/API.md).
+- **The API does realtime fan-out.** One poll of each GTFS-RT feed every ~15 s serves every client:
+  `/vehicles` (snapshot), `/vehicles/stream` (SSE, gzip-flushed deltas), `/alerts`, vehicle trails.
+- **PostGIS holds the light part of the feed.** Routes, trips, stops (geography), simplified shapes,
+  stop→routes. `stop_times.txt` (92 % of a big feed) is streamed once and never stored.
+- **Search without keys.** Stops/stations from PostGIS (trigram + unaccent) merged with
+  [Photon](https://photon.komoot.io) for addresses and POIs, restricted to the city bbox.
+
+## Quickstart (Bogotá, ~5 minutes + downloads)
+
+Requirements: Docker, Python ≥ 3.12, a JDK ≥ 21 (`brew install openjdk`) — OTP runs natively on macOS
+because Docker Desktop's VM is usually too small for a big-city graph build.
+
+```bash
+git clone … opentransit-api && cd opentransit-api
+make venv                       # .venv with dev deps
+make up                         # Postgres/PostGIS on localhost:5435
+make graph CITY=bogota          # GTFS (118 MB) + Colombia OSM (330 MB) → clip → OTP graph (≈ 2 min, 178 MB)
+make otp                        # serve the graph on http://localhost:8080 (6 GB heap)
+cp .env.example .env
+make dev                        # API on http://localhost:8001 — first start ingests the static feed (~1 min)
+```
+
+Then:
+
+```bash
+curl localhost:8001/healthz
+curl "localhost:8001/v1/cities/bogota/plan?fromLat=4.7546&fromLon=-74.0459&toLat=4.5978&toLon=-74.1616" | jq '.itineraries[0]'
+curl "localhost:8001/v1/cities/bogota/geocode?q=portal"
+curl "localhost:8001/v1/cities/bogota/stops/nearby?lat=4.6534&lon=-74.0836"
+curl "localhost:8001/v1/cities/bogota/vehicles?bbox=-74.1,4.6,-74.0,4.7" | jq .count
+curl -N "localhost:8001/v1/cities/bogota/vehicles/stream"      # SSE
+open http://localhost:8001/docs
+```
+
+Stop / restart: `make otp-stop`, `make down`, `Ctrl-C` the API. Full Docker (Linux hosts with ≥ 12 GB for
+the VM): `docker compose --profile full up -d` runs Postgres, `otp-bogota` and the API in containers
+(build the graph first with `OTP_RUNTIME=docker make graph`).
+
+## Endpoints (summary)
+
+| | |
+|---|---|
+| `GET /healthz`, `GET /v1/cities`, `GET /v1/cities/{city}` | platform |
+| `GET /v1/cities/{city}/plan` | itineraries (modes, arriveBy, wheelchair, numItineraries, locale) |
+| `GET …/geocode?q=`, `GET …/reverse?lat&lon` | search |
+| `GET …/stops/nearby`, `GET …/stops/{id}`, `GET …/stops/{id}/departures` | stops |
+| `GET …/routes`, `GET …/routes/{id}`, `GET …/network` | routes & map layer |
+| `GET …/vehicles`, `GET …/vehicles/stream` (SSE), `GET …/vehicles/{id}` | realtime |
+| `GET …/alerts`, `GET …/health` | realtime & health |
+| `POST /v1/admin/cities/{city}/ingest-static`, `…/purge` | admin (`X-Admin-Token`) |
+
+Full schema and examples: [`docs/API.md`](docs/API.md). Errors are always
+`{"error": {"code": "…", "message": "…"}}`.
+
+## Add a city in five steps
+
+1. **Config:** copy `cities/_template.yaml` to `cities/<slug>.yaml`. Fill timezone, bbox, center, feed URLs,
+   and map each `agency_id` from `agency.txt` to a component (`trunk|feeder|dual|zonal|cable|rail|other`)
+   and a color — the apps color everything by component.
+2. **OTP inputs:** create `otp/<slug>/sources.env` (`GTFS_URL`, `OSM_URL` from
+   [Geofabrik](https://download.geofabrik.de), `BBOX`), `build-config.json` (set `feedId: <slug>`,
+   `transitModelTimeZone`) and `router-config.json` (realtime updaters, or `"updaters": []`).
+3. **Build & serve:** `make graph CITY=<slug>` then `scripts/otp-native.sh serve <slug> 8081`
+   (or add an `otp-<slug>` service to `docker-compose.yml`). Point `otp.base_url` in the YAML at it
+   (`${OTP_<SLUG>_URL:-http://localhost:8081}`).
+4. **Run the API** — it discovers the city, ingests the static feed and starts the poller if RT URLs are set.
+   Check `GET /v1/cities/<slug>/health`.
+5. **Document the quirks** in `docs/cities/<slug>.md` (what the feed lacks: fares, transfers, pathways…)
+   so app developers know what to expect. Open a PR.
+
+## Bogotá data notes (read before trusting the data)
+
+Verified against the official feeds on 2026-09-04 (details in `docs/cities/bogota.md`):
+
+- **Static GTFS** (`gtfs.transmilenio.gov.co/GTFS.zip`): 7 agencies, 1,052 routes, 8,335 stops,
+  181k trips, 9.6 M stop_times, real shapes. One calendar for the whole year.
+- **Realtime**: ~6,000 vehicles every 15 s. `TripUpdates` carries **one** stop_time_update per trip (the next
+  stop): OTP propagates that delay backwards (`backwardsDelayPropagationType: ALWAYS`), so `realtime` is true
+  only near the vehicle's current position — the API does not invent downstream ETAs.
+- **~11 % of realtime `trip_id`s are not in the static feed** (`tripResolved: false`); those buses still show
+  on the map with their route, but cannot feed itineraries.
+- **No fares** (`fare: null` everywhere), **no `transfers.txt`**, **no `pathways.txt`**,
+  `wheelchair_boarding=1` on every stop — the accessibility flag is a default, not data. `wheelchair=true`
+  routing therefore reflects streets, not stations.
+
+## Development
+
+```bash
+make test     # 23 unit tests, no network/DB (pytest)
+make lint     # ruff
+```
+
+Layout: `app/` (service) · `cities/` (tenants) · `otp/<city>/` (router configs) · `scripts/` (graph build,
+native OTP) · `docs/` (contract, per-city notes) · `tests/`.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [MIT](LICENSE); see [NOTICE.md](NOTICE.md) for
+upstream credits (OpenTripPlanner, OpenStreetMap, Photon, TRANSMILENIO S.A., SIRCI Live).

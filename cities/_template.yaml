@@ -1,0 +1,39 @@
+# Copy to cities/<slug>.yaml. Every key below is read by app/cities.py.
+# Environment variables can be interpolated as ${VAR} or ${VAR:-default}.
+id: mycity                       # URL slug, [a-z0-9-]
+name: My City
+country: XX                      # ISO 3166-1 alpha-2
+timezone: Region/City            # IANA
+locale: es-XX                    # BCP-47, used for number/date formatting hints
+center: { lat: 0.0, lon: 0.0 }
+bbox: [minLon, minLat, maxLon, maxLat]
+default_zoom: 12
+modes: [WALK, BUS]               # subset of WALK,BUS,RAIL,SUBWAY,TRAM,CABLE_CAR,FERRY,BICYCLE
+branding:
+  primary_color: "#1565C0"
+  logo_url: null
+features:
+  realtime_vehicles: false       # true only if rt_positions_url is set
+  trip_updates: false
+  alerts: false
+  fares: false
+  bike_share: false
+attribution: "Data: <agency> (GTFS) · Map: © OpenMapTiles © OpenStreetMap contributors"
+
+feeds:
+  gtfs_static_url: https://example.org/gtfs.zip
+  rt_positions_url: null
+  rt_tripupdates_url: null
+  rt_alerts_url: null
+  poll_seconds: 20
+  static_refresh_hours: 24
+
+otp:
+  base_url: ${OTP_MYCITY_URL:-http://localhost:8081}
+  feed_id: mycity                # == transitFeeds[].feedId in otp/<slug>/build-config.json
+
+geocoder:
+  photon_url: https://photon.komoot.io
+
+agencies:                        # agency_id as in agency.txt -> component + color
+  - { id: "1", name: "Main operator", component: other, color: "#1565C0" }

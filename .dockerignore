@@ -1,0 +1,7 @@
+.venv
+data
+vendor
+tests
+*.log
+.git
+__pycache__
