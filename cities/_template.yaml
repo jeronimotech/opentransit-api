@@ -37,3 +37,17 @@ geocoder:
 
 agencies:                        # agency_id as in agency.txt -> component + color
   - { id: "1", name: "Main operator", component: other, color: "#1565C0" }
+
+# ── v1.1 (all optional) ─────────────────────────────────────────────────────────
+components:                      # palette per component; derived from `agencies` when omitted
+  - { id: other, label: Bus, color: "#1565C0", icon: bus }   # icon: brt|bus|cable|rail|tram|ferry
+fares: null                      # or { currency: XXX, base: 0, transfer: 0, transfer_window_minutes: 90, max_transfers: 2, note: "" }
+config:
+  vehicle_poll_seconds: 15
+  departures_refresh_seconds: 20
+  features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }
+  min_app_version: { ios: "1.0.0", android: "1.0.0" }
+  maintenance: { active: false, message: null }
+links: { pqrs: null, recharge: null, support: null, privacy: null }
+services: []                     # [{ id, label, icon, url, kind: external|deeplink }]
+# pois_file: mycity/pois.geojson # default cities/<slug>/pois.geojson (built by scripts/build-pois.sh)

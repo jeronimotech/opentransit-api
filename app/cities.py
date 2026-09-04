@@ -61,6 +61,60 @@ class AgencyCfg(BaseModel):
     color: str | None = None
 
 
+class ComponentCfg(BaseModel):
+    """How a component (trunk, feeder, ...) is labelled and drawn in the apps."""
+    id: Component
+    label: str
+    color: str
+    icon: Literal["brt", "bus", "cable", "rail", "tram", "ferry"] = "bus"
+
+
+class Fares(BaseModel):
+    """Flat-fare estimate used when the GTFS publishes no fares. All amounts in minor-free units (COP)."""
+    currency: str = "COP"
+    base: float
+    transfer: float = 0
+    transfer_window_minutes: int = 110
+    max_transfers: int = 2
+    note: str | None = None
+
+
+class MinAppVersion(BaseModel):
+    ios: str = "1.0.0"
+    android: str = "1.0.0"
+
+
+class Maintenance(BaseModel):
+    active: bool = False
+    message: str | None = None
+
+
+class AppConfig(BaseModel):
+    """Remote-configurable client behaviour (Maas pattern): polling, feature flags, forced update."""
+    vehicle_poll_seconds: int = 15
+    departures_refresh_seconds: int = 20
+    features: dict[str, bool] = {"liveVehicles": True, "board": True, "pois": True, "followAlong": True,
+                                 "bike": True}
+    min_app_version: MinAppVersion = MinAppVersion()
+    maintenance: Maintenance = Maintenance()
+
+
+class Links(BaseModel):
+    pqrs: str | None = None
+    recharge: str | None = None
+    support: str | None = None
+    privacy: str | None = None
+
+
+class ServiceTile(BaseModel):
+    """Hand-off tile to a partner or agency service (recharge, PQRS...). Never a core feature."""
+    id: str
+    label: str
+    icon: str = "link"
+    url: str
+    kind: Literal["external", "deeplink"] = "external"
+
+
 class City(BaseModel):
     id: str = Field(pattern=r"^[a-z0-9-]+$")
     name: str
@@ -78,6 +132,12 @@ class City(BaseModel):
     otp: Otp
     geocoder: Geocoder = Geocoder()
     agencies: list[AgencyCfg] = []
+    components: list[ComponentCfg] = []
+    fares: Fares | None = None
+    config: AppConfig = AppConfig()
+    links: Links = Links()
+    services: list[ServiceTile] = []
+    pois_file: str | None = None      # path relative to the cities dir; default cities/<id>/pois.geojson
 
     @field_validator("bbox")
     @classmethod
@@ -125,8 +185,38 @@ class City(BaseModel):
             },
             "agencies": [{"id": a.id, "name": a.name, "component": a.component, "color": a.color}
                          for a in self.agencies],
+            "components": [c.model_dump() for c in self.components] or self._components_from_agencies(),
+            "fares": {"currency": self.fares.currency, "base": self.fares.base, "transfer": self.fares.transfer,
+                      "transferWindowMinutes": self.fares.transfer_window_minutes,
+                      "maxTransfers": self.fares.max_transfers, "note": self.fares.note, "estimated": True}
+            if self.fares else None,
+            "config": {"vehiclePollSeconds": self.config.vehicle_poll_seconds,
+                       "departuresRefreshSeconds": self.config.departures_refresh_seconds,
+                       "features": self.config.features,
+                       "minAppVersion": self.config.min_app_version.model_dump(),
+                       "maintenance": self.config.maintenance.model_dump()},
+            "links": self.links.model_dump(),
+            "services": [s.model_dump() for s in self.services],
             "attribution": self.attribution,
         }
+
+    def _components_from_agencies(self) -> list[dict]:
+        """Derived component palette when the YAML does not declare `components`."""
+        labels = {"trunk": "Troncal", "feeder": "Alimentador", "dual": "Dual", "zonal": "Zonal", "cable": "Cable",
+                  "rail": "Tren", "other": "Otro"}
+        icons = {"trunk": "brt", "cable": "cable", "rail": "rail"}
+        seen: dict[str, dict] = {}
+        for a in self.agencies:
+            seen.setdefault(a.component, {"id": a.component, "label": labels.get(a.component, a.component),
+                                          "color": a.color or self.branding.primary_color,
+                                          "icon": icons.get(a.component, "bus")})
+        return list(seen.values())
+
+    def component_style(self, component: str | None) -> dict | None:
+        for c in self.components or [ComponentCfg(**x) for x in self._components_from_agencies()]:
+            if c.id == component:
+                return c.model_dump()
+        return None
 
 
 def load_city_file(path: Path) -> City:

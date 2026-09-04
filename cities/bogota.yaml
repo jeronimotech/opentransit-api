@@ -43,3 +43,43 @@ agencies:
   - { id: "5", name: "SITP Complementario",   component: zonal,  color: "#F57C00" }
   - { id: "6", name: "SITP Especial",         component: zonal,  color: "#00838F" }
   - { id: "7", name: "TransMiCable",          component: cable,  color: "#5D4037" }
+
+# ── v1.1 ────────────────────────────────────────────────────────────────────────
+# Component palette (icons/colors used everywhere in the apps). Ids match `agencies[].component`.
+components:
+  - { id: trunk,  label: Troncal,       color: "#D32F2F", icon: brt }
+  - { id: feeder, label: Alimentador,   color: "#2E7D32", icon: bus }
+  - { id: dual,   label: Dual,          color: "#6A1B9A", icon: bus }
+  - { id: zonal,  label: Zonal (SITP),  color: "#1565C0", icon: bus }
+  - { id: cable,  label: TransMiCable,  color: "#EF6C00", icon: cable }
+
+# Flat-fare estimate: the GTFS publishes no fares. VERIFY against the tariff in force before release.
+# Bogotá 2026: pasaje único troncal/zonal/cable, transbordos sin costo dentro de la ventana de integración.
+fares:
+  currency: COP
+  base: 3200
+  transfer: 0
+  transfer_window_minutes: 110
+  max_transfers: 2
+  note: "Valor estimado (configurable). Verificar con la tarifa vigente de TRANSMILENIO S.A."
+
+# Remote-configurable client behaviour (read by web and mobile on start-up).
+config:
+  vehicle_poll_seconds: 15
+  departures_refresh_seconds: 20
+  features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }
+  min_app_version: { ios: "1.0.0", android: "1.0.0" }
+  maintenance: { active: false, message: null }
+
+# Official public pages (verified 2026-09-04). Never private/credentialed endpoints.
+links:
+  pqrs: https://www.transmilenio.gov.co/publicaciones/147212/pqrs
+  recharge: https://www.tullaveplus.gov.co/
+  support: https://www.transmilenio.gov.co/publicaciones/149179
+  privacy: https://www.transmilenio.gov.co/publicaciones/146028/politica-de-tratamiento-de-datos-personales
+
+# Hand-off tiles shown in the apps' services hub (open in the browser).
+services:
+  - { id: recharge, label: Recargar tullave, icon: card, url: https://www.tullaveplus.gov.co/, kind: external }
+  - { id: pqrs, label: PQRS y reportes, icon: report, url: https://www.transmilenio.gov.co/publicaciones/147212/pqrs, kind: external }
+  - { id: support, label: Canales de atención, icon: help, url: https://www.transmilenio.gov.co/publicaciones/149179, kind: external }
