@@ -30,6 +30,7 @@ async def city_health(rt: CityRuntime = Depends(city_runtime)):
         "router": {"up": info is not None, "version": rt.otp.version,
                    "graphBuiltAt": (info or {}).get("transitTimeZone") and None or _built_at(info),
                    "baseUrl": rt.city.otp.base_url},
+        "rental": {"networks": [g.health() for g in rt.gbfs.values()]},
     }
 
 

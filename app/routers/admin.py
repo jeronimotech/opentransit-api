@@ -57,6 +57,7 @@ async def put_config(patch: ConfigPatch, request: Request, rt: CityRuntime = Dep
     effective_city(rt.base_city or rt.city, new_override)          # raises 422 with the field path
     row = await request.app.state.config_store.save(rt.city.id, new_override, patch.updatedBy, patch.note)
     apply_to_runtime(rt, row)
+    _sync_gbfs(rt)
     return describe(rt)
 
 
@@ -65,6 +66,7 @@ async def delete_config(request: Request, rt: CityRuntime = Depends(city_runtime
                         updatedBy: str | None = Query(None, max_length=120)):
     row = await request.app.state.config_store.clear(rt.city.id, updatedBy)
     apply_to_runtime(rt, row)
+    _sync_gbfs(rt)
     return describe(rt)
 
 
@@ -72,3 +74,8 @@ async def delete_config(request: Request, rt: CityRuntime = Depends(city_runtime
 async def config_history(request: Request, rt: CityRuntime = Depends(city_runtime),
                          limit: int = Query(20, ge=1, le=200)):
     return {"items": await request.app.state.config_store.history(rt.city.id, limit)}
+
+
+def _sync_gbfs(rt: CityRuntime) -> None:
+    from ..main import sync_gbfs  # local import: main imports this router
+    sync_gbfs(rt)

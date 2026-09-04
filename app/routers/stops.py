@@ -41,7 +41,18 @@ async def _otp_stop_or_station(rt: CityRuntime, scoped_id: str, stop_query: str,
 
 @router.get("/v1/cities/{city}/stops/nearby", response_model=NearbyResponse)
 async def nearby(rt: CityRuntime = Depends(city_runtime), lat: float = Query(...), lon: float = Query(...),
-                 radius: int = Query(500, ge=50, le=3000), limit: int = Query(30, ge=1, le=100)):
+                 radius: int = Query(500, ge=50, le=3000), limit: int = Query(30, ge=1, le=100),
+                 include: str = Query("stops", description="comma list of stops,rental")):
+    wanted = {t.strip() for t in include.split(",") if t.strip()} or {"stops"}
+    rental: list[dict] = []
+    if "rental" in wanted:
+        for g in rt.gbfs.values():
+            await g.refresh()
+            rental.extend(g.nearest(lat, lon, radius, limit))
+        rental.sort(key=lambda s: s["distanceMeters"])
+        rental = rental[:limit]
+    if "stops" not in wanted:
+        return {"stops": [], "rentalStations": rental}
     async with pool().acquire() as c:
         fv = await c.fetchval("SELECT id FROM feed_version WHERE city=$1 AND is_active LIMIT 1", rt.city.id)
         rows = await c.fetch(
@@ -51,7 +62,8 @@ async def nearby(rt: CityRuntime = Depends(city_runtime), lat: float = Query(...
                 WHERE feed_version_id=$1 AND location_type <> 2
                   AND ST_DWithin(geog, ST_SetSRID(ST_MakePoint($3,$2),4326)::geography, $4)
                 ORDER BY dist LIMIT $5""", fv, lat, lon, radius, limit) if fv else []
-    return {"stops": [{**stop_from_db(rt.city, dict(r)), "distanceMeters": int(round(r["dist"]))} for r in rows]}
+    return {"stops": [{**stop_from_db(rt.city, dict(r)), "distanceMeters": int(round(r["dist"]))} for r in rows],
+            "rentalStations": rental}
 
 
 @router.get("/v1/cities/{city}/stops/{stopId}", response_model=StopDetail)

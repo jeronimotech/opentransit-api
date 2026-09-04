@@ -28,6 +28,18 @@ class CityRuntime:
     config_revision: int = 0
     config_updated_at: str | None = None
     config_updated_by: str | None = None
+    # v1.2 shared vehicles: our network id -> live GBFS cache
+    gbfs: dict = field(default_factory=dict)
+
+    def rental_lookup(self, otp_network: str | None, station_id: str | None) -> dict | None:
+        """Fresh availability for a station OTP mentioned (by its updater network id + raw station id)."""
+        net = self.city.bike_network(otp_network)
+        g = self.gbfs.get(net.id) if net else None
+        return g.station(station_id) if (g and station_id) else None
+
+    def rental_prices(self) -> dict:
+        """our network id -> price estimate for one casual trip (from GBFS pricing plans)."""
+        return {nid: g.price_estimate() for nid, g in self.gbfs.items()}
 
     # ---- v1.1 helpers ----
     def service_window(self, route_id: str | None) -> dict | None:

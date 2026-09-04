@@ -1,0 +1,483 @@
+{
+ "last_updated": "2026-09-04T21:45:31Z",
+ "ttl": 8,
+ "data": {
+  "stations": [
+   {
+    "vehicle_types_capacity": [],
+    "vehicle_docks_capacity": [
+     {
+      "vehicle_type_ids": [
+       "ASTRO",
+       "BOOST",
+       "CAJON",
+       "CARGO",
+       "CHLOE",
+       "COSMO",
+       "EFIT",
+       "EFIT CON SILLA",
+       "FIT",
+       "FIT CON SILLA",
+       "Handbike",
+       "ICONIC",
+       "MANOCLETA",
+       "METRO",
+       "METRO_CONNECTED",
+       "TESTE"
+      ],
+      "count": 19
+     }
+    ],
+    "station_id": "1",
+    "external_id": "eb1564d9-df87-11ef-b9d3-0681a956ccf1",
+    "name": [
+     {
+      "text": "001 - CL 82 con KR 11",
+      "language": "en"
+     },
+     {
+      "text": "001 - CL 82 con KR 11",
+      "language": "fr"
+     },
+     {
+      "text": "001 - CL 82 con KR 11",
+      "language": "nl"
+     },
+     {
+      "text": "001 - CL 82 con KR 11",
+      "language": "es"
+     }
+    ],
+    "lat": 4.6658027,
+    "lon": -74.0528436,
+    "address": "Calle 82 entre Carrera 11 y Carrera 12",
+    "cross_street": "EL RETIRO",
+    "post_code": "1111",
+    "capacity": 19,
+    "is_charging_station": false,
+    "rental_methods": [
+     "key",
+     "transitcard",
+     "creditcard",
+     "phone"
+    ],
+    "is_virtual_station": false,
+    "short_name": [
+     {
+      "text": "",
+      "language": "en"
+     },
+     {
+      "text": "",
+      "language": "fr"
+     },
+     {
+      "text": "",
+      "language": "nl"
+     },
+     {
+      "text": "",
+      "language": "es"
+     }
+    ],
+    "rental_uris": {}
+   },
+   {
+    "vehicle_types_capacity": [],
+    "vehicle_docks_capacity": [
+     {
+      "vehicle_type_ids": [
+       "ASTRO",
+       "BOOST",
+       "CAJON",
+       "CARGO",
+       "CHLOE",
+       "COSMO",
+       "EFIT",
+       "EFIT CON SILLA",
+       "FIT",
+       "FIT CON SILLA",
+       "Handbike",
+       "ICONIC",
+       "MANOCLETA",
+       "METRO",
+       "METRO_CONNECTED",
+       "TESTE"
+      ],
+      "count": 7
+     }
+    ],
+    "station_id": "2",
+    "external_id": "eb156c20-df87-11ef-b9d3-0681a956ccf1",
+    "name": [
+     {
+      "text": "002 - CL 65 con KR 10",
+      "language": "en"
+     },
+     {
+      "text": "002 - CL 65 con KR 10",
+      "language": "fr"
+     },
+     {
+      "text": "002 - CL 65 con KR 10",
+      "language": "nl"
+     },
+     {
+      "text": "002 - CL 65 con KR 10",
+      "language": "es"
+     }
+    ],
+    "lat": 4.6507888,
+    "lon": -74.061453,
+    "address": "Calle 65 entre Carrera 10 y Carrera 11",
+    "cross_street": "CHAPINERO NORTE",
+    "post_code": "1111",
+    "capacity": 7,
+    "is_charging_station": false,
+    "rental_methods": [
+     "key",
+     "transitcard",
+     "creditcard",
+     "phone"
+    ],
+    "is_virtual_station": false,
+    "short_name": [
+     {
+      "text": "",
+      "language": "en"
+     },
+     {
+      "text": "",
+      "language": "fr"
+     },
+     {
+      "text": "",
+      "language": "nl"
+     },
+     {
+      "text": "",
+      "language": "es"
+     }
+    ],
+    "rental_uris": {}
+   },
+   {
+    "vehicle_types_capacity": [],
+    "vehicle_docks_capacity": [
+     {
+      "vehicle_type_ids": [
+       "ASTRO",
+       "BOOST",
+       "CAJON",
+       "CARGO",
+       "CHLOE",
+       "COSMO",
+       "EFIT",
+       "EFIT CON SILLA",
+       "FIT",
+       "FIT CON SILLA",
+       "Handbike",
+       "ICONIC",
+       "MANOCLETA",
+       "METRO",
+       "METRO_CONNECTED",
+       "TESTE"
+      ],
+      "count": 11
+     }
+    ],
+    "station_id": "3",
+    "external_id": "eb156f57-df87-11ef-b9d3-0681a956ccf1",
+    "name": [
+     {
+      "text": "003 - KR 15 con CL 93",
+      "language": "en"
+     },
+     {
+      "text": "003 - KR 15 con CL 93",
+      "language": "fr"
+     },
+     {
+      "text": "003 - KR 15 con CL 93",
+      "language": "nl"
+     },
+     {
+      "text": "003 - KR 15 con CL 93",
+      "language": "es"
+     }
+    ],
+    "lat": 4.677735,
+    "lon": -74.05153,
+    "address": "Carrera 15 entre Calle 93 y Calle 93A",
+    "cross_street": "CHICO NORTE",
+    "post_code": "1111",
+    "capacity": 11,
+    "is_charging_station": true,
+    "rental_methods": [
+     "key",
+     "transitcard",
+     "creditcard",
+     "phone"
+    ],
+    "is_virtual_station": false,
+    "short_name": [
+     {
+      "text": "",
+      "language": "en"
+     },
+     {
+      "text": "",
+      "language": "fr"
+     },
+     {
+      "text": "",
+      "language": "nl"
+     },
+     {
+      "text": "",
+      "language": "es"
+     }
+    ],
+    "rental_uris": {}
+   },
+   {
+    "vehicle_types_capacity": [],
+    "vehicle_docks_capacity": [
+     {
+      "vehicle_type_ids": [
+       "ASTRO",
+       "BOOST",
+       "CAJON",
+       "CARGO",
+       "CHLOE",
+       "COSMO",
+       "EFIT",
+       "EFIT CON SILLA",
+       "FIT",
+       "FIT CON SILLA",
+       "Handbike",
+       "ICONIC",
+       "MANOCLETA",
+       "METRO",
+       "METRO_CONNECTED",
+       "TESTE"
+      ],
+      "count": 11
+     }
+    ],
+    "station_id": "4",
+    "external_id": "eb157396-df87-11ef-b9d3-0681a956ccf1",
+    "name": [
+     {
+      "text": "004 - Parque de Japón",
+      "language": "en"
+     },
+     {
+      "text": "004 - Parque de Japón",
+      "language": "fr"
+     },
+     {
+      "text": "004 - Parque de Japón",
+      "language": "nl"
+     },
+     {
+      "text": "004 - Parque de Japón",
+      "language": "es"
+     }
+    ],
+    "lat": 4.669821,
+    "lon": -74.050483,
+    "address": "Calle 86a entre Carrera 11 y Carrera 11a",
+    "cross_street": "LA CABRERA",
+    "post_code": "1111",
+    "capacity": 11,
+    "is_charging_station": false,
+    "rental_methods": [
+     "key",
+     "transitcard",
+     "creditcard",
+     "phone"
+    ],
+    "is_virtual_station": false,
+    "short_name": [
+     {
+      "text": "",
+      "language": "en"
+     },
+     {
+      "text": "",
+      "language": "fr"
+     },
+     {
+      "text": "",
+      "language": "nl"
+     },
+     {
+      "text": "",
+      "language": "es"
+     }
+    ],
+    "rental_uris": {}
+   },
+   {
+    "vehicle_types_capacity": [],
+    "vehicle_docks_capacity": [
+     {
+      "vehicle_type_ids": [
+       "ASTRO",
+       "BOOST",
+       "CAJON",
+       "CARGO",
+       "CHLOE",
+       "COSMO",
+       "EFIT",
+       "EFIT CON SILLA",
+       "FIT",
+       "FIT CON SILLA",
+       "Handbike",
+       "ICONIC",
+       "MANOCLETA",
+       "METRO",
+       "METRO_CONNECTED",
+       "TESTE"
+      ],
+      "count": 39
+     }
+    ],
+    "station_id": "5",
+    "external_id": "eb157698-df87-11ef-b9d3-0681a956ccf1",
+    "name": [
+     {
+      "text": "005 - CL 85 con KR 15",
+      "language": "en"
+     },
+     {
+      "text": "005 - CL 85 con KR 15",
+      "language": "fr"
+     },
+     {
+      "text": "005 - CL 85 con KR 15",
+      "language": "nl"
+     },
+     {
+      "text": "005 - CL 85 con KR 15",
+      "language": "es"
+     }
+    ],
+    "lat": 4.670073,
+    "lon": -74.055579,
+    "address": "Av. Calle 85 entre Carrera 15 y Carrera 16",
+    "cross_street": "ANTIGUO COUNTRY",
+    "post_code": "1111",
+    "capacity": 39,
+    "is_charging_station": false,
+    "rental_methods": [
+     "key",
+     "transitcard",
+     "creditcard",
+     "phone"
+    ],
+    "is_virtual_station": false,
+    "short_name": [
+     {
+      "text": "",
+      "language": "en"
+     },
+     {
+      "text": "",
+      "language": "fr"
+     },
+     {
+      "text": "",
+      "language": "nl"
+     },
+     {
+      "text": "",
+      "language": "es"
+     }
+    ],
+    "rental_uris": {}
+   },
+   {
+    "vehicle_types_capacity": [],
+    "vehicle_docks_capacity": [
+     {
+      "vehicle_type_ids": [
+       "ASTRO",
+       "BOOST",
+       "CAJON",
+       "CARGO",
+       "CHLOE",
+       "COSMO",
+       "EFIT",
+       "EFIT CON SILLA",
+       "FIT",
+       "FIT CON SILLA",
+       "Handbike",
+       "ICONIC",
+       "MANOCLETA",
+       "METRO",
+       "METRO_CONNECTED",
+       "TESTE"
+      ],
+      "count": 11
+     }
+    ],
+    "station_id": "6",
+    "external_id": "eb1579e6-df87-11ef-b9d3-0681a956ccf1",
+    "name": [
+     {
+      "text": "006 - CL 119 con KR 13",
+      "language": "en"
+     },
+     {
+      "text": "006 - CL 119 con KR 13",
+      "language": "fr"
+     },
+     {
+      "text": "006 - CL 119 con KR 13",
+      "language": "nl"
+     },
+     {
+      "text": "006 - CL 119 con KR 13",
+      "language": "es"
+     }
+    ],
+    "lat": 4.698706180415817,
+    "lon": -74.0400604,
+    "address": "Calle 119 entre Carrera 13 y Carrera 14",
+    "cross_street": "SANTA BARBARA CENTRAL",
+    "post_code": "1111",
+    "capacity": 11,
+    "is_charging_station": false,
+    "rental_methods": [
+     "key",
+     "transitcard",
+     "creditcard",
+     "phone"
+    ],
+    "is_virtual_station": false,
+    "short_name": [
+     {
+      "text": "",
+      "language": "en"
+     },
+     {
+      "text": "",
+      "language": "fr"
+     },
+     {
+      "text": "",
+      "language": "nl"
+     },
+     {
+      "text": "",
+      "language": "es"
+     }
+    ],
+    "rental_uris": {}
+   }
+  ]
+ },
+ "version": "3.0"
+}

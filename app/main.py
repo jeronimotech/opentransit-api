@@ -12,15 +12,31 @@ from .cities import load_registry
 from .config import settings
 from .db import close_pool, init_pool
 from .errors import install_error_handlers
+from .gbfs import GbfsNetwork
 from .gtfs_static import ingest, load_route_index, load_service_index
 from .logging_setup import setup_logging
 from .normalize import set_feed_flags
 from .otp import OtpClient
-from .routers import admin, alerts, board, geocode, health, plan, platform, pois, routes, stops, vehicles
+from .routers import admin, alerts, board, geocode, health, plan, platform, pois, rental, routes, stops, vehicles
 from .rt import RTCache, poller_loop
 from .runtime import CityRuntime
 
 log = logging.getLogger("ot.main")
+
+
+def sync_gbfs(rt: CityRuntime) -> None:
+    """Make rt.gbfs match the (effective) city config: add new networks, drop removed ones, keep the rest warm."""
+    wanted = {n.id: n for n in rt.city.mobility.bike_share}
+    for nid in list(rt.gbfs):
+        cur = rt.gbfs[nid]
+        if nid not in wanted or wanted[nid].gbfs_url != cur.cfg.gbfs_url:
+            asyncio.create_task(cur.close())
+            del rt.gbfs[nid]
+    for nid, cfg_net in wanted.items():
+        if nid in rt.gbfs:
+            rt.gbfs[nid].cfg = cfg_net
+        else:
+            rt.gbfs[nid] = GbfsNetwork(rt.city.id, cfg_net)
 
 
 async def _bootstrap_static(rt: CityRuntime, do_ingest: bool) -> None:
@@ -60,6 +76,10 @@ async def lifespan(app: FastAPI):
     stop = asyncio.Event()
     tasks: list[asyncio.Task] = []
     for rt in app.state.cities.values():
+        sync_gbfs(rt)
+        if cfg.ENABLE_RT_POLLERS:
+            for g in rt.gbfs.values():
+                tasks.append(asyncio.create_task(g.poll_loop(stop), name=f"gbfs:{rt.city.id}:{g.cfg.id}"))
         # Static ingest downloads ~100 MB from a third party; it must never block start-up.
         do_ingest = cfg.ENABLE_STATIC_INGEST and cfg.STATIC_INGEST_ON_START
         tasks.append(asyncio.create_task(_bootstrap_static(rt, do_ingest), name=f"bootstrap:{rt.city.id}"))
@@ -79,6 +99,8 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(*tasks, return_exceptions=True)
         for rt in app.state.cities.values():
             await rt.otp.close()
+            for g in rt.gbfs.values():
+                await g.close()
         await close_pool()
 
 
@@ -88,13 +110,13 @@ def create_app() -> FastAPI:
         description="Open-source, multi-city, multimodal trip-planning API (GTFS + GTFS-RT + OpenTripPlanner).",
         version=__version__, lifespan=lifespan,
         openapi_tags=[{"name": "planning"}, {"name": "search"}, {"name": "stops"}, {"name": "routes"},
-                      {"name": "realtime"}, {"name": "platform"}, {"name": "admin"}],
+                      {"name": "realtime"}, {"name": "rental"}, {"name": "platform"}, {"name": "admin"}],
     )
     origins = [o.strip() for o in settings().CORS_ORIGINS.split(",") if o.strip()]
     app.add_middleware(CORSMiddleware, allow_origins=origins or ["*"], allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
-    for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, admin):
+    for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, admin):
         app.include_router(r.router)
 
     @app.get("/", include_in_schema=False)

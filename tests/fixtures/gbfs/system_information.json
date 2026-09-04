@@ -1,0 +1,35 @@
+{
+ "last_updated": "2026-09-04T21:45:31Z",
+ "ttl": 30,
+ "data": {
+  "system_id": "bogota_bike",
+  "timezone": "America/Bogota",
+  "languages": [
+   "en",
+   "fr",
+   "nl",
+   "es"
+  ],
+  "name": [
+   {
+    "text": "bogota-bikebogota",
+    "language": "en"
+   },
+   {
+    "text": "bogota-bikebogota",
+    "language": "fr"
+   },
+   {
+    "text": "bogota-bikebogota",
+    "language": "nl"
+   },
+   {
+    "text": "bogota-bikebogota",
+    "language": "es"
+   }
+  ],
+  "opening_hours": "Mo-Su,PH 00:00-24:00",
+  "feed_contact_email": "mobility-data-client@lyft.com"
+ },
+ "version": "3.0"
+}

@@ -76,6 +76,36 @@ class Place(Out):
     arrival: str | None = None
     departure: str | None = None
     component: str | None = None
+    rental_station_id: str | None = None
+
+
+class RentalStationRef(Out):
+    station_id: str
+    name: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    vehicles_available: int | None = None
+    docks_available: int | None = None
+    last_reported: str | None = None
+
+
+class PriceEstimate(Out):
+    amount: float
+    currency: str
+    label: str | None = None
+    estimated: bool = True
+
+
+class RentalInfo(Out):
+    """A leg on a shared vehicle (GBFS): where to pick it up, where to drop it, what it costs."""
+    network_id: str
+    network_name: str | None = None
+    color: str | None = None
+    vehicle_type: str | None = None          # bicycle | electric_assist | scooter | null
+    pickup: RentalStationRef | None = None
+    dropoff: RentalStationRef | None = None
+    free_floating: bool = False
+    price_estimate: PriceEstimate | None = None
 
 
 class WalkStep(Out):
@@ -108,12 +138,14 @@ class Leg(Out):
     intermediate_stops: list[Place] = []
     steps: list[WalkStep] = []
     alerts: list[Alert] = []
+    rental: RentalInfo | None = None
 
 
 class FareItem(Out):
     label: str
     amount: float
     route: str | None = None
+    kind: Literal["transit", "rental"] = "transit"
 
 
 class Fare(Out):
@@ -134,6 +166,8 @@ class Itinerary(Out):
     transfers: int
     fare: Fare | None = None
     accessible: bool | None = None
+    rental_legs: int = 0
+    modes_used: list[str] = []
     legs: list[Leg]
 
 
@@ -198,8 +232,27 @@ class NearbyStop(Stop):
     distance_meters: int
 
 
+class NearbyRentalStation(Out):
+    id: str
+    network_id: str
+    kind: Literal["rental_station"] = "rental_station"
+    name: str
+    lat: float
+    lon: float
+    capacity: int | None = None
+    vehicles_available: int | None = None
+    ebikes_available: int | None = None
+    docks_available: int | None = None
+    is_installed: bool = True
+    is_renting: bool = True
+    is_returning: bool = True
+    last_reported: str | None = None
+    distance_meters: int
+
+
 class NearbyResponse(Out):
     stops: list[NearbyStop]
+    rental_stations: list[NearbyRentalStation] = []
 
 
 class StopDetail(Stop):
@@ -398,10 +451,100 @@ class RouterHealth(Out):
     base_url: str | None = None
 
 
+class RentalNetworkHealth(Out):
+    id: str
+    up: bool
+    stations: int = 0
+    vehicles_available: int = 0
+    age_seconds: int | None = None
+    error: str | None = None
+
+
+class RentalHealth(Out):
+    networks: list[RentalNetworkHealth] = []
+
+
 class CityHealth(Out):
     static: StaticHealth
     realtime: RealtimeHealth
     router: RouterHealth
+    rental: RentalHealth = RentalHealth()
+
+
+# ------------------------------------------------------------------ v1.2 shared vehicles (GBFS)
+class RentalVehicleType(Out):
+    id: str
+    form_factor: str | None = None
+    propulsion: str | None = None
+    name: str | None = None
+
+
+class RentalPricingPlan(Out):
+    id: str | None = None
+    name: str | None = None
+    price: float | None = None
+    currency: str | None = None
+    description: str | None = None
+    is_taxable: bool = False
+
+
+class RentalNetwork(Out):
+    id: str
+    name: str
+    network: str
+    gbfs_url: str
+    color: str
+    url: str | None = None
+    apps: dict[str, str | None] = {}
+    pricing_summary: str | None = None
+    form_factors: list[str] = []
+    system_id: str | None = None
+    system_name: str | None = None
+    timezone: str | None = None
+    gbfs_version: str | None = None
+    stations: int = 0
+    vehicles_available: int = 0
+    vehicle_types: list[RentalVehicleType] = []
+    pricing_plans: list[RentalPricingPlan] = []
+    last_fetch_at: str | None = None
+    up: bool = False
+    error: str | None = None
+
+
+class RentalNetworksResponse(Out):
+    networks: list[RentalNetwork]
+
+
+class RentalStation(Out):
+    id: str
+    network_id: str
+    kind: Literal["rental_station"] = "rental_station"
+    name: str
+    lat: float
+    lon: float
+    capacity: int | None = None
+    vehicles_available: int | None = None
+    ebikes_available: int | None = None
+    docks_available: int | None = None
+    is_installed: bool = True
+    is_renting: bool = True
+    is_returning: bool = True
+    last_reported: str | None = None
+
+
+class RentalStationsResponse(Out):
+    generated_at: str
+    ttl_seconds: int
+    stations: list[RentalStation]
+
+
+class RentalVehicleTypeCount(RentalVehicleType):
+    count: int = 0
+
+
+class RentalStationDetail(RentalStation):
+    vehicle_types_available: list[RentalVehicleTypeCount] = []
+    network: RentalNetwork | None = None
 
 
 class Healthz(Out):

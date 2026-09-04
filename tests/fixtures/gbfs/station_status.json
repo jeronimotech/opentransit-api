@@ -1,0 +1,249 @@
+{
+ "last_updated": "2026-09-04T21:45:32Z",
+ "ttl": 3,
+ "data": {
+  "stations": [
+   {
+    "station_id": "1",
+    "num_vehicles_available": 9,
+    "num_vehicles_disabled": 6,
+    "num_docks_available": 4,
+    "num_docks_disabled": 0,
+    "last_reported": "2026-09-04T21:43:40.773Z",
+    "is_installed": true,
+    "is_renting": true,
+    "is_returning": true,
+    "vehicle_docks_available": [
+     {
+      "vehicle_type_ids": [
+       "FIT",
+       "EFIT",
+       "CARGO",
+       "Handbike"
+      ],
+      "count": 4
+     }
+    ],
+    "vehicle_types_available": [
+     {
+      "vehicle_type_id": "FIT",
+      "count": 9
+     },
+     {
+      "vehicle_type_id": "CARGO",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "Handbike",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "EFIT",
+      "count": 0
+     }
+    ]
+   },
+   {
+    "station_id": "2",
+    "num_vehicles_available": 5,
+    "num_vehicles_disabled": 1,
+    "num_docks_available": 1,
+    "num_docks_disabled": 0,
+    "last_reported": "2026-09-04T21:42:45.401Z",
+    "is_installed": true,
+    "is_renting": true,
+    "is_returning": true,
+    "vehicle_docks_available": [
+     {
+      "vehicle_type_ids": [
+       "FIT",
+       "EFIT",
+       "CARGO",
+       "Handbike"
+      ],
+      "count": 1
+     }
+    ],
+    "vehicle_types_available": [
+     {
+      "vehicle_type_id": "FIT",
+      "count": 5
+     },
+     {
+      "vehicle_type_id": "CARGO",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "Handbike",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "EFIT",
+      "count": 0
+     }
+    ]
+   },
+   {
+    "station_id": "3",
+    "num_vehicles_available": 2,
+    "num_vehicles_disabled": 1,
+    "num_docks_available": 8,
+    "num_docks_disabled": 0,
+    "last_reported": "2026-09-03T23:56:29.792Z",
+    "is_installed": true,
+    "is_renting": true,
+    "is_returning": true,
+    "vehicle_docks_available": [
+     {
+      "vehicle_type_ids": [
+       "FIT",
+       "EFIT",
+       "CARGO",
+       "Handbike"
+      ],
+      "count": 8
+     }
+    ],
+    "vehicle_types_available": [
+     {
+      "vehicle_type_id": "FIT",
+      "count": 2
+     },
+     {
+      "vehicle_type_id": "CARGO",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "Handbike",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "EFIT",
+      "count": 0
+     }
+    ]
+   },
+   {
+    "station_id": "4",
+    "num_vehicles_available": 9,
+    "num_vehicles_disabled": 2,
+    "num_docks_available": 0,
+    "num_docks_disabled": 0,
+    "last_reported": "2026-09-04T21:07:18.591Z",
+    "is_installed": true,
+    "is_renting": true,
+    "is_returning": true,
+    "vehicle_docks_available": [
+     {
+      "vehicle_type_ids": [
+       "FIT",
+       "EFIT",
+       "CARGO",
+       "Handbike"
+      ],
+      "count": 0
+     }
+    ],
+    "vehicle_types_available": [
+     {
+      "vehicle_type_id": "FIT",
+      "count": 9
+     },
+     {
+      "vehicle_type_id": "CARGO",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "Handbike",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "EFIT",
+      "count": 0
+     }
+    ]
+   },
+   {
+    "station_id": "5",
+    "num_vehicles_available": 23,
+    "num_vehicles_disabled": 0,
+    "num_docks_available": 14,
+    "num_docks_disabled": 2,
+    "last_reported": "2026-09-04T21:42:31.028Z",
+    "is_installed": true,
+    "is_renting": true,
+    "is_returning": true,
+    "vehicle_docks_available": [
+     {
+      "vehicle_type_ids": [
+       "FIT",
+       "EFIT",
+       "CARGO",
+       "Handbike"
+      ],
+      "count": 14
+     }
+    ],
+    "vehicle_types_available": [
+     {
+      "vehicle_type_id": "FIT",
+      "count": 17
+     },
+     {
+      "vehicle_type_id": "CARGO",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "Handbike",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "EFIT",
+      "count": 6
+     }
+    ]
+   },
+   {
+    "station_id": "6",
+    "num_vehicles_available": 9,
+    "num_vehicles_disabled": 1,
+    "num_docks_available": 1,
+    "num_docks_disabled": 0,
+    "last_reported": "2026-09-04T21:44:21.675Z",
+    "is_installed": true,
+    "is_renting": true,
+    "is_returning": true,
+    "vehicle_docks_available": [
+     {
+      "vehicle_type_ids": [
+       "FIT",
+       "EFIT",
+       "CARGO",
+       "Handbike"
+      ],
+      "count": 1
+     }
+    ],
+    "vehicle_types_available": [
+     {
+      "vehicle_type_id": "FIT",
+      "count": 9
+     },
+     {
+      "vehicle_type_id": "CARGO",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "Handbike",
+      "count": 0
+     },
+     {
+      "vehicle_type_id": "EFIT",
+      "count": 0
+     }
+    ]
+   }
+  ]
+ },
+ "version": "3.0"
+}

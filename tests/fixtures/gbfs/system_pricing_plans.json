@@ -1,0 +1,183 @@
+{
+ "last_updated": "2026-09-04T21:45:38Z",
+ "ttl": 30,
+ "data": {
+  "plans": [
+   {
+    "plan_id": "1",
+    "name": [
+     {
+      "text": "Teste 06.09",
+      "language": "en"
+     },
+     {
+      "text": "Teste 06.09",
+      "language": "fr"
+     },
+     {
+      "text": "Teste 06.09",
+      "language": "es"
+     }
+    ],
+    "currency": "COP",
+    "price": 9000.0,
+    "description": [
+     {
+      "text": "",
+      "language": "en"
+     },
+     {
+      "text": "",
+      "language": "fr"
+     },
+     {
+      "text": "",
+      "language": "es"
+     }
+    ],
+    "is_taxable": true,
+    "per_min_pricing": [
+     {
+      "start": 0,
+      "rate": 7500.0,
+      "interval": 30,
+      "end": 30
+     }
+    ]
+   },
+   {
+    "plan_id": "2-2",
+    "name": [
+     {
+      "text": "Diario",
+      "language": "en"
+     },
+     {
+      "text": "Diario",
+      "language": "fr"
+     },
+     {
+      "text": "Diario",
+      "language": "es"
+     }
+    ],
+    "currency": "COP",
+    "price": 11000.0,
+    "description": [
+     {
+      "text": "",
+      "language": "en"
+     },
+     {
+      "text": "",
+      "language": "fr"
+     },
+     {
+      "text": "",
+      "language": "es"
+     }
+    ],
+    "is_taxable": true,
+    "per_min_pricing": [
+     {
+      "start": 65,
+      "rate": 150.0,
+      "interval": 1,
+      "end": 2465
+     }
+    ]
+   },
+   {
+    "plan_id": "2-3",
+    "name": [
+     {
+      "text": "Diario",
+      "language": "en"
+     },
+     {
+      "text": "Diario",
+      "language": "fr"
+     },
+     {
+      "text": "Diario",
+      "language": "es"
+     }
+    ],
+    "currency": "COP",
+    "price": 11000.0,
+    "description": [
+     {
+      "text": "",
+      "language": "en"
+     },
+     {
+      "text": "",
+      "language": "fr"
+     },
+     {
+      "text": "",
+      "language": "es"
+     }
+    ],
+    "is_taxable": true,
+    "per_min_pricing": [
+     {
+      "start": 0,
+      "rate": 1999.0,
+      "interval": 1,
+      "end": 1
+     },
+     {
+      "start": 1,
+      "rate": 150.0,
+      "interval": 1,
+      "end": 2387
+     }
+    ]
+   },
+   {
+    "plan_id": "3-5",
+    "name": [
+     {
+      "text": "[Set.22] Mensual",
+      "language": "en"
+     },
+     {
+      "text": "[Set.22] Mensual",
+      "language": "fr"
+     },
+     {
+      "text": "[Set.22] Mensual",
+      "language": "es"
+     }
+    ],
+    "currency": "COP",
+    "price": 31990.0,
+    "description": [
+     {
+      "text": "",
+      "language": "en"
+     },
+     {
+      "text": "",
+      "language": "fr"
+     },
+     {
+      "text": "",
+      "language": "es"
+     }
+    ],
+    "is_taxable": true,
+    "per_min_pricing": [
+     {
+      "start": 60,
+      "rate": 150.0,
+      "interval": 1,
+      "end": 2460
+     }
+    ]
+   }
+  ]
+ },
+ "version": "3.0"
+}

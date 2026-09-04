@@ -1,0 +1,41 @@
+{
+ "last_updated": "2026-09-04T21:45:30Z",
+ "ttl": 30,
+ "data": {
+  "feeds": [
+   {
+    "name": "gbfs_versions",
+    "url": "https://bogota.publicbikesystem.net/customer/gbfs/v3.0/gbfs_versions"
+   },
+   {
+    "name": "geofencing_zones",
+    "url": "https://bogota.publicbikesystem.net/customer/gbfs/v3.0/geofencing_zones"
+   },
+   {
+    "name": "station_information",
+    "url": "https://bogota.publicbikesystem.net/customer/gbfs/v3.0/station_information"
+   },
+   {
+    "name": "station_status",
+    "url": "https://bogota.publicbikesystem.net/customer/gbfs/v3.0/station_status"
+   },
+   {
+    "name": "system_information",
+    "url": "https://bogota.publicbikesystem.net/customer/gbfs/v3.0/system_information"
+   },
+   {
+    "name": "system_pricing_plans",
+    "url": "https://bogota.publicbikesystem.net/customer/gbfs/v3.0/system_pricing_plans"
+   },
+   {
+    "name": "system_regions",
+    "url": "https://bogota.publicbikesystem.net/customer/gbfs/v3.0/system_regions"
+   },
+   {
+    "name": "vehicle_types",
+    "url": "https://bogota.publicbikesystem.net/customer/gbfs/v3.0/vehicle_types"
+   }
+  ]
+ },
+ "version": "3.0"
+}
