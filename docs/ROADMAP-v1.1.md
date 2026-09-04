@@ -71,3 +71,10 @@ City {
 
 ### Geocode ranking
 When `lat/lon` given: stops/stations within 800 m rank first (distance-weighted), then name matches, then Photon.
+
+
+## v1.2 · Phase 1 shared mobility — bike-share (GBFS) — implemented 2026-09-04 (API)
+- City `mobility.bikeShare[]` (config + admin-editable), GBFS 3.0/2.x client with ttl cache, rental endpoints,
+  `BIKE_RENTAL`/`SCOOTER_RENTAL` planning through OTP access/egress/direct modes, rental leg blocks with live
+  availability and price estimate, fares with `kind`, health block, OTP updater generation from config.
+- Next: Phase 2 on-demand legs (taxi tariff table, ride-hailing deep links), Phase 3 partner APIs.

@@ -139,7 +139,35 @@ that is not in that list (feeds, OTP, agencies, bbox…).
 
 Details and JSON shapes: [`docs/API.md`](docs/API.md) · plan: [`docs/ROADMAP-v1.1.md`](docs/ROADMAP-v1.1.md).
 
+
+## v1.2 · shared bikes (GBFS) — provider-agnostic
+
+Any bike/scooter-share system that publishes [GBFS](https://gbfs.org) plugs in with config only:
+
+```yaml
+# cities/<city>.yaml
+mobility:
+  bike_share:
+    - { id: acme, name: Acme Bikes, network: acme_city,      # network = OTP updater id
+        gbfs_url: https://acme.example/gbfs/gbfs.json, color: "#00A859", url: https://acme.example,
+        apps: { ios: null, android: null }, pricing_summary: null, form_factors: [bicycle] }
+```
+
+Then `scripts/otp-updaters.py <city>` (run automatically by `scripts/otp-native.sh serve`) writes one OTP
+`vehicle-rental` updater per network and you restart OTP. No graph rebuild. What you get:
+
+- `/plan?modes=TRANSIT,WALK,BIKE_RENTAL` → itineraries with `rental` legs (pickup/drop-off station, live
+  availability, price estimate), `rentalLegs`, `modesUsed`, fare breakdown with `kind: rental`.
+- `/rental/networks`, `/rental/stations?bbox=`, `/rental/stations/{id}`, `stops/nearby?include=stops,rental`,
+  `health.rental`.
+- Several networks per city are supported (distinct ids/colours); the `mobility` section is also editable at
+  runtime from the admin config. The API polls each feed itself (ttl-aware) and never proxies per client.
+
+Bogotá ships with the city's public bike system (252 stations, GBFS 3.0) configured in `cities/bogota.yaml`.
+
 ## Add a city in five steps
+
+> Bike-share? Add `mobility.bike_share[]` to the YAML and run `scripts/otp-updaters.py <city>` before serving OTP.
 
 1. **Config:** copy `cities/_template.yaml` to `cities/<slug>.yaml`. Fill timezone, bbox, center, feed URLs,
    and map each `agency_id` from `agency.txt` to a component (`trunk|feeder|dual|zonal|cable|rail|other`)

@@ -235,7 +235,67 @@ vehicles currently inside the filter for that connection.
 With `lat/lon`, GTFS stops/stations within 800 m come first (closest first, `distanceMeters` filled), then
 stations, then other stop matches, then Photon. Without a position: stations first (as before).
 
+
+## v1.2 additions (implemented 2026-09-04) — shared bikes (GBFS)
+
+Shared-vehicle networks are **per-city configuration** (`cities/<city>.yaml` → `mobility.bike_share[]`, also
+editable at runtime through the admin config under `mobility`). Nothing in the code names a provider; a city
+may declare several networks (each with its own id, colour, GBFS url and OTP updater network id).
+
+### City (extended)
+```jsonc
+"features": { ..., "bikeShare": true },            // true when at least one network is configured
+"mobility": { "bikeShare": [ { "id": "<slug>", "name": "...", "network": "<otp updater network id>",
+  "gbfsUrl": "https://.../gbfs.json", "color": "#RRGGBB", "url": "https://...",
+  "apps": {"ios": "https://...|null", "android": "https://...|null"},
+  "pricingSummary": "string|null",   // from system_pricing_plans when null in the config
+  "singleTripPrice": {"amount": 4850, "currency": "COP", "label": "1 viaje"} | null,   // pins the price estimate; else GBFS heuristic
+  "formFactors": ["bicycle", "scooter"] } ] }
+```
+
+### Plan
+- `modes` accepts `BIKE_RENTAL` (alias `BICYCLE_RENTAL`) and `SCOOTER_RENTAL`. With transit they become OTP
+  **access/egress** modes (next to WALK) and a **direct** alternative; without transit, direct only.
+  `400 MODE_UNAVAILABLE` when the city has no network configured.
+- Rental legs keep `mode: "BICYCLE"|"SCOOTER"`, `transit: false`, and carry:
+```jsonc
+"rental": { "networkId": "<slug>", "networkName": "...", "color": "#RRGGBB",
+  "vehicleType": "bicycle"|"electric_assist"|"scooter"|null,
+  "pickup":  { "stationId": "<slug>:<gbfs station_id>", "name": "...", "lat": .., "lon": .., "vehiclesAvailable": 6, "docksAvailable": 13, "lastReported": "..." },
+  "dropoff": { ...same shape... }, "freeFloating": false,
+  "priceEstimate": { "amount": 11000, "currency": "COP", "label": "Diario", "estimated": true } | null }
+```
+  Availability comes from the API's own GBFS cache (fresher than OTP's copy); station ids are scoped with
+  **our** network id, never OTP's.
+- `Place.rentalStationId` on the walk legs that meet a rental station.
+- `Itinerary.rentalLegs` (int) and `Itinerary.modesUsed` (e.g. `["WALK","BICYCLE_RENTAL","BUS"]`).
+- `fare.breakdown[].kind` is `"transit"` or `"rental"`; one rental pass is charged per network per itinerary
+  (a pass covers both the access and the egress ride). The pass is the cheapest *real* day/single-ride plan in
+  `system_pricing_plans` (test, free/promo, subsidised and partner plans are skipped; the modal price of the
+  single-ride plans wins, latest tariff on ties) unless the network config pins `singleTripPrice`. `fare` exists even when the city
+  has no transit fares configured, as long as a rental leg is priced.
+
+### Rental endpoints (served from memory; the API polls each GBFS feed honouring its `ttl`)
+- `GET /v1/cities/{city}/rental/networks` → `{ "networks": [ { ...City.mobility.bikeShare[i], "systemId", "systemName", "timezone", "gbfsVersion", "stations", "vehiclesAvailable", "vehicleTypes": [{id, formFactor, propulsion, name}], "pricingPlans": [{id, name, price, currency, description, isTaxable}], "lastFetchAt", "up", "error" } ] }` (cache 5 min)
+- `GET /v1/cities/{city}/rental/stations?bbox=&networkId=&limit=500` → `{ "generatedAt", "ttlSeconds", "stations": [ { "id": "<slug>:<id>", "networkId", "kind": "rental_station", "name", "lat", "lon", "capacity", "vehiclesAvailable", "ebikesAvailable", "docksAvailable", "isInstalled", "isRenting", "isReturning", "lastReported" } ] }`
+- `GET /v1/cities/{city}/rental/stations/{id}` → station + `"vehicleTypesAvailable": [{id, formFactor, propulsion, name, count}]` + `"network": {...}`; `404 RENTAL_STATION_NOT_FOUND`.
+- `GET /v1/cities/{city}/stops/nearby?include=stops,rental` → adds `"rentalStations": [ station & {"distanceMeters"} ]`
+  (default `include=stops`; rental stations are returned in their own array, not mixed into `stops`).
+- `GET /v1/cities/{city}/health` gains `"rental": { "networks": [ {"id", "up", "stations", "vehiclesAvailable", "ageSeconds", "error"} ] }`.
+
+### Admin
+`PUT /v1/admin/cities/{city}/config` accepts `"mobility": { "bikeShare": [...] }` (validated: slug id, https
+`gbfsUrl`/`url`/apps, hex colour, unique ids). Saving re-syncs the in-memory GBFS pollers; the OTP updater
+still needs `scripts/otp-updaters.py <city>` + an OTP restart (documented in the README).
+
+### OTP
+`scripts/otp-updaters.py <city>` generates one `vehicle-rental` (GBFS) updater per configured network into
+`otp/<city>/router-config.json` (`network` = YAML `network`, url = `gbfs_url`); `scripts/otp-native.sh serve`
+runs it automatically. `--check` fails when the file is stale (used by CI).
+
 ## Implementation notes & deviations (what this repo actually does)
+
+- **v1.2 rental (deviations from CONTRACT-bikeshare.md):** `stops/nearby` returns rental stations in a separate `rentalStations` array (typed) instead of mixing them into `stops`; `priceEstimate` is one pass per network per itinerary; `Itinerary.fare` is non-null for rental-only trips even without city fares; OTP 2.9 counts (`availableVehicles.total`) are flattened; a rental leg from a network the city does not configure is still returned with `networkId` = OTP's id and no colour/price.
 
 | Topic | Contract said | Implemented |
 |---|---|---|
