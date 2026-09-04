@@ -63,7 +63,7 @@ async def stop_detail(stopId: str, rt: CityRuntime = Depends(city_runtime)):
         if s:
             if base is None:
                 base = stop_from_otp(rt.city, s)
-            routes = [route_ref(rt.city, r) for r in (s.get("routes") or []) if r]
+            routes = [rt.with_window(route_ref(rt.city, r)) for r in (s.get("routes") or []) if r]
             parent = stop_from_otp(rt.city, s.get("parentStation"))
             children = [stop_from_otp(rt.city, c) for c in (s.get("stops") or []) if c]
     except RouterUnavailable:
@@ -81,7 +81,7 @@ async def stop_detail(stopId: str, rt: CityRuntime = Depends(city_runtime)):
                       AND (sr.stop_id=$2 OR sr.stop_id IN (SELECT stop_id FROM stop
                                                            WHERE feed_version_id=$1 AND parent_station=$2))
                     ORDER BY r.short_name""", fv, rt.city.unscoped(stopId)) if fv else []
-        routes = [route_ref_from_db(rt.city, dict(r)) for r in rows]
+        routes = [rt.with_window(route_ref_from_db(rt.city, dict(r))) for r in rows]
     if parent is None and base.get("parentStationId"):
         parent = await _db_stop(rt, rt.city.unscoped(base["parentStationId"]))
     if not children and base["locationType"] == "station":
@@ -102,6 +102,7 @@ async def departures(stopId: str, rt: CityRuntime = Depends(city_runtime),
     by_trip = {e["tripId"]: e["id"] for e in rt.rt.vehicles if e.get("tripId")}
     for d in deps:
         d["vehicleId"] = by_trip.get(rt.city.unscoped(d["tripId"])) if d.get("tripId") else None
+        rt.with_window(d.get("route"))
     deps = merge_departures(deps)[:limit]
     now = dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z")
     return {"stop": stop, "generatedAt": now, "departures": deps}

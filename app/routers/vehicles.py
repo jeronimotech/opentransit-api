@@ -33,13 +33,55 @@ async def vehicles(rt: CityRuntime = Depends(city_runtime), routeId: str | None 
     return snap
 
 
+class StreamFilter:
+    """Server-side bbox / route filter for one SSE connection. Vehicles that leave the filter are emitted as
+    `removed`, so the client can keep a plain id-keyed map."""
+
+    def __init__(self, bbox: tuple[float, float, float, float] | None, route_ids: set[str] | None):
+        self.bbox, self.route_ids = bbox, route_ids
+        self.sent: set[str] = set()
+
+    def active(self) -> bool:
+        return self.bbox is not None or bool(self.route_ids)
+
+    def match(self, v: dict) -> bool:
+        if self.route_ids and v.get("routeId") not in self.route_ids:
+            return False
+        if self.bbox:
+            w, s, e, n = self.bbox
+            return w <= v["lon"] <= e and s <= v["lat"] <= n
+        return True
+
+    def full(self, frame: dict) -> dict:
+        if not self.active():
+            return frame
+        vs = [v for v in frame["vehicles"] if self.match(v)]
+        self.sent = {v["id"] for v in vs}
+        return {**frame, "vehicles": vs, "count": len(vs)}
+
+    def delta(self, frame: dict) -> dict:
+        if not self.active():
+            return frame
+        upd = [v for v in frame.get("updated") or [] if self.match(v)]
+        gone = [v["id"] for v in frame.get("updated") or [] if not self.match(v) and v["id"] in self.sent]
+        removed = [i for i in frame.get("removed") or [] if i in self.sent] + gone
+        self.sent |= {v["id"] for v in upd}
+        self.sent -= set(removed)
+        return {**frame, "updated": upd, "removed": removed, "count": len(self.sent)}
+
+
 @router.get("/v1/cities/{city}/vehicles/stream")
-async def stream(request: Request, rt: CityRuntime = Depends(city_runtime), deltas: bool = True):
-    """SSE. First event: full frame. Then deltas (`updated` + `removed`). Keep-alive comment every 25 s."""
+async def stream(request: Request, rt: CityRuntime = Depends(city_runtime), deltas: bool = True,
+                 bbox: str | None = Query(None, pattern=r"^-?[\d.]+(,-?[\d.]+){3}$"),
+                 routeIds: str | None = Query(None, description="comma list of route ids")):
+    """SSE. First event: full frame. Then deltas (`updated` + `removed`). Keep-alive comment every 25 s.
+    `bbox` and `routeIds` filter both the first frame and every delta server-side."""
     cache = rt.rt
     q = cache.subscribe()
     gz = "gzip" in request.headers.get("accept-encoding", "").lower()
     comp = zlib.compressobj(6, zlib.DEFLATED, 31) if gz else None
+    flt = StreamFilter(tuple(float(t) for t in bbox.split(",")) if bbox else None,
+                       {rt.city.scoped(r.strip()) for r in routeIds.split(",") if r.strip()} if routeIds else None)
 
     def enc(text: str) -> bytes:
         raw = text.encode()
@@ -47,13 +89,14 @@ async def stream(request: Request, rt: CityRuntime = Depends(city_runtime), delt
 
     async def gen():
         try:
-            yield enc(f"data: {json.dumps(cache.snapshot())}\n\n")
+            yield enc(f"data: {json.dumps(flt.full(cache.snapshot()))}\n\n")
             while True:
                 if await request.is_disconnected():
                     break
                 try:
                     await asyncio.wait_for(q.get(), timeout=25)
-                    frame = (cache.delta_frame() if deltas else None) or cache.snapshot()
+                    d = cache.delta_frame() if deltas else None
+                    frame = flt.delta(d) if d else flt.full(cache.snapshot())
                     yield enc(f"data: {json.dumps(frame)}\n\n")
                 except TimeoutError:
                     yield enc(": keep-alive\n\n")

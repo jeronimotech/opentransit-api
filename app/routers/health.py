@@ -25,7 +25,8 @@ async def city_health(rt: CityRuntime = Depends(city_runtime)):
                      "lastFetchAt": iso(cache.updated_at), **{k: v for k, v in cache.health().items()
                                                                  if k != "pctTripResolved"},
                      "vehicles": len(cache.vehicles), "pctTripResolved": cache.health()["pctTripResolved"],
-                     "alerts": len(cache.active_alerts())},
+                     "alerts": len(cache.active_alerts()),
+                     "stale": rt.freshness()["stale"], "staleSeconds": rt.freshness()["staleSeconds"]},
         "router": {"up": info is not None, "version": rt.otp.version,
                    "graphBuiltAt": (info or {}).get("transitTimeZone") and None or _built_at(info),
                    "baseUrl": rt.city.otp.base_url},

@@ -6,23 +6,38 @@ import httpx
 from .cities import City
 from .config import settings
 from .db import pool
+from .geo import haversine_m
 from .gtfs_static import normalize_name
 from .normalize import stop_from_db
 
 log = logging.getLogger("ot.geocode")
 
 
-def rank_results(results: list[dict], q: str) -> list[dict]:
-    """Stations first, then exact/prefix name matches, then busier stops. Stable for equal keys."""
+NEARBY_M = 800
+
+
+def rank_results(results: list[dict], q: str, lat: float | None = None, lon: float | None = None) -> list[dict]:
+    """With a user position: GTFS stops/stations within NEARBY_M first (closest first), then stations, then
+    other GTFS matches (exact/prefix/word, busier first), then Photon. Without one: stations first."""
     qn = normalize_name(q)
+    have_pos = lat is not None and lon is not None
+
+    def dist(r: dict) -> float | None:
+        if not have_pos or r.get("lat") is None:
+            return None
+        return haversine_m(lat, lon, r["lat"], r["lon"])
 
     def key(r: dict):
         name = normalize_name(r["name"])
         exact = name == qn
         prefix = name.startswith(qn)
         word = any(w.startswith(qn) for w in name.split())
+        d = dist(r)
+        near = r["source"] == "gtfs" and d is not None and d <= NEARBY_M
+        r["distanceMeters"] = int(round(d)) if d is not None else None
         return (
-            0 if r["type"] == "station" else 1 if r["source"] == "gtfs" else 2,
+            0 if near else 1 if r["type"] == "station" else 2 if r["source"] == "gtfs" else 3,
+            d if near else 0,
             0 if exact else 1 if prefix else 2 if word else 3,
             -(r.get("_nRoutes") or 0),
             len(name),
@@ -110,7 +125,7 @@ async def geocode(city: City, q: str, lat: float | None, lon: float | None, limi
     stops, photon = await asyncio.gather(search_stops(city, q, lat, lon, limit),
                                          search_photon(city, q, lat, lon, limit))
     seen, merged = set(), []
-    for r in rank_results(stops + photon, q):
+    for r in rank_results(stops + photon, q, lat, lon):
         k = (round(r["lat"] or 0, 4), round(r["lon"] or 0, 4), normalize_name(r["name"]))
         if k in seen:
             continue

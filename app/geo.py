@@ -79,3 +79,33 @@ def decode_polyline(s: str) -> list[tuple[float, float]]:
                 lon += d
         out.append((lon / 1e5, lat / 1e5))
     return out
+
+
+def along_track(line: list[tuple[float, float]], lon: float, lat: float) -> tuple[float, float]:
+    """Project a point onto a polyline [(lon, lat), ...].
+    Returns (distance along the line to the projection, m; offset from the line, m).
+    Uses a local equirectangular approximation: fine at city scale."""
+    if not line:
+        return 0.0, float("inf")
+    kx = 111320.0 * math.cos(math.radians(lat))
+    ky = 110540.0
+    px, py = lon * kx, lat * ky
+    best_off, best_along = float("inf"), 0.0
+    cum = 0.0
+    for i in range(len(line) - 1):
+        ax, ay = line[i][0] * kx, line[i][1] * ky
+        bx, by = line[i + 1][0] * kx, line[i + 1][1] * ky
+        dx, dy = bx - ax, by - ay
+        seg = math.hypot(dx, dy)
+        if seg == 0:
+            continue
+        t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (seg * seg)))
+        qx, qy = ax + t * dx, ay + t * dy
+        off = math.hypot(px - qx, py - qy)
+        if off < best_off:
+            best_off, best_along = off, cum + t * seg
+        cum += seg
+    if len(line) == 1:
+        return 0.0, math.hypot(px - line[0][0] * kx, py - line[0][1] * ky)
+    return best_along, best_off
+

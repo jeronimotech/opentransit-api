@@ -103,6 +103,9 @@ async def plan(
     origin = {"name": fromName or rev_from, "lat": fromLat, "lon": fromLon}
     dest = {"name": toName or rev_to, "lat": toLat, "lon": toLon}
     plan_out = plan_from_otp(city, data, origin, dest, rt.otp.version, locale)
+    for it in plan_out["itineraries"]:
+        for leg in it["legs"]:
+            rt.with_window(leg.get("route"))
     return apply_endpoint_names(plan_out, origin["name"], dest["name"])
 
 

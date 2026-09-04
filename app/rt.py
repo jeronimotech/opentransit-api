@@ -16,6 +16,7 @@ from google.transit import gtfs_realtime_pb2 as gtfsrt
 
 from .cities import City
 from .config import settings
+from .features import infer_severity
 
 log = logging.getLogger("ot.rt")
 
@@ -47,12 +48,15 @@ def parse_alerts(msg: gtfsrt.FeedMessage) -> tuple[list[dict], dict[str, list[in
             if ie.stop_id:
                 stops.append(ie.stop_id)
         i = len(out)
+        effect = gtfsrt.Alert.Effect.Name(a.effect) if a.effect else None
+        raw_sev = gtfsrt.Alert.SeverityLevel.Name(a.severity_level) \
+            if a.HasField("severity_level") and a.severity_level else None
         out.append({
             "id": e.id,
             "cause": gtfsrt.Alert.Cause.Name(a.cause) if a.cause else None,
-            "effect": gtfsrt.Alert.Effect.Name(a.effect) if a.effect else None,
-            "severity": gtfsrt.Alert.SeverityLevel.Name(a.severity_level)
-            if a.HasField("severity_level") and a.severity_level else None,
+            "effect": effect,
+            "severity": infer_severity(raw_sev, effect),
+            "severitySource": "feed" if raw_sev in ("INFO", "WARNING", "SEVERE") else "inferred",
             "header": _txt(a.header_text),
             "description": _txt(a.description_text),
             "url": _txt(a.url),

@@ -2,6 +2,18 @@
 import re
 
 from .cities import City
+from .features import accessibility_block, estimate_fare, infer_severity
+
+# Per-city flags learned at ingest (e.g. wheelchairUnverified). Set from main/admin after each ingest.
+_FEED_FLAGS: dict[str, dict] = {}
+
+
+def set_feed_flags(city_id: str, flags: dict | None) -> None:
+    _FEED_FLAGS[city_id] = dict(flags or {})
+
+
+def feed_flags(city_id: str) -> dict:
+    return _FEED_FLAGS.get(city_id, {})
 
 _DUR = re.compile(r"^(-)?P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$")
 _WHEELCHAIR = {"POSSIBLE": "accessible", "NOT_POSSIBLE": "not_accessible", "NO_INFORMATION": "unknown",
@@ -79,6 +91,8 @@ def stop_from_otp(city: City, s: dict | None) -> dict | None:
         "lat": s.get("lat"), "lon": s.get("lon"),
         "locationType": _LOCATION.get(s.get("locationType"), "stop"),
         "component": None, "wheelchair": _WHEELCHAIR.get(s.get("wheelchairBoarding"), "unknown"),
+        "accessibility": accessibility_block(_WHEELCHAIR.get(s.get("wheelchairBoarding"), "unknown"),
+                                             bool(feed_flags(city.id).get("wheelchairUnverified"))),
         "parentStationId": parent,
     }
 
@@ -141,6 +155,8 @@ def stop_from_db(city: City, row: dict) -> dict:
         "id": city.scoped(row["stop_id"]), "code": row.get("stop_code"), "name": (row["name"] or "").strip(),
         "lat": row["lat"], "lon": row["lon"], "locationType": _LOCATION.get(row.get("location_type"), "stop"),
         "component": row.get("component"), "wheelchair": _WHEELCHAIR.get(row.get("wheelchair"), "unknown"),
+        "accessibility": accessibility_block(_WHEELCHAIR.get(row.get("wheelchair"), "unknown"),
+                                             bool(feed_flags(city.id).get("wheelchairUnverified"))),
         "parentStationId": city.scoped(row["parent_station"]) if row.get("parent_station") else None,
     }
 
@@ -153,7 +169,9 @@ def alert_from_otp(city: City, a: dict | None) -> dict | None:
     stops = [e["gtfsId"] for e in (a.get("entities") or []) if e and e.get("__typename") == "Stop"]
     return {
         "id": str(a.get("id")), "cause": a.get("alertCause"), "effect": a.get("alertEffect"),
-        "severity": a.get("alertSeverityLevel"), "header": a.get("alertHeaderText"),
+        "severity": infer_severity(a.get("alertSeverityLevel"), a.get("alertEffect")),
+        "severitySource": "feed" if a.get("alertSeverityLevel") in ("INFO", "WARNING", "SEVERE") else "inferred",
+        "header": a.get("alertHeaderText"),
         "description": a.get("alertDescriptionText") or None, "url": a.get("alertUrl"),
         "start": iso(a.get("effectiveStartDate")), "end": iso(a.get("effectiveEndDate")),
         "routeIds": routes, "stopIds": stops, "routes": [],
@@ -233,7 +251,8 @@ def itinerary_from_otp(city: City, it: dict, idx: int, locale: str = "es") -> di
         "walkDistanceMeters": round(it.get("walkDistance") or 0, 1),
         "walkTimeSeconds": int(it.get("walkTime") or 0), "waitingTimeSeconds": int(it.get("waitingTime") or 0),
         "transfers": int(it.get("numberOfTransfers") or 0),
-        "fare": None,  # GTFS-Fares v2 is not published by any supported city yet
+        # No supported city publishes GTFS fares: this is a flat-fare *estimate* from city.fares (or null).
+        "fare": estimate_fare(city, legs, locale),
         "accessible": None if score is None else score >= 0.99,
         "legs": legs,
     }

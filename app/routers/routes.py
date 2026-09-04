@@ -21,8 +21,8 @@ async def list_routes(rt: CityRuntime = Depends(city_runtime), component: str | 
                   AND ($2::text IS NULL OR component=$2)
                   AND ($3::text IS NULL OR short_name ILIKE $3 || '%' OR long_name ILIKE '%' || $3 || '%')
                 ORDER BY component, short_name""", fv, component, q) if fv else []
-    return JSONResponse({"routes": [route_ref_from_db(rt.city, dict(r)) for r in rows]},
-                        headers={"Cache-Control": "public, max-age=3600" if not q else "no-store"})
+    return JSONResponse({"routes": [rt.with_window(route_ref_from_db(rt.city, dict(r))) for r in rows]},
+                        headers={"Cache-Control": "public, max-age=300" if not q else "no-store"})
 
 
 @router.get("/v1/cities/{city}/routes/{routeId}", response_model=RouteDetail)
@@ -31,7 +31,7 @@ async def route_detail(routeId: str, rt: CityRuntime = Depends(city_runtime)):
     r = data.get("route")
     if not r:
         raise RouteNotFound(f"route '{routeId}' not found")
-    base = route_ref(rt.city, r)
+    base = rt.with_window(route_ref(rt.city, r))
     patterns = [pattern_from_otp(rt.city, p, r.get("shortName")) for p in (r.get("patterns") or []) if p]
     patterns.sort(key=lambda p: (p["directionId"] if p["directionId"] is not None else 9, -len(p["stops"])))
     return {**base, "patterns": patterns, "alerts": [alert_from_otp(rt.city, a) for a in (r.get("alerts") or []) if a]}

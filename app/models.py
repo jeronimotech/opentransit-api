@@ -23,6 +23,17 @@ class Geometry(Out):
     precision: int = 5
 
 
+class ServiceWindow(Out):
+    start: str | None = None          # "HH:MM" local, first departure today
+    end: str | None = None            # "HH:MM" local, last departure today (may be after midnight)
+    ends_next_day: bool = False
+    active: bool = False
+    next_start: str | None = None     # "HH:MM" when not active
+    next_start_day: Literal["today", "tomorrow"] | None = None
+    has_service_today: bool = False
+    source: str = "gtfs"
+
+
 class RouteRef(Out):
     id: str
     short_name: str | None = None
@@ -32,6 +43,7 @@ class RouteRef(Out):
     mode: str = "BUS"
     agency_id: str | None = None
     component: str | None = None
+    service_window: ServiceWindow | None = None
 
 
 class AgencyRef(Out):
@@ -43,7 +55,8 @@ class Alert(Out):
     id: str
     cause: str | None = None
     effect: str | None = None
-    severity: str | None = None
+    severity: Literal["INFO", "WARNING", "SEVERE"] | None = None
+    severity_source: Literal["feed", "inferred"] | None = None
     header: str | None = None
     description: str | None = None
     url: str | None = None
@@ -97,9 +110,17 @@ class Leg(Out):
     alerts: list[Alert] = []
 
 
+class FareItem(Out):
+    label: str
+    amount: float
+    route: str | None = None
+
+
 class Fare(Out):
     amount: float
     currency: str
+    estimated: bool = True
+    breakdown: list[FareItem] = []
 
 
 class Itinerary(Out):
@@ -140,6 +161,7 @@ class GeocodeResult(Out):
     stop_id: str | None = None
     component: str | None = None
     source: Literal["gtfs", "photon"]
+    distance_meters: int | None = None
 
 
 class GeocodeResponse(Out):
@@ -161,7 +183,15 @@ class Stop(Out):
     location_type: Literal["stop", "station", "entrance"] = "stop"
     component: str | None = None
     wheelchair: Literal["unknown", "accessible", "not_accessible"] = "unknown"
+    accessibility: "Accessibility | None" = None
     parent_station_id: str | None = None
+
+
+class Accessibility(Out):
+    wheelchair: Literal["unknown", "accessible", "not_accessible"] = "unknown"
+    source: Literal["gtfs", "osm", "none"] = "none"
+    verified: bool = False
+    note: str | None = None
 
 
 class NearbyStop(Stop):
@@ -195,6 +225,56 @@ class DeparturesResponse(Out):
     stop: Stop
     generated_at: str
     departures: list[Departure]
+
+
+class Freshness(Out):
+    realtime: bool
+    age_seconds: int | None = None
+    stale_seconds: int | None = None
+    stale: bool = False
+
+
+class BoardTime(Out):
+    time: str
+    minutes: int
+    realtime: bool = False
+    delay_seconds: int | None = None
+    trip_id: str | None = None
+    vehicle_id: str | None = None
+
+
+class BoardRow(Out):
+    route: RouteRef
+    headsign: str | None = None
+    next: list[BoardTime] = []
+
+
+class BoardResponse(Out):
+    stop: Stop
+    generated_at: str
+    freshness: Freshness
+    rows: list[BoardRow]
+
+
+class NextBus(Out):
+    minutes: int
+    time: str
+    source: Literal["live", "estimated", "scheduled"]
+    vehicle: "Vehicle | None" = None
+    stops_away: int | None = None
+    distance_meters: int | None = None
+    trip_id: str | None = None
+    delay_seconds: int | None = None
+
+
+class NextResponse(Out):
+    stop: Stop
+    route: RouteRef
+    generated_at: str
+    freshness: Freshness
+    serves_stop: bool = True          # false when no pattern of the route calls at this stop
+    vehicles_on_route: int = 0        # buses of this route in the current live frame (any direction)
+    next: list[NextBus]
 
 
 class RoutesResponse(Out):
@@ -307,6 +387,8 @@ class RealtimeHealth(Out):
     pct_trip_resolved: float | None = None
     alerts: int = 0
     http_status: int | None = None
+    stale: bool = False
+    stale_seconds: int | None = None
 
 
 class RouterHealth(Out):
@@ -326,3 +408,8 @@ class Healthz(Out):
     status: str = "ok"
     version: str
     cities: list[str]
+
+
+NextBus.model_rebuild()
+NextResponse.model_rebuild()
+Stop.model_rebuild()
