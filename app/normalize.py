@@ -83,9 +83,50 @@ def stop_from_otp(city: City, s: dict | None) -> dict | None:
     }
 
 
+def pattern_from_otp(city: City, p: dict) -> dict:
+    """Pattern with a usable headsign (falls back to the last stop) and directionId in {0, 1, None}."""
+    stops = [stop_from_otp(city, s) for s in (p.get("stops") or []) if s]
+    geom = (p.get("patternGeometry") or {}).get("points")
+    d = p.get("directionId")
+    return {
+        "id": p["code"],
+        "headsign": p.get("headsign") or (stops[-1]["name"] if stops else None),
+        "directionId": d if d in (0, 1) else None,
+        "geometry": {"encoded": geom, "precision": 5} if geom else None,
+        "stops": stops,
+    }
+
+
+def merge_departures(deps: list[dict]) -> list[dict]:
+    """Dedupe by tripId (a station's child stops share trips) and sort by effective time."""
+    seen: set[str] = set()
+    out = []
+    for d in sorted(deps, key=lambda d: d.get("realtimeTime") or d["scheduledTime"]):
+        key = d.get("tripId")
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        out.append(d)
+    return out
+
+
+def apply_endpoint_names(plan: dict, from_name: str | None, to_name: str | None) -> dict:
+    """Replace OTP's generic 'Origin'/'Destination' labels with the caller's or reverse-geocoded names."""
+    for key, name, leg_idx, place_key in (("from", from_name, 0, "from"), ("to", to_name, -1, "to")):
+        if not name:
+            continue
+        plan[key]["name"] = name
+        for it in plan.get("itineraries", []):
+            legs = it.get("legs") or []
+            if legs and not legs[leg_idx][place_key].get("stopId"):
+                legs[leg_idx][place_key]["name"] = name
+    return plan
+
+
 def stop_from_db(city: City, row: dict) -> dict:
     return {
-        "id": city.scoped(row["stop_id"]), "code": row.get("stop_code"), "name": row["name"],
+        "id": city.scoped(row["stop_id"]), "code": row.get("stop_code"), "name": (row["name"] or "").strip(),
         "lat": row["lat"], "lon": row["lon"], "locationType": _LOCATION.get(row.get("location_type"), "stop"),
         "component": row.get("component"), "wheelchair": _WHEELCHAIR.get(row.get("wheelchair"), "unknown"),
         "parentStationId": city.scoped(row["parent_station"]) if row.get("parent_station") else None,

@@ -75,6 +75,10 @@ query Departures($id: String!, $n: Int!, $range: Int!) {{
   }}
 }}
 """
+STATION_QUERY = STOP_QUERY.replace("query StopDetail", "query StationDetail") \
+    .replace("stop(id: $id)", "station(id: $id)")
+STATION_DEPARTURES_QUERY = DEPARTURES_QUERY.replace("query Departures", "query StationDepartures") \
+    .replace("stop(id: $id)", "station(id: $id)")
 ROUTE_QUERY = f"""
 query RouteDetail($id: String!) {{
   route(id: $id) {{

@@ -1,11 +1,13 @@
+import asyncio
 import datetime as dt
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 
 from ..errors import ApiError
+from ..geocode import reverse
 from ..models import PlanResponse
-from ..normalize import plan_from_otp
+from ..normalize import apply_endpoint_names, plan_from_otp
 from ..otp import PLAN_QUERY
 from ..runtime import CityRuntime, city_runtime
 
@@ -73,6 +75,8 @@ async def plan(
     numItineraries: int = Query(5, ge=1, le=10),
     maxWalkDistance: int = Query(1500, ge=100, le=10000),
     locale: str = Query("es", pattern="^(es|en)$"),
+    fromName: str | None = Query(None, max_length=120, description="label for the origin, echoed back"),
+    toName: str | None = Query(None, max_length=120, description="label for the destination, echoed back"),
 ):
     city = rt.city
     tz = ZoneInfo(city.timezone)
@@ -90,7 +94,23 @@ async def plan(
     variables = build_variables(from_lat=fromLat, from_lon=fromLon, to_lat=toLat, to_lon=toLon, when=when,
                                 arrive_by=arriveBy, transit=transit, street=street, wheelchair=wheelchair,
                                 num=numItineraries, locale=locale, walk_reluctance=reluctance)
-    data = await rt.otp.graphql(PLAN_QUERY, variables, locale=locale)
-    origin = {"name": None, "lat": fromLat, "lon": fromLon}
-    dest = {"name": None, "lat": toLat, "lon": toLon}
-    return plan_from_otp(city, data, origin, dest, rt.otp.version, locale)
+    # Names: the caller's label wins; otherwise a reverse geocode runs concurrently with the plan and is
+    # only used if it comes back within a short budget, so it never adds latency to the itinerary search.
+    data, rev_from, rev_to = await asyncio.gather(
+        rt.otp.graphql(PLAN_QUERY, variables, locale=locale),
+        _cheap_reverse(city, fromLat, fromLon, skip=bool(fromName)),
+        _cheap_reverse(city, toLat, toLon, skip=bool(toName)))
+    origin = {"name": fromName or rev_from, "lat": fromLat, "lon": fromLon}
+    dest = {"name": toName or rev_to, "lat": toLat, "lon": toLon}
+    plan_out = plan_from_otp(city, data, origin, dest, rt.otp.version, locale)
+    return apply_endpoint_names(plan_out, origin["name"], dest["name"])
+
+
+async def _cheap_reverse(city, lat: float, lon: float, *, skip: bool, budget_s: float = 1.5) -> str | None:
+    if skip:
+        return None
+    try:
+        r = await asyncio.wait_for(reverse(city, lat, lon), timeout=budget_s)
+        return r.get("name")
+    except (TimeoutError, Exception):  # noqa: BLE001
+        return None

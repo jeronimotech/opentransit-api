@@ -165,7 +165,7 @@ class Stop(Out):
 
 
 class NearbyStop(Stop):
-    distance_meters: float
+    distance_meters: int
 
 
 class NearbyResponse(Out):

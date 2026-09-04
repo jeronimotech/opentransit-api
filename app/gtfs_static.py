@@ -138,7 +138,7 @@ async def ingest(city: City, force: bool = False) -> dict:
             continue
         rids = stop_routes.get(st["stop_id"], set())
         comps = collections.Counter(comp_of_route(r) for r in rids)
-        stops.append((st["stop_id"], st.get("stop_code") or None, st.get("stop_name") or st["stop_id"],
+        stops.append((st["stop_id"], st.get("stop_code") or None, (st.get("stop_name") or st["stop_id"]).strip(),
                       normalize_name(st.get("stop_name")), lat, lon,
                       int(st.get("location_type") or 0), st.get("parent_station") or None,
                       int(st.get("wheelchair_boarding") or 0),

@@ -73,3 +73,39 @@ def test_response_matches_pydantic_model(bogota, fixtures):
     dumped = model.model_dump(by_alias=True)
     assert "from" in dumped and "from" in dumped["itineraries"][0]["legs"][0]
     assert dumped["itineraries"][0]["legs"][1]["delaySeconds"] == 120
+
+
+def test_pattern_headsign_and_direction_fallbacks(bogota):
+    from app.normalize import pattern_from_otp
+    p = {"code": "bogota:10895::01", "headsign": None, "directionId": -1, "patternGeometry": {"points": "abc"},
+         "stops": [{"gtfsId": "bogota:1", "name": "First"}, {"gtfsId": "bogota:2", "name": "Portal Sur 10-1"}]}
+    out = pattern_from_otp(bogota, p)
+    assert out["headsign"] == "Portal Sur 10-1" and out["directionId"] is None
+    assert out["geometry"] == {"encoded": "abc", "precision": 5} and len(out["stops"]) == 2
+    assert pattern_from_otp(bogota, {**p, "headsign": "Norte", "directionId": 1})["directionId"] == 1
+    assert pattern_from_otp(bogota, {**p, "stops": []})["headsign"] is None
+
+
+def test_merge_departures_dedupes_by_trip_and_sorts():
+    from app.normalize import merge_departures
+    deps = [
+        {"tripId": "t2", "scheduledTime": "2026-09-04T10:05:00Z", "realtimeTime": None},
+        {"tripId": "t1", "scheduledTime": "2026-09-04T10:00:00Z", "realtimeTime": "2026-09-04T10:07:00Z"},
+        {"tripId": "t2", "scheduledTime": "2026-09-04T10:06:00Z", "realtimeTime": None},   # same trip, other platform
+        {"tripId": None, "scheduledTime": "2026-09-04T10:01:00Z", "realtimeTime": None},
+    ]
+    out = merge_departures(deps)
+    assert [d["tripId"] for d in out] == [None, "t2", "t1"]
+
+
+def test_apply_endpoint_names(bogota, fixtures):
+    from app.normalize import apply_endpoint_names
+    data = json.loads((fixtures / "otp_plan.json").read_text())
+    out = plan_from_otp(bogota, data, {"name": None, "lat": 1, "lon": 2}, {"name": None, "lat": 3, "lon": 4}, None)
+    out = apply_endpoint_names(out, "Casa", None)
+    legs = out["itineraries"][0]["legs"]
+    assert out["from"]["name"] == "Casa" and legs[0]["from"]["name"] == "Casa"
+    assert out["to"]["name"] is None and legs[-1]["to"]["name"] == "Destination"
+    assert legs[0]["to"]["name"] == "Portal Norte"          # stops are never renamed
+    out = apply_endpoint_names(out, None, "Oficina")
+    assert legs[-1]["to"]["name"] == "Oficina"

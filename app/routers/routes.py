@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from ..db import pool
 from ..errors import RouteNotFound
 from ..models import RouteDetail
-from ..normalize import alert_from_otp, route_ref, route_ref_from_db, stop_from_otp
+from ..normalize import alert_from_otp, pattern_from_otp, route_ref, route_ref_from_db
 from ..otp import ROUTE_QUERY
 from ..runtime import CityRuntime, city_runtime
 
@@ -32,12 +32,7 @@ async def route_detail(routeId: str, rt: CityRuntime = Depends(city_runtime)):
     if not r:
         raise RouteNotFound(f"route '{routeId}' not found")
     base = route_ref(rt.city, r)
-    patterns = []
-    for p in r.get("patterns") or []:
-        geom = (p.get("patternGeometry") or {}).get("points")
-        patterns.append({"id": p["code"], "headsign": p.get("headsign"), "directionId": p.get("directionId"),
-                         "geometry": {"encoded": geom, "precision": 5} if geom else None,
-                         "stops": [stop_from_otp(rt.city, s) for s in (p.get("stops") or []) if s]})
+    patterns = [pattern_from_otp(rt.city, p) for p in (r.get("patterns") or []) if p]
     patterns.sort(key=lambda p: (p["directionId"] if p["directionId"] is not None else 9, -len(p["stops"])))
     return {**base, "patterns": patterns, "alerts": [alert_from_otp(rt.city, a) for a in (r.get("alerts") or []) if a]}
 

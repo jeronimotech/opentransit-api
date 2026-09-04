@@ -58,7 +58,7 @@ City {
 
 ### Trip planning
 - `GET /v1/cities/{city}/plan`
-  - query: `fromLat, fromLon, toLat, toLon` (required); `time` (ISO-8601, default now); `arriveBy` (bool, default false); `modes` (comma list of `WALK,BUS,RAIL,SUBWAY,TRAM,CABLE_CAR,BICYCLE,TRANSIT`; default `TRANSIT,WALK`); `wheelchair` (bool); `numItineraries` (1..10, default 5); `maxWalkDistance` (m, default 1500); `locale` (`es|en`).
+  - query: `fromLat, fromLon, toLat, toLon` (required); `fromName`, `toName` (optional labels, echoed into `from.name`/`to.name` and the first/last walking leg; when absent the API tries a reverse geocode within a 1.5 s budget, otherwise the name stays `null`); `time` (ISO-8601, default now); `arriveBy` (bool, default false); `modes` (comma list of `WALK,BUS,RAIL,SUBWAY,TRAM,CABLE_CAR,BICYCLE,TRANSIT`; default `TRANSIT,WALK`); `wheelchair` (bool); `numItineraries` (1..10, default 5); `maxWalkDistance` (m, default 1500); `locale` (`es|en`).
   - response `{ "from": Place, "to": Place, "itineraries": [Itinerary], "router": {"engine": "otp", "version": "2.10.0", "realtime": true}, "warnings": [string] }`
   - 502 `ROUTER_UNAVAILABLE` if OTP down; 200 with empty `itineraries` + warning `NO_ITINERARIES` is NOT an error.
 
@@ -83,13 +83,14 @@ Stop/route ids are **feed-scoped** exactly as OTP exposes them (`bogota:<gtfs_id
 ### Geocoding / search
 - `GET /v1/cities/{city}/geocode?q=portal%20norte&lat=&lon=&limit=8`
   - Sources merged: GTFS stops/stations (local DB, prefix + fuzzy, stations ranked above stops) and Photon (`https://photon.komoot.io/api/?q=&lat=&lon=&limit=&bbox=` restricted to city bbox; configurable `geocoder.photonUrl`, can be null to disable).
-  - `{ "results": [ {"id": "stop:bogota:1234"|"photon:...", "name": "Portal Norte", "label": "Estación troncal · Autopista Norte", "lat": .., "lon": .., "type": "station"|"stop"|"address"|"poi"|"street", "stopId": string|null, "component": string|null, "source": "gtfs"|"photon"} ] }`
+  - `{ "results": [ {"id": "stop:bogota:1234"|"photon:...", "name": "Portal Norte", "label": "Estación troncal · Autopista Norte", "lat": .., "lon": .., "type": "station"|"stop"|"address"|"poi"|"street"|"place", "stopId": string|null, "component": string|null, "source": "gtfs"|"photon"} ] }`
 - `GET /v1/cities/{city}/reverse?lat=&lon=` → `{ "name": "Calle 26 # 13-19", "lat": .., "lon": .. }` (Photon reverse; falls back to nearest stop name).
 
 ### Stops
-- `GET /v1/cities/{city}/stops/nearby?lat=&lon=&radius=500&limit=30` → `{ "stops": [Stop & {"distanceMeters": 120}] }`
+- `GET /v1/cities/{city}/stops/nearby?lat=&lon=&radius=500&limit=30` → `{ "stops": [Stop & {"distanceMeters": 120}] }` (`distanceMeters` is an integer)
 - `GET /v1/cities/{city}/stops/{stopId}` → `Stop & { "routes": [RouteRef], "parentStation": Stop|null, "children": [Stop] }`
 - `GET /v1/cities/{city}/stops/{stopId}/departures?limit=20&minutes=60` → `{ "stop": Stop, "generatedAt": "...", "departures": [Departure] }`
+  - Works for parent stations too (`locationType: "station"`): departures are aggregated across the station's child stops, deduplicated by `tripId` and sorted by effective time. `GET /stops/{stationId}` lists the children in `children`, and every child carries `parentStationId`.
 ```jsonc
 Stop { "id": "bogota:1234", "code": "A123"|null, "name": "...", "lat": .., "lon": .., "locationType": "stop"|"station"|"entrance",
   "component": string|null, "wheelchair": "unknown"|"accessible"|"not_accessible", "parentStationId": string|null }
@@ -100,7 +101,8 @@ Departures come from OTP (`stopTimes` with RT applied). Because Bogotá TripUpda
 
 ### Routes & network
 - `GET /v1/cities/{city}/routes?component=&q=` → `{ "routes": [RouteRef] }`
-- `GET /v1/cities/{city}/routes/{routeId}` → `RouteRef & { "patterns": [ {"id": "...", "headsign": "...", "directionId": 0|1, "geometry": {...}, "stops": [Stop] } ], "alerts": [Alert] }`
+- `GET /v1/cities/{city}/routes/{routeId}` → `RouteRef & { "patterns": [ {"id": "...", "headsign": "...", "directionId": 0|1|null, "geometry": {...}, "stops": [Stop] } ], "alerts": [Alert] }`
+  - `headsign` falls back to the name of the pattern's last stop when the feed has none (Bogotá feeders); `directionId` is `null` when the feed does not set it.
 - `GET /v1/cities/{city}/network` → `{ "feedVersion": "...", "shapes": [ {"id": "...", "routeId": "...", "component": "trunk", "color": "#..", "geometry": {"encoded": "...", "precision": 5}} ] }` (Douglas-Peucker ~20 m simplified, cache 1h; for the map "network" layer)
 
 ### Realtime vehicles
