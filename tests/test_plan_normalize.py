@@ -23,7 +23,7 @@ def test_plan_normalizes_itinerary(bogota, fixtures):
     assert it["durationSeconds"] == 2730 and it["transfers"] == 1
     assert it["walkDistanceMeters"] == 812.4 and it["accessible"] is None
     assert it["fare"] == {"amount": 3200, "currency": "COP", "estimated": True,
-                          "breakdown": [{"label": "Pasaje", "amount": 3200, "route": "B12"}]}
+                          "breakdown": [{"label": "Pasaje", "amount": 3200, "route": "B12", "kind": "transit"}]}
     walk, bus, walk2 = it["legs"]
     # walking leg
     assert walk["mode"] == "WALK" and walk["transit"] is False and walk["realtime"] is False

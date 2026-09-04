@@ -22,7 +22,7 @@ def _leg(start: str, short: str | None = "G12", transit: bool = True) -> dict:
 def test_fare_single_boarding(bogota: City):
     f = estimate_fare(bogota, [_leg("2026-09-04T08:00:00-05:00", None, False), _leg("2026-09-04T08:10:00-05:00")])
     assert f["amount"] == 3200 and f["currency"] == "COP" and f["estimated"] is True
-    assert f["breakdown"] == [{"label": "Pasaje", "amount": 3200, "route": "G12"}]
+    assert f["breakdown"] == [{"label": "Pasaje", "amount": 3200, "route": "G12", "kind": "transit"}]
 
 
 def test_fare_walk_only_is_zero(bogota: City):

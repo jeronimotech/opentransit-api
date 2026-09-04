@@ -79,7 +79,7 @@ async def test_put_propagates_to_public_city_and_fares(bogota: City):
         assert r.status_code == 200
         body = r.json()
         assert body["override"] is None and body["revision"] == 0 and body["yaml"]["fares"]["base"] == 3200
-        assert body["editable"] == ["fares", "config", "links", "services", "branding"]
+        assert body["editable"] == ["fares", "config", "links", "services", "branding", "mobility"]
 
         r = await c.put("/v1/admin/cities/bogota/config", headers=H,
                         json={"fares": {"base": 3400, "transfer": 200}, "note": "tarifa 2027", "updatedBy": "luis"})
