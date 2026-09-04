@@ -77,8 +77,21 @@ CREATE TABLE IF NOT EXISTS shape_simplified (
   color      TEXT,
   n_points   INT,
   encoded    TEXT NOT NULL,
+  direction_id SMALLINT,               -- from trips.txt when the feed has it
+  is_canonical BOOLEAN NOT NULL DEFAULT TRUE,
+  canonical_shape_id TEXT,             -- the shape that stands for this one when not canonical
+  length_m   INT,
+  group_key  TEXT,                     -- component + short name: the dedupe group
+  represents TEXT[],                   -- route ids collapsed into this canonical shape
   PRIMARY KEY (feed_version_id, shape_id)
 );
+ALTER TABLE shape_simplified ADD COLUMN IF NOT EXISTS direction_id SMALLINT;
+ALTER TABLE shape_simplified ADD COLUMN IF NOT EXISTS is_canonical BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE shape_simplified ADD COLUMN IF NOT EXISTS canonical_shape_id TEXT;
+ALTER TABLE shape_simplified ADD COLUMN IF NOT EXISTS length_m INT;
+ALTER TABLE shape_simplified ADD COLUMN IF NOT EXISTS group_key TEXT;
+ALTER TABLE shape_simplified ADD COLUMN IF NOT EXISTS represents TEXT[];
+CREATE INDEX IF NOT EXISTS shape_canonical ON shape_simplified (feed_version_id) WHERE is_canonical;
 
 -- one row per minute per city: feed health series (small, kept forever)
 CREATE TABLE IF NOT EXISTS feed_health (

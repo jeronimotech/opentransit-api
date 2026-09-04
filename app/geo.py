@@ -109,3 +109,27 @@ def along_track(line: list[tuple[float, float]], lon: float, lat: float) -> tupl
         return 0.0, math.hypot(px - line[0][0] * kx, py - line[0][1] * ky)
     return best_along, best_off
 
+
+
+def polyline_length_m(points: list[tuple[float, float]]) -> float:
+    """Length of [(lon, lat), ...] in metres."""
+    return sum(haversine_m(points[i - 1][1], points[i - 1][0], points[i][1], points[i][0])
+               for i in range(1, len(points)))
+
+
+def coverage_fraction(points: list[tuple[float, float]], lines: list[list[tuple[float, float]]],
+                      tol_m: float = 30.0) -> float:
+    """Fraction of `points` that lie within `tol_m` of at least one polyline in `lines`.
+    Cheap O(points × segments) test on simplified geometries; good enough to decide whether a shape
+    is a trivial variant of one already kept."""
+    if not points:
+        return 0.0
+    if not lines:
+        return 0.0
+    hit = 0
+    for lon, lat in points:
+        for line in lines:
+            if along_track(line, lon, lat)[1] <= tol_m:
+                hit += 1
+                break
+    return hit / len(points)

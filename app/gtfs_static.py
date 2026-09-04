@@ -24,6 +24,7 @@ from .config import settings
 from .db import pool
 from .features import ServiceIndex, accessibility_unverified, hms_to_seconds
 from .geo import encode_polyline, rdp
+from .network_dedupe import ShapeIn, dedupe_shapes
 
 log = logging.getLogger("ot.static")
 NEEDED = ("routes.txt", "trips.txt", "stops.txt")
@@ -168,8 +169,11 @@ async def ingest(city: City, force: bool = False) -> dict:
     trip2route: dict[str, str] = {}
     trip2service: dict[str, str] = {}
     shape2route: dict[str, str] = {}
+    shape_dirs: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     for t in _rows(z, "trips.txt"):
         shape2route.setdefault(t.get("shape_id") or "", t["route_id"])
+        if t.get("shape_id") and t.get("direction_id") not in (None, ""):
+            shape_dirs[t["shape_id"]][int(t["direction_id"])] += 1
         trip2route[t["trip_id"]] = t["route_id"]
         trip2service[t["trip_id"]] = t.get("service_id") or ""
         d = t.get("direction_id")
@@ -240,12 +244,20 @@ async def ingest(city: City, force: bool = False) -> dict:
             rid = shape2route.get(sid)
             rt = routes.get(rid) or {}
             color = rt.get("route_color") or None
+            direction = shape_dirs[sid].most_common(1)[0][0] if shape_dirs.get(sid) else None
             shapes_out.append((sid, rid, comp_of_route(rid), f"#{color}" if color else None,
-                               len(simp), encode_polyline(simp)))
+                               len(simp), encode_polyline(simp), direction))
+    # dedupe: one commercial route is often many GTFS routes with near-identical shapes
+    dd = dedupe_shapes([
+        ShapeIn(sid, rid, f"{comp}|{(routes.get(rid) or {}).get('route_short_name') or rid}|{direction}",
+                enc, direction)
+        for sid, rid, comp, _color, _n, enc, direction in shapes_out])
+    n_canonical = sum(1 for o in dd.values() if o.is_canonical)
 
     meta = {"wheelchairUnverified": accessibility_unverified(dict(wheelchair_counts)),
             "wheelchairCounts": {str(k): v for k, v in wheelchair_counts.items()},
-            "serviceWindows": len(windows), "calendars": len(calendars), "calendarExceptions": len(exceptions)}
+            "serviceWindows": len(windows), "calendars": len(calendars), "calendarExceptions": len(exceptions),
+            "shapes": len(shapes_out), "canonicalShapes": n_canonical}
 
     async with pool().acquire() as c, c.transaction():
         fv = await c.fetchval(
@@ -294,16 +306,21 @@ async def ingest(city: City, force: bool = False) -> dict:
                 columns=["feed_version_id", "stop_id", "route_id"])
         await c.executemany(
             """INSERT INTO shape_simplified (feed_version_id, shape_id, route_id, component, color, n_points,
-                                             encoded) VALUES ($1,$2,$3,$4,$5,$6,$7)""",
-            [(fv, *s) for s in shapes_out])
+                                             encoded, direction_id, is_canonical, canonical_shape_id, length_m,
+                                             group_key, represents)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
+            [(fv, sid, rid, comp, color, n, enc, direction, dd[sid].is_canonical, dd[sid].canonical_shape_id,
+              dd[sid].length_m, f"{comp}|{(routes.get(rid) or {}).get('route_short_name') or rid}|{direction}",
+              dd[sid].represents or None)
+             for sid, rid, comp, color, n, enc, direction in shapes_out])
         await c.execute("UPDATE feed_version SET is_active=FALSE WHERE city=$1 AND is_active", city.id)
         await c.execute("UPDATE feed_version SET is_active=TRUE WHERE id=$1", fv)
         await c.execute(
             """DELETE FROM feed_version WHERE city=$1 AND id NOT IN (
                  SELECT id FROM feed_version WHERE city=$1 ORDER BY fetched_at DESC LIMIT 2)""", city.id)
 
-    log.info("[%s] static ingested v%s · %d routes · %d stops · %d trips · %d shapes (%d→%d pts)",
-             city.id, fv, len(routes), len(stops), len(trips), len(shapes_out), total_in, total_out)
+    log.info("[%s] static ingested v%s · %d routes · %d stops · %d trips · %d shapes, %d canonical (%d→%d pts)",
+             city.id, fv, len(routes), len(stops), len(trips), len(shapes_out), n_canonical, total_in, total_out)
     return {"changed": True, "sha": sha, "feedVersionId": fv, "routes": len(routes), "stops": len(stops),
             "trips": len(trips), "shapes": len(shapes_out), "stopRoutes": len(stop_routes), **meta}
 

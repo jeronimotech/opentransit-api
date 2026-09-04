@@ -38,13 +38,27 @@ async def route_detail(routeId: str, rt: CityRuntime = Depends(city_runtime)):
 
 
 @router.get("/v1/cities/{city}/network")
-async def network(rt: CityRuntime = Depends(city_runtime)):
+async def network(rt: CityRuntime = Depends(city_runtime),
+                  all: bool = Query(False, description="include non-canonical (duplicate/variant) shapes")):
+    """Simplified route geometries for the map. Canonical shapes only by default: exact duplicates and
+    variants >= 90 % covered by another shape of the same route are collapsed (their route ids are listed
+    in `routeIds`). `?all=true` returns every shape with `canonicalId` for debugging."""
     async with pool().acquire() as c:
         fv = await c.fetchval("SELECT id FROM feed_version WHERE city=$1 AND is_active LIMIT 1", rt.city.id)
-        rows = await c.fetch("SELECT shape_id, route_id, component, color, encoded FROM shape_simplified "
-                             "WHERE feed_version_id=$1", fv) if fv else []
-    return JSONResponse(
-        {"feedVersion": str(fv) if fv else None,
-         "shapes": [{"id": r["shape_id"], "routeId": rt.city.scoped(r["route_id"]), "component": r["component"],
-                     "color": r["color"], "geometry": {"encoded": r["encoded"], "precision": 5}} for r in rows]},
-        headers={"Cache-Control": "public, max-age=3600"})
+        rows = await c.fetch(
+            """SELECT shape_id, route_id, component, color, encoded, direction_id, is_canonical,
+                      canonical_shape_id, length_m, represents
+                 FROM shape_simplified WHERE feed_version_id=$1 AND ($2 OR is_canonical)
+                ORDER BY component, route_id""", fv, all) if fv else []
+    shapes = []
+    for r in rows:
+        item = {"id": r["shape_id"], "routeId": rt.city.scoped(r["route_id"]),
+                "routeIds": [rt.city.scoped(x) for x in (r["represents"] or [r["route_id"]]) if x],
+                "component": r["component"], "color": r["color"], "directionId": r["direction_id"],
+                "lengthMeters": r["length_m"], "geometry": {"encoded": r["encoded"], "precision": 5}}
+        if all:
+            item["canonical"] = bool(r["is_canonical"])
+            item["canonicalId"] = r["canonical_shape_id"]
+        shapes.append(item)
+    return JSONResponse({"feedVersion": str(fv) if fv else None, "count": len(shapes), "shapes": shapes},
+                        headers={"Cache-Control": "public, max-age=3600"})
