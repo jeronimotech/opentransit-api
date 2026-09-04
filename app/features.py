@@ -23,10 +23,11 @@ def estimate_fare(city: City, legs: list[dict], locale: str = "es") -> dict | No
     """Flat-fare estimate: first boarding pays `base`; later boardings inside the transfer window pay
     `transfer` (up to `max_transfers` of them), anything else pays `base` again and restarts the window."""
     f = city.fares
-    if f is None:
+    rentals = [lg for lg in legs if lg.get("rental") and (lg["rental"].get("priceEstimate") or {}).get("amount")]
+    if f is None and not rentals:
         return None
     lbl_fare, lbl_transfer = _LABELS.get(locale, _LABELS["es"])
-    transit = [lg for lg in legs if lg.get("transit")]
+    transit = [lg for lg in legs if lg.get("transit")] if f is not None else []
     breakdown: list[dict] = []
     total = 0.0
     window_start: dt.datetime | None = None
@@ -40,12 +41,25 @@ def estimate_fare(city: City, legs: list[dict], locale: str = "es") -> dict | No
         if inside:
             transfers_used += 1
             total += f.transfer
-            breakdown.append({"label": lbl_transfer, "amount": f.transfer, "route": route})
+            breakdown.append({"label": lbl_transfer, "amount": f.transfer, "route": route, "kind": "transit"})
         else:
             window_start, transfers_used = t, 0
             total += f.base
-            breakdown.append({"label": lbl_fare, "amount": f.base, "route": route})
-    return {"amount": _num(total), "currency": f.currency, "estimated": True,
+            breakdown.append({"label": lbl_fare, "amount": f.base, "route": route, "kind": "transit"})
+    # One rental pass per network per itinerary (a day pass covers both the access and the egress ride).
+    charged: set[str] = set()
+    currency = f.currency if f is not None else None
+    for lg in rentals:
+        r = lg["rental"]
+        if r["networkId"] in charged:
+            continue
+        charged.add(r["networkId"])
+        pe = r["priceEstimate"]
+        total += float(pe["amount"])
+        currency = currency or pe.get("currency")
+        breakdown.append({"label": f"{r.get('networkName') or r['networkId']} · {pe.get('label') or 'pase'}",
+                          "amount": pe["amount"], "route": None, "kind": "rental"})
+    return {"amount": _num(total), "currency": currency or "COP", "estimated": True,
             "breakdown": [{**b, "amount": _num(b["amount"])} for b in breakdown]}
 
 

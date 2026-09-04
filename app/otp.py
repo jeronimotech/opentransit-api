@@ -18,14 +18,19 @@ ALERT_FIELDS = """
 """
 ROUTE_FIELDS = "gtfsId shortName longName color textColor mode agency { gtfsId name }"
 STOP_FIELDS = """gtfsId code name lat lon locationType wheelchairBoarding parentStation { gtfsId }"""
-PLACE_FIELDS = """
+RENTAL_STATION_FIELDS = """stationId name lat lon availableVehicles { total } availableSpaces { total } realtime
+  rentalNetwork { networkId } rentalUris { android ios web }"""
+PLACE_FIELDS = f"""
   name lat lon
-  arrival { scheduledTime estimated { time delay } }
-  departure { scheduledTime estimated { time delay } }
-  stop { gtfsId code }
+  arrival {{ scheduledTime estimated {{ time delay }} }}
+  departure {{ scheduledTime estimated {{ time delay }} }}
+  stop {{ gtfsId code }}
+  vehicleRentalStation {{ {RENTAL_STATION_FIELDS} }}
+  rentalVehicle {{ vehicleId name lat lon rentalNetwork {{ networkId }}
+                   vehicleType {{ formFactor propulsionType }} rentalUris {{ android ios web }} }}
 """
 LEG_FIELDS = f"""
-  mode transitLeg duration distance headsign realTime realtimeState
+  mode transitLeg duration distance headsign realTime realtimeState rentedBike
   start {{ scheduledTime estimated {{ time delay }} }}
   end {{ scheduledTime estimated {{ time delay }} }}
   from {{ {PLACE_FIELDS} }}
@@ -132,3 +137,9 @@ class OtpClient:
             return info
         except Exception:  # noqa: BLE001
             return None
+
+RENTAL_STATIONS_QUERY = f"""
+query RentalStations {{
+  vehicleRentalStations {{ {RENTAL_STATION_FIELDS} }}
+}}
+"""

@@ -188,15 +188,79 @@ def _time(lt: dict | None) -> tuple[str | None, str | None, int | None]:
     return lt.get("scheduledTime"), lt.get("scheduledTime"), None
 
 
+def _count(v) -> int | None:
+    """OTP 2.9 counts are objects (`{total, byType}`); older versions returned plain ints."""
+    if isinstance(v, dict):
+        return v.get("total")
+    return v
+
+
+def rental_station_ref(city: City, st: dict | None) -> dict | None:
+    """OTP VehicleRentalStation -> contract RentalStationRef (ids scoped with OUR network id)."""
+    if not st or not st.get("stationId"):
+        return None
+    net = city.bike_network((st.get("rentalNetwork") or {}).get("networkId"))
+    raw = st["stationId"]
+    raw = raw.split(":", 1)[1] if net and raw.startswith(net.network + ":") else raw
+    return {"stationId": f"{net.id}:{raw}" if net else raw, "name": st.get("name"),
+            "lat": st.get("lat"), "lon": st.get("lon"),
+            "vehiclesAvailable": _count(st.get("availableVehicles")),
+            "docksAvailable": _count(st.get("availableSpaces")),
+            "lastReported": None, "_otpNetwork": (st.get("rentalNetwork") or {}).get("networkId"), "_raw": raw}
+
+
 def place_from_otp(city: City, p: dict | None, component: str | None = None) -> dict | None:
     if not p:
         return None
     stop = p.get("stop") or {}
     arr, _, _ = _time(p.get("arrival"))
     dep, _, _ = _time(p.get("departure"))
+    rental = rental_station_ref(city, p.get("vehicleRentalStation"))
     return {"name": p.get("name"), "lat": p.get("lat"), "lon": p.get("lon"),
             "stopId": stop.get("gtfsId"), "stopCode": stop.get("code"),
-            "arrival": arr, "departure": dep, "component": component if stop else None}
+            "arrival": arr, "departure": dep, "component": component if stop else None,
+            "rentalStationId": rental["stationId"] if rental else None}
+
+
+_VEHICLE_TYPE = {("BICYCLE", "ELECTRIC_ASSIST"): "electric_assist", ("BICYCLE", "ELECTRIC"): "electric_assist",
+                 ("SCOOTER", None): "scooter", ("SCOOTER_STANDING", None): "scooter",
+                 ("SCOOTER_SEATED", None): "scooter"}
+
+
+def rental_from_otp(city: City, leg: dict, rental_prices: dict | None = None) -> dict | None:
+    """Rental block for a leg on a shared vehicle: OTP marks these with `rentedBike` and/or rental places."""
+    from_p, to_p = leg.get("from") or {}, leg.get("to") or {}
+    pickup_st, drop_st = from_p.get("vehicleRentalStation"), to_p.get("vehicleRentalStation")
+    vehicle = from_p.get("rentalVehicle") or to_p.get("rentalVehicle")
+    if not (leg.get("rentedBike") or pickup_st or drop_st or vehicle):
+        return None
+    if leg.get("mode") not in ("BICYCLE", "SCOOTER", None):
+        return None
+    otp_net = None
+    for src in (pickup_st, drop_st, vehicle):
+        if src and (src.get("rentalNetwork") or {}).get("networkId"):
+            otp_net = src["rentalNetwork"]["networkId"]
+            break
+    net = city.bike_network(otp_net)
+    vt = (vehicle or {}).get("vehicleType") or {}
+    form, prop = (vt.get("formFactor") or "").upper() or None, (vt.get("propulsionType") or "").upper() or None
+    vtype = _VEHICLE_TYPE.get((form, prop)) or _VEHICLE_TYPE.get((form, None)) \
+        or ("bicycle" if form == "BICYCLE" or leg.get("mode") == "BICYCLE" else None)
+    price = (rental_prices or {}).get(net.id) if net else None
+    return {
+        "networkId": net.id if net else (otp_net or "unknown"),
+        "networkName": net.name if net else otp_net, "color": net.color if net else None,
+        "vehicleType": vtype,
+        "pickup": rental_station_ref(city, pickup_st), "dropoff": rental_station_ref(city, drop_st),
+        "freeFloating": bool(vehicle) and not pickup_st,
+        "priceEstimate": dict(price) if price else None,
+    }
+
+
+def _mode_used(leg: dict) -> str:
+    if leg.get("rental"):
+        return "SCOOTER_RENTAL" if leg["rental"].get("vehicleType") == "scooter" else "BICYCLE_RENTAL"
+    return leg.get("mode") or "WALK"
 
 
 def _instruction(step: dict, locale: str) -> str:
@@ -206,7 +270,7 @@ def _instruction(step: dict, locale: str) -> str:
     return f"{verb} {street}"
 
 
-def leg_from_otp(city: City, leg: dict, locale: str = "es") -> dict:
+def leg_from_otp(city: City, leg: dict, locale: str = "es", rental_prices: dict | None = None) -> dict:
     start, _, start_delay = _time(leg.get("start"))
     end, _, end_delay = _time(leg.get("end"))
     route = route_ref(city, leg.get("route"))
@@ -239,12 +303,19 @@ def leg_from_otp(city: City, leg: dict, locale: str = "es") -> dict:
              "absoluteDirection": s.get("absoluteDirection"), "streetName": s.get("streetName")}
             for s in (leg.get("steps") or []) if s],
         "alerts": [alert_from_otp(city, a) for a in (leg.get("alerts") or []) if a],
+        "rental": rental_from_otp(city, leg, rental_prices),
     }
 
 
-def itinerary_from_otp(city: City, it: dict, idx: int, locale: str = "es") -> dict:
-    legs = [leg_from_otp(city, leg, locale) for leg in (it.get("legs") or []) if leg]
+def itinerary_from_otp(city: City, it: dict, idx: int, locale: str = "es",
+                       rental_prices: dict | None = None) -> dict:
+    legs = [leg_from_otp(city, leg, locale, rental_prices) for leg in (it.get("legs") or []) if leg]
     score = it.get("accessibilityScore")
+    modes_used: list[str] = []
+    for lg in legs:
+        m = _mode_used(lg)
+        if m not in modes_used:
+            modes_used.append(m)
     return {
         "id": f"it-{idx}", "startTime": it.get("start"), "endTime": it.get("end"),
         "durationSeconds": int(it.get("duration") or 0),
@@ -254,14 +325,17 @@ def itinerary_from_otp(city: City, it: dict, idx: int, locale: str = "es") -> di
         # No supported city publishes GTFS fares: this is a flat-fare *estimate* from city.fares (or null).
         "fare": estimate_fare(city, legs, locale),
         "accessible": None if score is None else score >= 0.99,
+        "rentalLegs": sum(1 for lg in legs if lg.get("rental")),
+        "modesUsed": modes_used,
         "legs": legs,
     }
 
 
 def plan_from_otp(city: City, data: dict, origin: dict, destination: dict, version: str | None,
-                  locale: str = "es") -> dict:
+                  locale: str = "es", rental_prices: dict | None = None) -> dict:
     conn = data.get("planConnection") or {}
-    its = [itinerary_from_otp(city, e["node"], i, locale) for i, e in enumerate(conn.get("edges") or []) if e]
+    its = [itinerary_from_otp(city, e["node"], i, locale, rental_prices)
+           for i, e in enumerate(conn.get("edges") or []) if e]
     warnings = [f"{err.get('code')}: {err.get('description')}" for err in (conn.get("routingErrors") or [])]
     if not its and not warnings:
         warnings.append("NO_ITINERARIES: no itineraries found for this search")
@@ -286,3 +360,24 @@ def departure_from_otp(city: City, st: dict) -> dict:
         "canceled": st.get("realtimeState") == "CANCELED", "vehicleId": None,
         "stopSequence": st.get("stopPositionInPattern"),
     }
+
+
+def enrich_rental(plan: dict, lookup) -> dict:
+    """Fill pickup/drop-off availability from the API's own GBFS cache (fresher than OTP's copy) and strip
+    the private helper keys. `lookup(otp_network, raw_station_id) -> public station dict | None`."""
+    for it in plan.get("itineraries", []):
+        for leg in it.get("legs", []):
+            r = leg.get("rental")
+            if not r:
+                continue
+            for key in ("pickup", "dropoff"):
+                ref = r.get(key)
+                if not ref:
+                    continue
+                live = lookup(ref.pop("_otpNetwork", None), ref.pop("_raw", None))
+                if live:
+                    ref["name"] = live.get("name") or ref.get("name")
+                    ref["vehiclesAvailable"] = live.get("vehiclesAvailable")
+                    ref["docksAvailable"] = live.get("docksAvailable")
+                    ref["lastReported"] = live.get("lastReported")
+    return plan

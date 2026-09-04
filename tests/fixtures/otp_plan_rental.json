@@ -1,0 +1,421 @@
+{
+ "planConnection": {
+  "searchDateTime": "2026-09-04T16:53:09-05:00",
+  "routingErrors": [],
+  "edges": [
+   {
+    "node": {
+     "start": "2026-09-04T16:53:09-05:00",
+     "end": "2026-09-04T17:06:49-05:00",
+     "duration": 820,
+     "numberOfTransfers": 0,
+     "walkDistance": 358.03,
+     "walkTime": 353,
+     "waitingTime": 0,
+     "accessibilityScore": null,
+     "legs": [
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 175.0,
+       "distance": 139.38,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-04T16:53:09-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-04T16:56:04-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Origin",
+        "lat": 4.6766,
+        "lon": -74.0483,
+        "arrival": {
+         "scheduledTime": "2026-09-04T16:53:09-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-04T16:53:09-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "120 - Parque de la 93",
+        "lat": 4.6774713,
+        "lon": -74.0488457,
+        "arrival": {
+         "scheduledTime": "2026-09-04T16:56:04-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-04T16:56:04-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": {
+         "stationId": "tembici_bogota:120",
+         "name": "120 - Parque de la 93",
+         "lat": 4.6774713,
+         "lon": -74.0488457,
+         "availableVehicles": {
+          "total": 18
+         },
+         "availableSpaces": {
+          "total": 4
+         },
+         "realtime": true,
+         "rentalNetwork": {
+          "networkId": "tembici_bogota"
+         },
+         "rentalUris": {
+          "android": null,
+          "ios": null,
+          "web": null
+         }
+        },
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "{kp[dq}bMGEi@Ss@`Bu@NQDDB",
+        "length": 7
+       },
+       "intermediateStops": null,
+       "steps": [
+        {
+         "distance": 135.61,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "NORTHEAST",
+         "streetName": "path",
+         "lat": 4.6766209,
+         "lon": -74.0483411
+        },
+        {
+         "distance": 3.78,
+         "relativeDirection": "HARD_LEFT",
+         "absoluteDirection": "SOUTHWEST",
+         "streetName": "sidewalk",
+         "lat": 4.6774956,
+         "lon": -74.0488193
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "BICYCLE",
+       "transitLeg": false,
+       "duration": 467.0,
+       "distance": 1260.81,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": true,
+       "start": {
+        "scheduledTime": "2026-09-04T16:56:04-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-04T17:03:51-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "120 - Parque de la 93",
+        "lat": 4.6774713,
+        "lon": -74.0488457,
+        "arrival": {
+         "scheduledTime": "2026-09-04T16:56:04-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-04T16:56:04-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": {
+         "stationId": "tembici_bogota:120",
+         "name": "120 - Parque de la 93",
+         "lat": 4.6774713,
+         "lon": -74.0488457,
+         "availableVehicles": {
+          "total": 18
+         },
+         "availableSpaces": {
+          "total": 4
+         },
+         "realtime": true,
+         "rentalNetwork": {
+          "networkId": "tembici_bogota"
+         },
+         "rentalUris": {
+          "android": null,
+          "ios": null,
+          "web": null
+         }
+        },
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "196 - CL 98 con TV 17",
+        "lat": 4.6846376,
+        "lon": -74.0504141,
+        "arrival": {
+         "scheduledTime": "2026-09-04T17:03:51-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-04T17:03:51-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": {
+         "stationId": "tembici_bogota:196",
+         "name": "196 - CL 98 con TV 17",
+         "lat": 4.6846376,
+         "lon": -74.0504141,
+         "availableVehicles": {
+          "total": 5
+         },
+         "availableSpaces": {
+          "total": 5
+         },
+         "realtime": true,
+         "rentalNetwork": {
+          "networkId": "tembici_bogota"
+         },
+         "rentalUris": {
+          "android": null,
+          "ios": null,
+          "web": null
+         }
+        },
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "cqp[ft}bMECCACDmAi@m@WMGGCMEMGGCECw@[eAc@_Bo@[MOGkAtC_A`CaAvBIPCFmCiAe@SeAc@UIAAk@W}Aq@OGGLk@vAQb@EJ{Ao@KFC@DLLX?@@?@?@?@?@C@A?AAA?AKMGEK?I@I@UFOFMHMLKLGJCDAD?D@FBBB@D@B?DABC@E?CACACCCCAE?C?@DCXCRALMvA",
+        "length": 83
+       },
+       "intermediateStops": null,
+       "steps": [
+        {
+         "distance": 6.61,
+         "relativeDirection": "HARD_LEFT",
+         "absoluteDirection": "NORTHEAST",
+         "streetName": "sidewalk",
+         "lat": 4.6774658,
+         "lon": -74.0488358
+        },
+        {
+         "distance": 2.92,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "NORTHWEST",
+         "streetName": "Calle 93B",
+         "lat": 4.6775186,
+         "lon": -74.0488083
+        },
+        {
+         "distance": 283.31,
+         "relativeDirection": "RIGHT",
+         "absoluteDirection": "NORTHEAST",
+         "streetName": "Carrera 13",
+         "lat": 4.677531,
+         "lon": -74.0488315
+        },
+        {
+         "distance": 265.62,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "NORTHWEST",
+         "streetName": "Calle 95",
+         "lat": 4.6798003,
+         "lon": -74.0476696
+        },
+        {
+         "distance": 268.29,
+         "relativeDirection": "RIGHT",
+         "absoluteDirection": "NORTHEAST",
+         "streetName": "Avenida Carrera 15",
+         "lat": 4.680905,
+         "lon": -74.0497939
+        },
+        {
+         "distance": 92.9,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "NORTHWEST",
+         "streetName": "Calle 98",
+         "lat": 4.683045,
+         "lon": -74.0486758
+        },
+        {
+         "distance": 57.06,
+         "relativeDirection": "RIGHT",
+         "absoluteDirection": "NORTHEAST",
+         "streetName": "Carrera 16",
+         "lat": 4.6834267,
+         "lon": -74.0494214
+        },
+        {
+         "distance": 11.22,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "NORTHWEST",
+         "streetName": "path",
+         "lat": 4.6838818,
+         "lon": -74.0491835
+        },
+        {
+         "distance": 181.87,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "SOUTHWEST",
+         "streetName": "bike path",
+         "lat": 4.6839689,
+         "lon": -74.0492346
+        },
+        {
+         "distance": 34.77,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "NORTH",
+         "streetName": "path",
+         "lat": 4.684432,
+         "lon": -74.0496548
+        },
+        {
+         "distance": 56.27,
+         "relativeDirection": "CONTINUE",
+         "absoluteDirection": "WEST",
+         "streetName": "Calle 98",
+         "lat": 4.6845153,
+         "lon": -74.0499195
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 178.0,
+       "distance": 218.65,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-04T17:03:51-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-04T17:06:49-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "196 - CL 98 con TV 17",
+        "lat": 4.6846376,
+        "lon": -74.0504141,
+        "arrival": {
+         "scheduledTime": "2026-09-04T17:03:51-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-04T17:03:51-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": {
+         "stationId": "tembici_bogota:196",
+         "name": "196 - CL 98 con TV 17",
+         "lat": 4.6846376,
+         "lon": -74.0504141,
+         "availableVehicles": {
+          "total": 5
+         },
+         "availableSpaces": {
+          "total": 5
+         },
+         "realtime": true,
+         "rentalNetwork": {
+          "networkId": "tembici_bogota"
+         },
+         "rentalUris": {
+          "android": null,
+          "ios": null,
+          "web": null
+         }
+        },
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Destination",
+        "lat": 4.6841,
+        "lon": -74.0517,
+        "arrival": {
+         "scheduledTime": "2026-09-04T17:06:49-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-04T17:06:49-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "u}q[d~}bMIx@VBP@OnBGx@d@BCZH@j@D",
+        "length": 10
+       },
+       "intermediateStops": null,
+       "steps": [
+        {
+         "distance": 32.85,
+         "relativeDirection": "CONTINUE",
+         "absoluteDirection": "WEST",
+         "streetName": "Calle 98",
+         "lat": 4.6845952,
+         "lon": -74.0504209
+        },
+        {
+         "distance": 23.2,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "SOUTH",
+         "streetName": "Transversal 17A",
+         "lat": 4.6846419,
+         "lon": -74.0507136
+        },
+        {
+         "distance": 137.57,
+         "relativeDirection": "RIGHT",
+         "absoluteDirection": "WEST",
+         "streetName": "path",
+         "lat": 4.684435,
+         "lon": -74.0507403
+        },
+        {
+         "distance": 25.03,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "SOUTH",
+         "streetName": "Transversal 18A",
+         "lat": 4.6843372,
+         "lon": -74.0517628
+        }
+       ],
+       "alerts": []
+      }
+     ]
+    }
+   }
+  ]
+ }
+}

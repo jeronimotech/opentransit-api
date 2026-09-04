@@ -7,13 +7,14 @@ from fastapi import APIRouter, Depends, Query
 from ..errors import ApiError
 from ..geocode import reverse
 from ..models import PlanResponse
-from ..normalize import apply_endpoint_names, plan_from_otp
+from ..normalize import apply_endpoint_names, enrich_rental, plan_from_otp
 from ..otp import PLAN_QUERY
 from ..runtime import CityRuntime, city_runtime
 
 router = APIRouter(tags=["planning"])
 
 STREET = {"WALK", "BICYCLE", "CAR", "SCOOTER"}
+RENTAL = {"BIKE_RENTAL": "BICYCLE_RENTAL", "BICYCLE_RENTAL": "BICYCLE_RENTAL", "SCOOTER_RENTAL": "SCOOTER_RENTAL"}
 TRANSIT = {"BUS", "RAIL", "SUBWAY", "TRAM", "CABLE_CAR", "FERRY", "GONDOLA", "FUNICULAR", "TROLLEYBUS", "MONORAIL"}
 
 
@@ -32,6 +33,9 @@ def parse_modes(raw: str | None, city_transit: list[str]) -> tuple[list[str], li
         elif tok in STREET:
             if tok not in street:
                 street.append(tok)
+        elif tok in RENTAL:
+            if RENTAL[tok] not in street:
+                street.append(RENTAL[tok])
         else:
             raise ApiError(f"unknown mode '{tok}'")
     if not street:
@@ -43,14 +47,17 @@ def build_variables(*, from_lat: float, from_lon: float, to_lat: float, to_lon: 
                     arrive_by: bool, transit: list[str], street: list[str], wheelchair: bool,
                     num: int, locale: str, walk_reluctance: float | None) -> dict:
     modes: dict = {}
+    rental = [m for m in street if m in ("BICYCLE_RENTAL", "SCOOTER_RENTAL")]
+    direct = [m for m in street if m in ("WALK", "BICYCLE", "CAR")] + rental
     if transit:
         # Access/egress stay on foot: feeds rarely declare bikes_allowed, and OTP then finds nothing.
         # A requested BICYCLE is offered as a direct (bike-only) alternative next to the transit options.
+        # Shared vehicles (GBFS) are allowed as access/egress AND as a direct alternative.
         modes["transit"] = {"transit": [{"mode": m} for m in transit],
-                            "access": ["WALK"], "egress": ["WALK"], "transfer": ["WALK"]}
-        modes["direct"] = [m for m in street if m in ("WALK", "BICYCLE", "CAR")]
+                            "access": ["WALK", *rental], "egress": ["WALK", *rental], "transfer": ["WALK"]}
+        modes["direct"] = direct
     else:
-        modes["direct"] = [m for m in street if m in ("WALK", "BICYCLE", "CAR")] or ["WALK"]
+        modes["direct"] = direct or ["WALK"]
         modes["directOnly"] = True
     prefs: dict = {"accessibility": {"wheelchair": {"enabled": wheelchair}}}
     if walk_reluctance is not None:
@@ -70,7 +77,8 @@ async def plan(
     toLat: float = Query(..., ge=-90, le=90), toLon: float = Query(..., ge=-180, le=180),
     time: str | None = Query(None, description="ISO-8601; default now in the city's timezone"),
     arriveBy: bool = False,
-    modes: str | None = Query(None, description="comma list: TRANSIT,WALK,BUS,RAIL,SUBWAY,TRAM,CABLE_CAR,BICYCLE"),
+    modes: str | None = Query(None, description="comma list: TRANSIT,WALK,BUS,RAIL,SUBWAY,TRAM,CABLE_CAR,BICYCLE,"
+                                                "BIKE_RENTAL,SCOOTER_RENTAL"),
     wheelchair: bool = False,
     numItineraries: int = Query(5, ge=1, le=10),
     maxWalkDistance: int = Query(1500, ge=100, le=10000),
@@ -89,6 +97,8 @@ async def plan(
     else:
         when = dt.datetime.now(tz)
     transit, street = parse_modes(modes, city.transit_modes())
+    if any(m.endswith("_RENTAL") for m in street) and not city.mobility.bike_share:
+        raise ApiError(f"shared vehicles are not available in {city.name}", code="MODE_UNAVAILABLE")
     # OTP 2 has no hard walk cap; a longer allowed walk maps to a lower walking reluctance.
     reluctance = max(1.0, min(5.0, 2.0 * 1500 / maxWalkDistance))
     variables = build_variables(from_lat=fromLat, from_lon=fromLon, to_lat=toLat, to_lon=toLon, when=when,
@@ -102,10 +112,11 @@ async def plan(
         _cheap_reverse(city, toLat, toLon, skip=bool(toName)))
     origin = {"name": fromName or rev_from, "lat": fromLat, "lon": fromLon}
     dest = {"name": toName or rev_to, "lat": toLat, "lon": toLon}
-    plan_out = plan_from_otp(city, data, origin, dest, rt.otp.version, locale)
+    plan_out = plan_from_otp(city, data, origin, dest, rt.otp.version, locale, rt.rental_prices())
     for it in plan_out["itineraries"]:
         for leg in it["legs"]:
             rt.with_window(leg.get("route"))
+    enrich_rental(plan_out, rt.rental_lookup)
     return apply_endpoint_names(plan_out, origin["name"], dest["name"])
 
 
