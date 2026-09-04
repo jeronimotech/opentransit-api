@@ -64,9 +64,31 @@ def _stop_routes_from_stop_times(z: zipfile.ZipFile, trip2route: dict[str, str])
     return out
 
 
+async def _unchanged_upstream(city: City, cli: httpx.AsyncClient) -> dict | None:
+    """Cheap HEAD check: skip the ~100 MB download when Last-Modified matches the active version."""
+    try:
+        h = await cli.head(city.feeds.gtfs_static_url, timeout=20)
+        last_mod = h.headers.get("last-modified")
+    except httpx.HTTPError:
+        return None
+    if not last_mod:
+        return None
+    async with pool().acquire() as c:
+        row = await c.fetchrow(
+            """SELECT id FROM feed_version WHERE city=$1 AND is_active
+                  AND last_modified = $2::text::timestamptz
+                  AND EXISTS (SELECT 1 FROM trip WHERE feed_version_id=feed_version.id)
+                  AND EXISTS (SELECT 1 FROM stop WHERE feed_version_id=feed_version.id)""", city.id, last_mod)
+    return {"changed": False, "feedVersionId": row["id"], "lastModified": last_mod} if row else None
+
+
 async def ingest(city: City, force: bool = False) -> dict:
     cfg = settings()
     async with httpx.AsyncClient(timeout=900, follow_redirects=True) as cli:
+        if not force and (skip := await _unchanged_upstream(city, cli)):
+            log.info("[%s] static unchanged upstream (Last-Modified %s), skipping download",
+                     city.id, skip["lastModified"])
+            return skip
         r = await cli.get(city.feeds.gtfs_static_url)
         r.raise_for_status()
         blob = r.content
