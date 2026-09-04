@@ -106,6 +106,32 @@ class Links(BaseModel):
     privacy: str | None = None
 
 
+class BikeShareNetwork(BaseModel):
+    """One shared-vehicle network published as GBFS (v1.2). `network` is the OTP updater network id."""
+    id: str = Field(pattern=r"^[a-z0-9-]+$")
+    name: str
+    network: str
+    gbfs_url: str
+    color: str = "#00A859"
+    url: str | None = None
+    apps: dict[str, str | None] = {}
+    pricing_summary: str | None = None
+    single_trip_price: dict | None = None     # {amount, currency, label}: overrides the GBFS pricing heuristic
+    form_factors: list[str] = ["bicycle"]
+
+    def public(self) -> dict:
+        return {"id": self.id, "name": self.name, "network": self.network, "gbfsUrl": self.gbfs_url,
+                "color": self.color, "url": self.url,
+                "apps": {"ios": self.apps.get("ios"), "android": self.apps.get("android")},
+                "pricingSummary": self.pricing_summary, "singleTripPrice": self.single_trip_price,
+                "formFactors": self.form_factors}
+
+
+class Mobility(BaseModel):
+    """Shared / on-demand mobility attached to the city. Bike-share first; scooters ride the same GBFS."""
+    bike_share: list[BikeShareNetwork] = []
+
+
 class ServiceTile(BaseModel):
     """Hand-off tile to a partner or agency service (recharge, PQRS...). Never a core feature."""
     id: str
@@ -137,6 +163,7 @@ class City(BaseModel):
     config: AppConfig = AppConfig()
     links: Links = Links()
     services: list[ServiceTile] = []
+    mobility: Mobility = Mobility()
     pois_file: str | None = None      # path relative to the cities dir; default cities/<id>/pois.geojson
 
     @field_validator("bbox")
@@ -169,6 +196,13 @@ class City(BaseModel):
         prefix = self.otp.feed_id + ":"
         return scoped_id[len(prefix):] if scoped_id.startswith(prefix) else scoped_id
 
+    def bike_network(self, network_id: str | None):
+        """Our network id (`<id>`) or OTP's updater id (`<network>`) -> BikeShareNetwork."""
+        for n in self.mobility.bike_share:
+            if network_id in (n.id, n.network):
+                return n
+        return None
+
     def transit_modes(self) -> list[str]:
         return [m for m in self.modes if m not in ("WALK", "BICYCLE", "CAR", "SCOOTER")]
 
@@ -197,6 +231,7 @@ class City(BaseModel):
                        "maintenance": self.config.maintenance.model_dump()},
             "links": self.links.model_dump(),
             "services": [s.model_dump() for s in self.services],
+            "mobility": {"bikeShare": [n.public() for n in self.mobility.bike_share]},
             "attribution": self.attribution,
         }
 

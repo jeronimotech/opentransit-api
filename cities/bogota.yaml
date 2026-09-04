@@ -16,7 +16,7 @@ features:
   trip_updates: true
   alerts: true
   fares: false
-  bike_share: false
+  bike_share: true
 attribution: "Datos: TRANSMILENIO S.A. (GTFS) · Mapa: © OpenMapTiles © OpenStreetMap contributors"
 
 feeds:
@@ -83,3 +83,21 @@ services:
   - { id: recharge, label: Recargar tullave, icon: card, url: https://www.tullaveplus.gov.co/, kind: external }
   - { id: pqrs, label: PQRS y reportes, icon: report, url: https://www.transmilenio.gov.co/publicaciones/147212/pqrs, kind: external }
   - { id: support, label: Canales de atención, icon: help, url: https://www.transmilenio.gov.co/publicaciones/149179, kind: external }
+
+# ── v1.2 · shared mobility (GBFS) ───────────────────────────────────────────────
+# Tembici operates Bogotá's public bike system and publishes GBFS 3.0 (verified 2026-09-04: 252 stations).
+# `network` must equal the `network` of the vehicle-rental updater in otp/bogota/router-config.json.
+mobility:
+  bike_share:
+    - id: tembici
+      name: Tembici Bogotá
+      network: tembici_bogota
+      gbfs_url: https://bogota.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json
+      color: "#00A859"
+      url: https://tembici.com.co/
+      apps:
+        ios: https://apps.apple.com/co/app/id1298652619          # "tembici." (App Store CO)
+        android: https://play.google.com/store/search?q=tembici&c=apps
+      pricing_summary: null                                     # derived from system_pricing_plans when null
+      single_trip_price: null                                   # { amount: 4850, currency: COP, label: "1 viaje" } to pin the estimate
+      form_factors: [bicycle, scooter]

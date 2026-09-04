@@ -50,4 +50,6 @@ config:
   maintenance: { active: false, message: null }
 links: { pqrs: null, recharge: null, support: null, privacy: null }
 services: []                     # [{ id, label, icon, url, kind: external|deeplink }]
+mobility:                        # v1.2 shared mobility; each entry is a GBFS feed + the OTP `vehicle-rental` updater network id
+  bike_share: []                 # [{ id, name, network, gbfs_url, color, url, apps: {ios, android}, pricing_summary, single_trip_price: {amount, currency, label}, form_factors }]
 # pois_file: mycity/pois.geojson # default cities/<slug>/pois.geojson (built by scripts/build-pois.sh)

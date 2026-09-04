@@ -16,13 +16,13 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from .cities import AppConfig, City, Fares, Links, Maintenance, MinAppVersion, ServiceTile
+from .cities import AppConfig, BikeShareNetwork, City, Fares, Links, Maintenance, MinAppVersion, Mobility, ServiceTile
 from .db import pool
 from .errors import ApiError
 
 log = logging.getLogger("ot.admin_config")
 
-EDITABLE = ("fares", "config", "links", "services", "branding")
+EDITABLE = ("fares", "config", "links", "services", "branding", "mobility")
 SERVICE_ICONS = ("card", "report", "help", "link", "bike", "parking", "taxi", "ticket", "info", "map")
 
 
@@ -90,6 +90,38 @@ class BrandingCfg(_Strict):
     primaryColor: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
 
 
+class AppLinksCfg(_Strict):
+    ios: str | None = None
+    android: str | None = None
+
+    _v = field_validator("ios", "android")(_https)
+
+
+class SingleTripPriceCfg(_Strict):
+    amount: float = Field(ge=0)
+    currency: str = Field("COP", pattern=r"^[A-Z]{3}$")
+    label: str | None = Field(None, max_length=60)
+
+
+class BikeShareCfg(_Strict):
+    id: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    name: str = Field(min_length=1, max_length=80)
+    network: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,60}$")
+    gbfsUrl: str
+    color: str = Field("#00A859", pattern=r"^#[0-9A-Fa-f]{6}$")
+    url: str | None = None
+    apps: AppLinksCfg = AppLinksCfg()
+    pricingSummary: str | None = Field(None, max_length=160)
+    singleTripPrice: SingleTripPriceCfg | None = None
+    formFactors: list[Literal["bicycle", "scooter", "cargo_bicycle", "moped", "car", "other"]] = ["bicycle"]
+
+    _v = field_validator("gbfsUrl", "url")(_https)
+
+
+class MobilityCfg(_Strict):
+    bikeShare: list[BikeShareCfg] = []
+
+
 class ConfigPatch(BaseModel):
     """PUT body: any subset of the editable sections (JSON null removes that section's override)."""
     model_config = ConfigDict(extra="forbid")
@@ -98,6 +130,7 @@ class ConfigPatch(BaseModel):
     links: dict[str, Any] | None = None
     services: list[dict[str, Any]] | None = None
     branding: dict[str, Any] | None = None
+    mobility: dict[str, Any] | None = None
     note: str | None = Field(None, max_length=300)
     updatedBy: str | None = Field(None, max_length=120)
 
@@ -120,7 +153,7 @@ def yaml_sections(base: City) -> dict:
     """The editable sections of the YAML city in the public camelCase shape."""
     pub = base.public()
     return {"fares": pub["fares"], "config": pub["config"], "links": pub["links"], "services": pub["services"],
-            "branding": {"primaryColor": pub["branding"]["primaryColor"]}}
+            "branding": {"primaryColor": pub["branding"]["primaryColor"]}, "mobility": pub["mobility"]}
 
 
 def _validate(section: str, model: type[BaseModel], value: Any) -> dict:
@@ -140,10 +173,14 @@ def validate_sections(sections: dict) -> dict:
                  "links": _validate("links", LinksCfg, sections.get("links") or {}),
                  "services": [_validate(f"services.{i}", ServiceCfg, s)
                               for i, s in enumerate(sections.get("services") or [])],
-                 "branding": _validate("branding", BrandingCfg, sections.get("branding") or {})}
+                 "branding": _validate("branding", BrandingCfg, sections.get("branding") or {}),
+                 "mobility": _validate("mobility", MobilityCfg, sections.get("mobility") or {})}
     ids = [s["id"] for s in out["services"]]
     if len(ids) != len(set(ids)):
         raise ApiError("services: duplicate service id", status=422)
+    nids = [n["id"] for n in out["mobility"]["bikeShare"]]
+    if len(nids) != len(set(nids)):
+        raise ApiError("mobility.bikeShare: duplicate network id", status=422)
     return out
 
 
@@ -162,6 +199,13 @@ def build_city(base: City, sections: dict) -> City:
     upd["links"] = Links(**sections["links"])
     upd["services"] = [ServiceTile(**s) for s in sections["services"]]
     upd["branding"] = base.branding.model_copy(update={"primary_color": sections["branding"]["primaryColor"]})
+    nets = [BikeShareNetwork(id=n["id"], name=n["name"], network=n["network"], gbfs_url=n["gbfsUrl"],
+                             color=n["color"], url=n.get("url"), apps=n.get("apps") or {},
+                             pricing_summary=n.get("pricingSummary"), single_trip_price=n.get("singleTripPrice"),
+                             form_factors=n.get("formFactors") or [])
+            for n in sections["mobility"]["bikeShare"]]
+    upd["mobility"] = Mobility(bike_share=nets)
+    upd["features"] = base.features.model_copy(update={"bike_share": bool(nets)})
     return base.model_copy(update=upd)
 
 
