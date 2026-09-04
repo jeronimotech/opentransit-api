@@ -83,14 +83,26 @@ def stop_from_otp(city: City, s: dict | None) -> dict | None:
     }
 
 
-def pattern_from_otp(city: City, p: dict) -> dict:
+def clean_headsign(headsign: str | None, route_short_name: str | None) -> str | None:
+    """Bogotá's feed sets trip_headsign to the route's own short name ("G12"), which is
+    useless as a direction. Return None in that case so clients fall back to something
+    meaningful (route long name, last stop of the pattern)."""
+    if not headsign:
+        return None
+    h = headsign.strip()
+    if route_short_name and h.casefold() == route_short_name.strip().casefold():
+        return None
+    return h or None
+
+
+def pattern_from_otp(city: City, p: dict, route_short_name: str | None = None) -> dict:
     """Pattern with a usable headsign (falls back to the last stop) and directionId in {0, 1, None}."""
     stops = [stop_from_otp(city, s) for s in (p.get("stops") or []) if s]
     geom = (p.get("patternGeometry") or {}).get("points")
     d = p.get("directionId")
     return {
         "id": p["code"],
-        "headsign": p.get("headsign") or (stops[-1]["name"] if stops else None),
+        "headsign": clean_headsign(p.get("headsign"), route_short_name) or (stops[-1]["name"] if stops else None),
         "directionId": d if d in (0, 1) else None,
         "geometry": {"encoded": geom, "precision": 5} if geom else None,
         "stops": stops,
@@ -191,7 +203,7 @@ def leg_from_otp(city: City, leg: dict, locale: str = "es") -> dict:
         "durationSeconds": int(leg.get("duration") or 0), "distanceMeters": round(leg.get("distance") or 0, 1),
         "from": place_from_otp(city, leg.get("from"), component),
         "to": place_from_otp(city, leg.get("to"), component),
-        "route": route, "headsign": leg.get("headsign"),
+        "route": route, "headsign": clean_headsign(leg.get("headsign"), (route or {}).get("shortName")),
         "agency": {"id": city.unscoped(agency["gtfsId"]) if agency.get("gtfsId") else None,
                    "name": agency.get("name")} if agency else None,
         "tripId": (leg.get("trip") or {}).get("gtfsId"),
@@ -247,7 +259,8 @@ def departure_from_otp(city: City, st: dict) -> dict:
     from .rt import iso  # local import to avoid a cycle at import time
     return {
         "route": route_ref(city, trip.get("route")) or {"id": "", "mode": "BUS"},
-        "headsign": st.get("headsign") or trip.get("tripHeadsign"),
+        "headsign": clean_headsign(st.get("headsign") or trip.get("tripHeadsign"),
+                                   (trip.get("route") or {}).get("shortName")),
         "tripId": trip.get("gtfsId"),
         "scheduledTime": iso(sched), "realtimeTime": iso(rt_dep) if rt_dep else None,
         "realtime": rt, "delaySeconds": st.get("departureDelay") if rt else None,

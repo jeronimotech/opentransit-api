@@ -32,7 +32,7 @@ async def route_detail(routeId: str, rt: CityRuntime = Depends(city_runtime)):
     if not r:
         raise RouteNotFound(f"route '{routeId}' not found")
     base = route_ref(rt.city, r)
-    patterns = [pattern_from_otp(rt.city, p) for p in (r.get("patterns") or []) if p]
+    patterns = [pattern_from_otp(rt.city, p, r.get("shortName")) for p in (r.get("patterns") or []) if p]
     patterns.sort(key=lambda p: (p["directionId"] if p["directionId"] is not None else 9, -len(p["stops"])))
     return {**base, "patterns": patterns, "alerts": [alert_from_otp(rt.city, a) for a in (r.get("alerts") or []) if a]}
 
