@@ -3,7 +3,7 @@
     "apiProcessingTimeout": "30s"
   },
   "routingDefaults": {
-    "_comment": "Bogot\u00e1 publishes no trip/stop accessibility data (wheelchair_boarding=1 everywhere, no wheelchair_accessible on trips). With OTP's defaults every trip would be excluded in wheelchair mode; unknown is allowed with a cost instead.",
+    "_comment": "Bogotá publishes no trip/stop accessibility data (wheelchair_boarding=1 everywhere, no wheelchair_accessible on trips). With OTP's defaults every trip would be excluded in wheelchair mode; unknown is allowed with a cost instead.",
     "wheelchairAccessibility": {
       "trip": {
         "onlyConsiderAccessible": false,
@@ -52,6 +52,16 @@
         "stop-position",
         "occupancy"
       ]
+    },
+    {
+      "type": "vehicle-rental",
+      "sourceType": "gbfs",
+      "network": "tembici_bogota",
+      "url": "https://bogota.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json",
+      "language": "es",
+      "frequency": "60s",
+      "allowKeepingRentedVehicleAtDestination": false,
+      "geofencingZones": true
     }
   ]
 }

@@ -12,5 +12,6 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check app tests
       - run: pytest -q
+      - run: python scripts/otp-updaters.py bogota --check
       - name: docker build
         run: docker build -t opentransit-api:ci .

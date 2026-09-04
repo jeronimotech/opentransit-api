@@ -33,6 +33,8 @@ case "$CMD" in
     ;;
   serve)
     [ -f "$DATA/graph.obj" ] || { echo "no graph at $DATA/graph.obj — run build first" >&2; exit 1; }
+    # vehicle-rental (GBFS) updaters are generated from cities/<city>.yaml: config only, never hand-edited
+    "$ROOT/.venv/bin/python" "$ROOT/scripts/otp-updaters.py" "$CITY" 2>/dev/null || python3 "$ROOT/scripts/otp-updaters.py" "$CITY"
     cp "$ROOT/otp/$CITY/router-config.json" "$DATA/"
     if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then echo "[otp] already running (pid $(cat "$PIDFILE"))"; exit 0; fi
     nohup "$JAVA" -Xmx"${OTP_HEAP:-6G}" -jar "$JAR" --load --port "$PORT" "$DATA" > "$DATA/otp.log" 2>&1 &
