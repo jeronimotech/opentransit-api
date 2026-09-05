@@ -556,3 +556,20 @@ class Healthz(Out):
 NextBus.model_rebuild()
 NextResponse.model_rebuild()
 Stop.model_rebuild()
+
+
+# ------------------------------------------------------------------ v1.3 white-label city landing
+class LandingStatsOut(Out):
+    routes: int | None = None
+    stops: int | None = None
+    vehicles_live: int | None = None
+    bike_stations: int | None = None
+    alerts_active: int | None = None
+    generated_at: str
+
+
+class LandingResponse(Out):
+    city: dict                       # id, name, country, locale, branding, attribution, links, services, mobility
+    landing: dict                    # effective landing config with fallbacks resolved (see docs/API.md)
+    stats: LandingStatsOut
+    apps: dict                       # {ios, android, web}

@@ -17,7 +17,21 @@ from .gtfs_static import ingest, load_route_index, load_service_index
 from .logging_setup import setup_logging
 from .normalize import set_feed_flags
 from .otp import OtpClient
-from .routers import admin, alerts, board, geocode, health, plan, platform, pois, rental, routes, stops, vehicles
+from .routers import (
+    admin,
+    alerts,
+    board,
+    geocode,
+    health,
+    landing,
+    plan,
+    platform,
+    pois,
+    rental,
+    routes,
+    stops,
+    vehicles,
+)
 from .rt import RTCache, poller_loop
 from .runtime import CityRuntime
 
@@ -116,7 +130,7 @@ def create_app() -> FastAPI:
     app.add_middleware(CORSMiddleware, allow_origins=origins or ["*"], allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
-    for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, admin):
+    for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, landing, admin):
         app.include_router(r.router)
 
     @app.get("/", include_in_schema=False)

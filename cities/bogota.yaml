@@ -101,3 +101,60 @@ mobility:
       pricing_summary: null                                     # derived from system_pricing_plans when null
       single_trip_price: null                                   # { amount: 4850, currency: COP, label: "1 viaje" } to pin the estimate
       form_factors: [bicycle, scooter]
+
+# ── v1.3 · white-label landing page (served by /v1/cities/bogota/landing, editable in the admin panel) ──
+# Screenshots are the web app's own live captures (docs/screenshots on jeronimotech/opentransit-web main).
+landing:
+  enabled: true
+  slug: null                       # null -> /{city}/landing in the web app; a single-city deploy can mount it at "/"
+  locale: es
+  theme: { primary_color: null, accent_color: "#1565C0", logo_url: null, hero_image_url: null, dark_hero: true }
+  hero:
+    title: "Muévete por Bogotá con datos en vivo"
+    subtitle: "Planea tu viaje, ubica tu bus y llega a tiempo. Gratis, sin cuenta y de código abierto."
+    cta_primary: { label: "Abrir la app web", url: null }
+    cta_secondary: { label: "Cómo funciona", url: "#features" }
+  apps: { ios: null, android: null, web: null }   # store URLs when the apps are published
+  highlights:
+    - { icon: route, title: "Viajes multimodales", text: "Troncal, zonal, alimentador, TransMiCable, bici pública y a pie, combinados en un solo itinerario." }
+    - { icon: live,  title: "Buses en vivo",       text: "Miles de buses en el mapa con su posición real cada 15 segundos." }
+    - { icon: board, title: "Ubica tu bus",        text: "Elige tu estación y tu ruta: te decimos cuándo llegan los próximos buses, en vivo o por programación." }
+    - { icon: bike,  title: "Bicis públicas",      text: "Estaciones y bicis disponibles integradas al planeador, con precio estimado." }
+    - { icon: open,  title: "Datos abiertos",      text: "Construido sobre GTFS, GTFS-Realtime y GBFS publicados por la ciudad. Sin cuentas ni rastreadores." }
+  screenshots:
+    - { url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/hub-mobile-live-api.png,       alt: "Mapa en vivo con paradas cercanas", kind: mobile }
+    - { url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/next-mobile-live-api.png,      alt: "Ubica tu bus: próximos buses en tu estación", kind: mobile }
+    - { url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/itinerary-mobile-live-api.png, alt: "Detalle de un itinerario", kind: mobile }
+    - { url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/stop-mobile-live-api.png,      alt: "Tablero de llegadas de una estación", kind: mobile }
+    - { url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/hub-desktop-live-api.png,      alt: "Planeador en escritorio", kind: web }
+    - { url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/live-desktop-live-api.png,     alt: "Flota en vivo en escritorio", kind: web }
+  stats: { show: true, items: [routes, stops, vehiclesLive, bikeStations, alertsActive] }
+  partners:
+    - { name: "TRANSMILENIO S.A.", logo_url: null, url: https://www.transmilenio.gov.co, role: "Datos GTFS y GTFS-Realtime" }
+    - { name: "Tembici Bogotá",    logo_url: null, url: https://tembici.com.co/,          role: "Bicicletas públicas (GBFS)" }
+  open_data:
+    show: true
+    links:
+      - { label: "GTFS estático",            url: https://gtfs.transmilenio.gov.co/GTFS.zip }
+      - { label: "GTFS-RT · posiciones",     url: https://gtfs.transmilenio.gov.co/positions.pb }
+      - { label: "GTFS-RT · llegadas",       url: https://gtfs.transmilenio.gov.co/tripupdates.pb }
+      - { label: "GTFS-RT · alertas",        url: https://gtfs.transmilenio.gov.co/alerts.pb }
+      - { label: "GBFS · bicicletas públicas", url: https://bogota.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json }
+  faq:
+    - { q: "¿Necesito crear una cuenta?", a: "No. La app funciona sin registro, sin ubicación obligatoria y sin publicidad. Tus favoritos se guardan solo en tu dispositivo." }
+    - { q: "¿De dónde salen los tiempos de llegada?", a: "De los datos GTFS-Realtime que publica TRANSMILENIO S.A. Cuando no hay dato en vivo, mostramos el horario programado y lo decimos claramente." }
+    - { q: "¿La tarifa que muestra es exacta?", a: "Es una estimación calculada con la tarifa vigente y las reglas de transbordo. El valor definitivo lo define el sistema de recaudo." }
+    - { q: "¿Puedo usar el código para mi ciudad?", a: "Sí. Todo el proyecto es de código abierto (MIT). Cualquier ciudad con GTFS puede desplegarlo y configurarlo sin escribir código." }
+  contact:
+    email: null
+    url: https://www.transmilenio.gov.co/publicaciones/149179
+    social: { x: null, instagram: null, facebook: null, youtube: null, github: https://github.com/jeronimotech }
+  footer:
+    legal_name: null
+    privacy_url: null              # null -> links.privacy
+    terms_url: null
+    attribution: null              # null -> attribution above
+  seo:
+    title: "Bogotá en vivo · planeador de transporte público"
+    description: "Planea viajes multimodales en Bogotá con buses en vivo, tablero de llegadas y bicis públicas. Gratis y de código abierto."
+    og_image_url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/hub-desktop-live-api.png

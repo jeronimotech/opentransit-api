@@ -1,10 +1,10 @@
-# opentransit-api — API contract (v1.1)
+# opentransit-api — API contract (v1.3)
 
 > Source of truth for the web and mobile apps. Deviations from the original shared contract are listed at the end.
 > Interactive docs: `GET /docs` (OpenAPI) on the running service.
 
 Open-source, multi-tenant (one tenant = one city), multimodal trip planner.
-Three independent repos under `/Users/luisjavier/dev/projects/open-public-tp/`:
+Three independent repos (sibling folders in a local workspace, separate git repositories on GitHub under `jeronimotech/`):
 
 | repo | stack | port (dev) |
 |---|---|---|
@@ -134,7 +134,7 @@ Alert { "id": "...", "cause": "UNKNOWN_CAUSE"|..., "effect": "DETOUR"|..., "seve
 
 ### Admin configuration (v1.1.1) — editable at runtime, no redeploy
 The city YAML stays the base. Admins can override these sections only: `fares`, `config` (vehiclePollSeconds, departuresRefreshSeconds, features, minAppVersion, maintenance), `links`, `services`, `branding.primaryColor`. The override is stored in Postgres (`city_config_override` + `city_config_history`), deep-merged over the YAML, validated strictly, and swapped into memory, so `/v1/cities/{city}` and the `/plan` fare estimate reflect it immediately. Public city endpoints are served with `Cache-Control: public, max-age=60`, so cached clients see changes within a minute.
-- `GET /v1/admin/cities/{city}/config` → `{ "effective": City, "override": {...}|null, "yaml": {fares, config, links, services, branding}, "revision": n, "updatedAt": "...", "updatedBy": "...", "editable": ["fares","config","links","services","branding"] }`
+- `GET /v1/admin/cities/{city}/config` → `{ "effective": City, "override": {...}|null, "yaml": {fares, config, links, services, branding, mobility, landing}, "revision": n, "updatedAt": "...", "updatedBy": "...", "editable": ["fares","config","links","services","branding","mobility","landing"] }`
 - `PUT /v1/admin/cities/{city}/config` body `{ "fares"?: {...}, "config"?: {...}, "links"?: {...}, "services"?: [...], "branding"?: {"primaryColor"}, "note"?: string, "updatedBy"?: string }` → partial deep-merge into the override (dicts merge, lists replace, a JSON `null` for a section or key removes that override so the YAML applies again). Validation runs on the *effective* result before anything is saved; errors use the standard envelope with the field path, e.g. `fares.maxTransfers: Input should be less than or equal to 5`. Rules: fares `currency` = 3 uppercase letters, `base`/`transfer` ≥ 0, `transferWindowMinutes` 0..600, `maxTransfers` 0..5, `note` ≤ 300; config poll/refresh seconds 5..120, `minAppVersion` semver `x.y.z`, `maintenance.message` ≤ 500; links https or null; services `id` slug, `label` ≤ 60, `icon` ∈ card|report|help|link|bike|parking|taxi|ticket|info|map, `url` https, `kind` external|internal|deeplink, unique ids; branding `primaryColor` `#RRGGBB`. Unknown sections (e.g. `feeds`) are rejected. Returns the GET shape; writes a history row.
 - `DELETE /v1/admin/cities/{city}/config?updatedBy=` → clears the override (history row with note `reset`).
 - `GET /v1/admin/cities/{city}/config/history?limit=20` → `{ "items": [ {"revision", "changedAt", "changedBy", "note", "data"} ] }` newest first.
@@ -292,6 +292,24 @@ still needs `scripts/otp-updaters.py <city>` + an OTP restart (documented in the
 `scripts/otp-updaters.py <city>` generates one `vehicle-rental` (GBFS) updater per configured network into
 `otp/<city>/router-config.json` (`network` = YAML `network`, url = `gbfs_url`); `scripts/otp-native.sh serve`
 runs it automatically. `--check` fails when the file is stale (used by CI).
+
+## v1.3 additions (implemented 2026-09-04) — white-label city landing page
+
+Each tenant can publish a public landing page presenting **its** app without code changes. The content is a new
+admin-editable section `landing` of the city config (same override/merge/validation/history mechanism as fares);
+the API also resolves the documented fallbacks and adds live stats so the web app renders the page from one call.
+
+### City config: `landing` (YAML snake_case; API camelCase)
+`enabled`, `slug`, `locale`, `theme {primaryColor, accentColor, logoUrl, heroImageUrl, darkHero}`, `hero {title, subtitle, ctaPrimary {label, url}, ctaSecondary}`, `apps {ios, android, web}`, `highlights[] {icon, title, text}`, `screenshots[] {url, alt, kind: mobile|web}`, `stats {show, items[]}`, `partners[] {name, logoUrl, url, role}`, `openData {show, links[] {label, url}}`, `faq[] {q, a}`, `contact {email, url, social {x, instagram, facebook, youtube, github}}`, `footer {legalName, privacyUrl, termsUrl, attribution}`, `seo {title, description, ogImageUrl}`.
+
+Validation (admin PUT, strict, unknown keys rejected): every URL `https://` or null (CTA urls may also be `#anchor` or `/path`); colours `#RRGGBB`; ≤ 8 highlights, ≤ 8 screenshots, ≤ 12 partners, ≤ 12 open-data links, ≤ 12 FAQ; `hero.title` ≤ 80, `hero.subtitle` ≤ 200, CTA label ≤ 40, highlight title ≤ 60 / text ≤ 160, FAQ `q` ≤ 160 / `a` ≤ 600, `seo.title` ≤ 70 / `description` ≤ 160, `footer.attribution` ≤ 300; `highlights[].icon` ∈ `route|live|board|bike|open|alert|accessibility|favorites|offline|map|ticket|info`; `stats.items` ⊂ `routes|stops|vehiclesLive|bikeStations|alertsActive`; `contact.email` must look like an email.
+
+Fallbacks resolved by the API (stored config keeps the nulls): `theme.primaryColor`/`logoUrl` ← `branding`; `locale` ← city locale; `openData.links` (when empty) ← the GTFS static URL, the configured GTFS-RT feeds and every bike-share GBFS URL; `footer.attribution` ← city attribution; `footer.privacyUrl` ← `links.privacy`. `hero.ctaPrimary.url = null` means "the web app's `/{city}`" (resolved by the client).
+
+### Endpoint
+- `GET /v1/cities/{city}/landing` → `{ "city": {id, name, country, locale, branding, attribution, links, services, mobility: {bikeShare: [{id, name, color, url}]}}, "landing": <effective landing with fallbacks>, "stats": {"routes", "stops", "vehiclesLive", "bikeStations", "alertsActive", "generatedAt"}, "apps": {ios, android, web} }`.
+  Public, `Cache-Control: public, max-age=300`; stats are computed at most once per minute (routes/stops from the active feed, vehiclesLive from the RT frame — `0` when the realtime layer is stale — alertsActive from active alerts, bikeStations from the GBFS caches). `404 LANDING_DISABLED` when `landing.enabled` is false.
+- Admin: `PUT /v1/admin/cities/{city}/config` accepts `"landing": {...}` (partial deep-merge; `null` resets a key to the YAML). Bogotá ships a full Spanish landing in `cities/bogota.yaml`.
 
 ## Implementation notes & deviations (what this repo actually does)
 

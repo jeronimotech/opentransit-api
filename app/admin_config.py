@@ -2,7 +2,8 @@
 Admin-editable city configuration.
 
 The city YAML is the base. Admins may override a few sections (fares, client config, links, services,
-primary colour) through `/v1/admin/cities/{city}/config`; the override is persisted, deep-merged on top
+primary colour, mobility networks and the white-label landing page) through
+`/v1/admin/cities/{city}/config`; the override is persisted, deep-merged on top
 of the YAML, validated strictly, and swapped into the city runtime so `/v1/cities/{city}` and fare
 estimation reflect it immediately. Everything else in the YAML (feeds, OTP, agencies...) is not editable.
 """
@@ -16,14 +17,27 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from .cities import AppConfig, BikeShareNetwork, City, Fares, Links, Maintenance, MinAppVersion, Mobility, ServiceTile
+from .cities import (
+    AppConfig,
+    BikeShareNetwork,
+    City,
+    Fares,
+    Landing,
+    Links,
+    Maintenance,
+    MinAppVersion,
+    Mobility,
+    ServiceTile,
+)
 from .db import pool
 from .errors import ApiError
 
 log = logging.getLogger("ot.admin_config")
 
-EDITABLE = ("fares", "config", "links", "services", "branding", "mobility")
+EDITABLE = ("fares", "config", "links", "services", "branding", "mobility", "landing")
 SERVICE_ICONS = ("card", "report", "help", "link", "bike", "parking", "taxi", "ticket", "info", "map")
+LANDING_ICONS = ("route", "live", "board", "bike", "open", "alert", "accessibility", "favorites", "offline", "map",
+                 "ticket", "info")
 
 
 # ------------------------------------------------------------------ strict validation (camelCase, public shape)
@@ -122,6 +136,144 @@ class MobilityCfg(_Strict):
     bikeShare: list[BikeShareCfg] = []
 
 
+# ---- landing (v1.3): every URL https (or null); CTA urls may also be "#anchor" / "/path"; sizes bounded
+def _https_or_local(v: str | None) -> str | None:
+    if v is None or v.startswith("#") or v.startswith("/"):
+        return v
+    return _https(v)
+
+
+class LandingCtaCfg(_Strict):
+    label: str = Field(min_length=1, max_length=40)
+    url: str | None = None
+
+    _v = field_validator("url")(_https_or_local)
+
+
+class LandingHeroCfg(_Strict):
+    title: str = Field("", max_length=80)
+    subtitle: str = Field("", max_length=200)
+    ctaPrimary: LandingCtaCfg = LandingCtaCfg(label="Abrir la app")
+    ctaSecondary: LandingCtaCfg | None = None
+
+
+class LandingThemeCfg(_Strict):
+    primaryColor: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    accentColor: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    logoUrl: str | None = None
+    heroImageUrl: str | None = None
+    darkHero: bool = True
+
+    _v = field_validator("logoUrl", "heroImageUrl")(_https)
+
+
+class LandingAppsCfg(_Strict):
+    ios: str | None = None
+    android: str | None = None
+    web: str | None = None
+
+    _v = field_validator("ios", "android", "web")(_https)
+
+
+class LandingHighlightCfg(_Strict):
+    icon: Literal[LANDING_ICONS] = "info"  # type: ignore[valid-type]
+    title: str = Field(min_length=1, max_length=60)
+    text: str = Field("", max_length=160)
+
+
+class LandingScreenshotCfg(_Strict):
+    url: str
+    alt: str = Field("", max_length=120)
+    kind: Literal["mobile", "web"] = "mobile"
+
+    _v = field_validator("url")(_https)
+
+
+class LandingStatsCfg(_Strict):
+    show: bool = True
+    items: list[Literal["routes", "stops", "vehiclesLive", "bikeStations", "alertsActive"]] = \
+        ["routes", "stops", "vehiclesLive", "bikeStations", "alertsActive"]
+
+
+class LandingPartnerCfg(_Strict):
+    name: str = Field(min_length=1, max_length=80)
+    logoUrl: str | None = None
+    url: str | None = None
+    role: str | None = Field(None, max_length=80)
+
+    _v = field_validator("logoUrl", "url")(_https)
+
+
+class LandingLinkCfg(_Strict):
+    label: str = Field(min_length=1, max_length=60)
+    url: str
+
+    _v = field_validator("url")(_https)
+
+
+class LandingOpenDataCfg(_Strict):
+    show: bool = True
+    links: list[LandingLinkCfg] = Field([], max_length=12)
+
+
+class LandingFaqCfg(_Strict):
+    q: str = Field(min_length=1, max_length=160)
+    a: str = Field(min_length=1, max_length=600)
+
+
+class LandingSocialCfg(_Strict):
+    x: str | None = None
+    instagram: str | None = None
+    facebook: str | None = None
+    youtube: str | None = None
+    github: str | None = None
+
+    _v = field_validator("x", "instagram", "facebook", "youtube", "github")(_https)
+
+
+class LandingContactCfg(_Strict):
+    email: str | None = Field(None, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    url: str | None = None
+    social: LandingSocialCfg = LandingSocialCfg()
+
+    _v = field_validator("url")(_https)
+
+
+class LandingFooterCfg(_Strict):
+    legalName: str | None = Field(None, max_length=120)
+    privacyUrl: str | None = None
+    termsUrl: str | None = None
+    attribution: str | None = Field(None, max_length=300)
+
+    _v = field_validator("privacyUrl", "termsUrl")(_https)
+
+
+class LandingSeoCfg(_Strict):
+    title: str | None = Field(None, max_length=70)
+    description: str | None = Field(None, max_length=160)
+    ogImageUrl: str | None = None
+
+    _v = field_validator("ogImageUrl")(_https)
+
+
+class LandingCfg(_Strict):
+    enabled: bool = False
+    slug: str | None = Field(None, pattern=r"^[a-z0-9-]{1,40}$")
+    locale: str | None = Field(None, pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
+    theme: LandingThemeCfg = LandingThemeCfg()
+    hero: LandingHeroCfg = LandingHeroCfg()
+    apps: LandingAppsCfg = LandingAppsCfg()
+    highlights: list[LandingHighlightCfg] = Field([], max_length=8)
+    screenshots: list[LandingScreenshotCfg] = Field([], max_length=8)
+    stats: LandingStatsCfg = LandingStatsCfg()
+    partners: list[LandingPartnerCfg] = Field([], max_length=12)
+    openData: LandingOpenDataCfg = LandingOpenDataCfg()
+    faq: list[LandingFaqCfg] = Field([], max_length=12)
+    contact: LandingContactCfg = LandingContactCfg()
+    footer: LandingFooterCfg = LandingFooterCfg()
+    seo: LandingSeoCfg = LandingSeoCfg()
+
+
 class ConfigPatch(BaseModel):
     """PUT body: any subset of the editable sections (JSON null removes that section's override)."""
     model_config = ConfigDict(extra="forbid")
@@ -131,6 +283,7 @@ class ConfigPatch(BaseModel):
     services: list[dict[str, Any]] | None = None
     branding: dict[str, Any] | None = None
     mobility: dict[str, Any] | None = None
+    landing: dict[str, Any] | None = None
     note: str | None = Field(None, max_length=300)
     updatedBy: str | None = Field(None, max_length=120)
 
@@ -153,7 +306,8 @@ def yaml_sections(base: City) -> dict:
     """The editable sections of the YAML city in the public camelCase shape."""
     pub = base.public()
     return {"fares": pub["fares"], "config": pub["config"], "links": pub["links"], "services": pub["services"],
-            "branding": {"primaryColor": pub["branding"]["primaryColor"]}, "mobility": pub["mobility"]}
+            "branding": {"primaryColor": pub["branding"]["primaryColor"]}, "mobility": pub["mobility"],
+            "landing": base.landing.public()}
 
 
 def _validate(section: str, model: type[BaseModel], value: Any) -> dict:
@@ -174,7 +328,8 @@ def validate_sections(sections: dict) -> dict:
                  "services": [_validate(f"services.{i}", ServiceCfg, s)
                               for i, s in enumerate(sections.get("services") or [])],
                  "branding": _validate("branding", BrandingCfg, sections.get("branding") or {}),
-                 "mobility": _validate("mobility", MobilityCfg, sections.get("mobility") or {})}
+                 "mobility": _validate("mobility", MobilityCfg, sections.get("mobility") or {}),
+                 "landing": _validate("landing", LandingCfg, sections.get("landing") or {})}
     ids = [s["id"] for s in out["services"]]
     if len(ids) != len(set(ids)):
         raise ApiError("services: duplicate service id", status=422)
@@ -206,6 +361,7 @@ def build_city(base: City, sections: dict) -> City:
             for n in sections["mobility"]["bikeShare"]]
     upd["mobility"] = Mobility(bike_share=nets)
     upd["features"] = base.features.model_copy(update={"bike_share": bool(nets)})
+    upd["landing"] = Landing.model_validate(sections["landing"])
     return base.model_copy(update=upd)
 
 

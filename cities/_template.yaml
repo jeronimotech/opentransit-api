@@ -53,3 +53,23 @@ services: []                     # [{ id, label, icon, url, kind: external|deepl
 mobility:                        # v1.2 shared mobility; each entry is a GBFS feed + the OTP `vehicle-rental` updater network id
   bike_share: []                 # [{ id, name, network, gbfs_url, color, url, apps: {ios, android}, pricing_summary, single_trip_price: {amount, currency, label}, form_factors }]
 # pois_file: mycity/pois.geojson # default cities/<slug>/pois.geojson (built by scripts/build-pois.sh)
+# ── v1.3 · white-label landing page (optional; admin-editable; GET /v1/cities/<slug>/landing) ──
+landing:
+  enabled: false                 # true -> the web app serves /<slug>/landing (or "/" in single-city deployments)
+  locale: null                   # null -> city locale
+  theme: { primary_color: null, accent_color: null, logo_url: null, hero_image_url: null, dark_hero: true }   # nulls fall back to branding
+  hero:
+    title: "Move around My City with live data"
+    subtitle: "Plan trips, find your bus, arrive on time. Free, no account, open source."
+    cta_primary: { label: "Open the app", url: null }          # null -> the web app's /<slug>
+    cta_secondary: { label: "How it works", url: "#features" } # https, "#anchor" or "/path"
+  apps: { ios: null, android: null, web: null }                # store URLs; null hides the badge
+  highlights: []                 # ≤ 8 × { icon: route|live|board|bike|open|alert|accessibility|favorites|offline|map|ticket|info, title, text }
+  screenshots: []                # ≤ 8 × { url (https), alt, kind: mobile|web }
+  stats: { show: true, items: [routes, stops, vehiclesLive, bikeStations, alertsActive] }
+  partners: []                   # ≤ 12 × { name, logo_url, url, role }
+  open_data: { show: true, links: [] }   # empty links -> derived from feeds + bike-share config
+  faq: []                        # ≤ 12 × { q, a }
+  contact: { email: null, url: null, social: { x: null, instagram: null, facebook: null, youtube: null, github: null } }
+  footer: { legal_name: null, privacy_url: null, terms_url: null, attribution: null }   # nulls fall back to links.privacy / attribution
+  seo: { title: null, description: null, og_image_url: null }

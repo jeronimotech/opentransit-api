@@ -6,16 +6,23 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.alias_generators import to_camel
 
 log = logging.getLogger("ot.cities")
 
 Component = Literal["trunk", "feeder", "dual", "zonal", "cable", "rail", "other"]
-_ENV = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+# The default may itself be a reference: `${OTP_MYCITY_URL:-${OTP_URL:-http://localhost:8080}}`.
+# Innermost references (whose default contains no `${`) are resolved first, until nothing is left.
+_ENV = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-((?:(?!\$\{)[^}])*))?\}")
 
 
 def expand_env(text: str) -> str:
-    return _ENV.sub(lambda m: os.environ.get(m.group(1), m.group(2) or ""), text)
+    prev = None
+    while prev != text:
+        prev = text
+        text = _ENV.sub(lambda m: os.environ.get(m.group(1), m.group(2) or ""), text)
+    return text
 
 
 class LatLon(BaseModel):
@@ -132,6 +139,126 @@ class Mobility(BaseModel):
     bike_share: list[BikeShareNetwork] = []
 
 
+# ── v1.3 · configurable city landing page (white-label) ─────────────────────────
+class _Camel(BaseModel):
+    """Landing blocks accept snake_case (YAML) or camelCase (admin API) and serialise as camelCase."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class LandingCta(_Camel):
+    label: str
+    url: str | None = None          # None -> the web app's /{city}; "#anchor" and "/path" allowed
+
+
+class LandingHero(_Camel):
+    title: str = ""
+    subtitle: str = ""
+    cta_primary: LandingCta = LandingCta(label="Abrir la app")
+    cta_secondary: LandingCta | None = None
+
+
+class LandingTheme(_Camel):
+    primary_color: str | None = None   # None -> branding.primary_color
+    accent_color: str | None = None
+    logo_url: str | None = None        # None -> branding.logo_url
+    hero_image_url: str | None = None
+    dark_hero: bool = True
+
+
+class LandingApps(_Camel):
+    ios: str | None = None
+    android: str | None = None
+    web: str | None = None
+
+
+class LandingHighlight(_Camel):
+    icon: str = "info"
+    title: str
+    text: str
+
+
+class LandingScreenshot(_Camel):
+    url: str
+    alt: str = ""
+    kind: Literal["mobile", "web"] = "mobile"
+
+
+class LandingStats(_Camel):
+    show: bool = True
+    items: list[str] = ["routes", "stops", "vehiclesLive", "bikeStations", "alertsActive"]
+
+
+class LandingPartner(_Camel):
+    name: str
+    logo_url: str | None = None
+    url: str | None = None
+    role: str | None = None
+
+
+class LandingLink(_Camel):
+    label: str
+    url: str
+
+
+class LandingOpenData(_Camel):
+    show: bool = True
+    links: list[LandingLink] = []      # empty -> derived from the feeds and bike-share config
+
+
+class LandingFaq(_Camel):
+    q: str
+    a: str
+
+
+class LandingSocial(_Camel):
+    x: str | None = None
+    instagram: str | None = None
+    facebook: str | None = None
+    youtube: str | None = None
+    github: str | None = None
+
+
+class LandingContact(_Camel):
+    email: str | None = None
+    url: str | None = None
+    social: LandingSocial = LandingSocial()
+
+
+class LandingFooter(_Camel):
+    legal_name: str | None = None
+    privacy_url: str | None = None     # None -> links.privacy
+    terms_url: str | None = None
+    attribution: str | None = None     # None -> city.attribution
+
+
+class LandingSeo(_Camel):
+    title: str | None = None
+    description: str | None = None
+    og_image_url: str | None = None
+
+
+class Landing(_Camel):
+    """Everything the white-label landing page needs; admin-editable, served by /v1/cities/{city}/landing."""
+    enabled: bool = False
+    slug: str | None = None
+    locale: str | None = None          # None -> city.locale
+    theme: LandingTheme = LandingTheme()
+    hero: LandingHero = LandingHero()
+    apps: LandingApps = LandingApps()
+    highlights: list[LandingHighlight] = []
+    screenshots: list[LandingScreenshot] = []
+    stats: LandingStats = LandingStats()
+    partners: list[LandingPartner] = []
+    open_data: LandingOpenData = LandingOpenData()
+    faq: list[LandingFaq] = []
+    contact: LandingContact = LandingContact()
+    footer: LandingFooter = LandingFooter()
+    seo: LandingSeo = LandingSeo()
+
+    def public(self) -> dict:
+        return self.model_dump(by_alias=True)
+
+
 class ServiceTile(BaseModel):
     """Hand-off tile to a partner or agency service (recharge, PQRS...). Never a core feature."""
     id: str
@@ -164,6 +291,7 @@ class City(BaseModel):
     links: Links = Links()
     services: list[ServiceTile] = []
     mobility: Mobility = Mobility()
+    landing: Landing = Landing()
     pois_file: str | None = None      # path relative to the cities dir; default cities/<id>/pois.geojson
 
     @field_validator("bbox")
@@ -234,6 +362,28 @@ class City(BaseModel):
             "mobility": {"bikeShare": [n.public() for n in self.mobility.bike_share]},
             "attribution": self.attribution,
         }
+
+    def landing_public(self) -> dict:
+        """Landing config with the documented fallbacks resolved (theme <- branding, open data <- feeds...)."""
+        ld = self.landing.public()
+        th = ld["theme"]
+        th["primaryColor"] = th["primaryColor"] or self.branding.primary_color
+        th["logoUrl"] = th["logoUrl"] or self.branding.logo_url
+        ld["locale"] = ld["locale"] or self.locale
+        if not ld["openData"]["links"]:
+            f = self.feeds
+            links = [{"label": "GTFS", "url": f.gtfs_static_url}]
+            for label, url in (("GTFS-RT · posiciones", f.rt_positions_url),
+                               ("GTFS-RT · llegadas", f.rt_tripupdates_url),
+                               ("GTFS-RT · alertas", f.rt_alerts_url)):
+                if url:
+                    links.append({"label": label, "url": url})
+            links += [{"label": f"GBFS · {n.name}", "url": n.gbfs_url} for n in self.mobility.bike_share]
+            ld["openData"]["links"] = links
+        ft = ld["footer"]
+        ft["attribution"] = ft["attribution"] or self.attribution
+        ft["privacyUrl"] = ft["privacyUrl"] or self.links.privacy
+        return ld
 
     def _components_from_agencies(self) -> list[dict]:
         """Derived component palette when the YAML does not declare `components`."""
