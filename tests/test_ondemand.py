@@ -370,3 +370,14 @@ def test_duration_factor_policy_and_plan_stretch(bogota: City):
     assert combo["durationSeconds"] > cdur0 and combo["startTime"] < cstart0
     assert next(lg for lg in combo["legs"] if lg["transit"])["startTime"] == bus_start
     assert car_leg["startTime"] == combo["legs"][0]["startTime"] or combo["legs"][0]["startTime"] < cstart0
+
+
+async def test_handoff_redirects_for_browser_navigation(bogota: City):
+    """A browser tapping the link (Accept: text/html) must be redirected, not shown JSON."""
+    app, rt = _app(bogota)
+    q = "providerId=taxi&fromLat=4.67&fromLon=-74.05&toLat=4.6&toLon=-74.16&platform=ios"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get(f"/v1/cities/bogota/ondemand/handoff?{q}", headers={"accept": "text/html,application/xhtml+xml"})
+        assert r.status_code == 302 and r.headers["location"].startswith("http")
+        r = await c.get(f"/v1/cities/bogota/ondemand/handoff?{q}", headers={"accept": "application/json"})
+        assert r.status_code == 200 and "url" in r.json()

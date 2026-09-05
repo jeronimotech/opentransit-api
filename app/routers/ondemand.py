@@ -3,6 +3,7 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from ..errors import ApiError
@@ -92,7 +93,7 @@ async def estimate(request: Request, rt: CityRuntime = Depends(city_runtime),
 
 
 @router.get("/v1/cities/{city}/ondemand/handoff", response_model=OnDemandHandoffResponse)
-async def handoff(rt: CityRuntime = Depends(city_runtime), providerId: str = Query(...),
+async def handoff(request: Request, rt: CityRuntime = Depends(city_runtime), providerId: str = Query(...),
                   fromLat: float = Query(..., ge=-90, le=90), fromLon: float = Query(..., ge=-180, le=180),
                   toLat: float = Query(..., ge=-90, le=90), toLon: float = Query(..., ge=-180, le=180),
                   fromName: str | None = Query(None, max_length=120), toName: str | None = Query(None, max_length=120),
@@ -107,7 +108,10 @@ async def handoff(rt: CityRuntime = Depends(city_runtime), providerId: str = Que
     built = build_handoff(p, from_lat=fromLat, from_lon=fromLon, to_lat=toLat, to_lon=toLon,
                           from_name=fromName, to_name=toName, platform=platform)
     target = built["url"] or built["fallback"]
-    if redirect:
+    # A browser navigating here (anchor tap, universal link chain) wants the provider page, not JSON.
+    accept = request.headers.get("accept", "")
+    browser_nav = "text/html" in accept and "application/json" not in accept.split(",")[0]
+    if redirect or browser_nav:
         if not target:
             raise HandoffUnavailable(f"{p.name} has no link configured")
         return RedirectResponse(target, status_code=302, headers={"Cache-Control": "no-store"})
