@@ -140,7 +140,7 @@ The city YAML stays the base. Admins can override these sections only: `fares`, 
 - `GET /v1/admin/cities/{city}/config/history?limit=20` → `{ "items": [ {"revision", "changedAt", "changedBy", "note", "data"} ] }` newest first.
 
 ## OTP integration
-- OTP 2.10 Docker image `opentripplanner/opentripplanner:2.10.0_2026-09-04T13-20` (pin), graph built once with `--build --save`, served with `--load`. GraphQL endpoint `POST http://otp-bogota:8080/otp/gtfs/v1` (GTFS GraphQL API; verify exact path/schema for 2.10 via docs `https://docs.opentripplanner.org/`).
+- OTP 2.10 Docker image `opentripplanner/opentripplanner:2.10.0_2026-09-04T13-20` (pin), graph built once with `--build --save`, served with `--load`. GraphQL endpoint `POST http://<otp-host>:8080/otp/gtfs/v1` (GTFS GraphQL API; verify exact path/schema for 2.10 via docs `https://docs.opentripplanner.org/`).
 - `router-config.json` updaters: `stop-time-updater` (tripupdates.pb, 20s, feedId `bogota`, `backwardsDelayPropagationType: ALWAYS`), `real-time-alerts` (alerts.pb, 60s), `vehicle-positions` (positions.pb, 20s). `build-config.json`: `transitFeeds: [{type: gtfs, feedId: bogota, source: file:///var/opentripplanner/bogota-gtfs.zip}]`, `osm: [{source: file:///var/opentripplanner/bogota.osm.pbf}]`, `transitModelTimeZone: America/Bogota`. Memory: `JAVA_TOOL_OPTIONS=-Xmx10G` for build, `-Xmx6G` serve.
 - API translates `plan` → OTP `planConnection` GraphQL and normalizes to the schema above. Never expose raw OTP responses.
 

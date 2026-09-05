@@ -2,10 +2,16 @@
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
 *.log
 .pytest_cache/
 .ruff_cache/
 # big inputs and built graphs live outside git
 data/
-vendor/*.jar
+vendor/
+*.pb
+*.obj
+*.osm.pbf
+*.zip
 .DS_Store

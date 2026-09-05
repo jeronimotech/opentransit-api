@@ -28,7 +28,7 @@ feeds:
   static_refresh_hours: 24
 
 otp:
-  base_url: ${OTP_BOGOTA_URL:-http://localhost:8080}
+  base_url: ${OTP_BOGOTA_URL:-${OTP_URL:-http://localhost:8080}}   # per-city override, else the shared default
   feed_id: bogota             # must match build-config.json transitFeeds[].feedId
 
 geocoder:

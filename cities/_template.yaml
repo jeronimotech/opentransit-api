@@ -29,7 +29,7 @@ feeds:
   static_refresh_hours: 24
 
 otp:
-  base_url: ${OTP_MYCITY_URL:-http://localhost:8081}
+  base_url: ${OTP_MYCITY_URL:-${OTP_URL:-http://localhost:8081}}   # OTP_<CITY>_URL overrides the shared OTP_URL
   feed_id: mycity                # == transitFeeds[].feedId in otp/<slug>/build-config.json
 
 geocoder:

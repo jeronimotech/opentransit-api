@@ -1,10 +1,15 @@
-# opentransit-api — local/dev stack. One OTP container per city; the API polls every city's GTFS-RT.
+# opentransit-api — local/dev stack, parametrised by CITY (default: bogota).
+#   make up                         # Postgres/PostGIS only (the API and OTP run natively during development)
+#   CITY=bogota docker compose up -d otp        # serve the graph built in data/<CITY>/ (Linux; macOS: scripts/otp-native.sh)
+#   docker compose --profile full up -d         # everything in containers
+# Several cities at once: copy docker-compose.cities.yml, one `otp-<city>` service per city, and set
+# OTP_<CITY>_URL for the API (cities/<city>.yaml reads ${OTP_<CITY>_URL:-${OTP_URL:-http://localhost:8080}}).
 services:
   postgres:
     image: postgis/postgis:16-3.4
     environment:
       POSTGRES_USER: opentransit
-      POSTGRES_PASSWORD: opentransit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opentransit}
       POSTGRES_DB: opentransit
     ports: ["${POSTGRES_HOST_PORT:-5435}:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
@@ -14,14 +19,14 @@ services:
       timeout: 3s
       retries: 20
 
-  otp-bogota:
-    image: opentripplanner/opentripplanner:2.9.0
+  otp:
+    image: opentripplanner/opentripplanner:${OTP_VERSION:-2.9.0}
     command: ["--load"]          # entrypoint appends /var/opentripplanner
     environment:
-      JAVA_OPTS: "-Xmx${OTP_BOGOTA_HEAP:-8G}"   # Docker VM must have more than this; on macOS prefer scripts/otp-native.sh
+      JAVA_OPTS: "-Xmx${OTP_HEAP:-8G}"   # the Docker VM must have more than this; on macOS prefer scripts/otp-native.sh
     volumes:
-      - ./data/bogota:/var/opentripplanner
-    ports: ["${OTP_BOGOTA_HOST_PORT:-8080}:8080"]
+      - ./data/${CITY:-bogota}:/var/opentripplanner
+    ports: ["${OTP_HOST_PORT:-8080}:8080"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/otp/ >/dev/null || exit 1"]
       interval: 15s
@@ -33,10 +38,10 @@ services:
     build: .
     profiles: ["full"]          # `docker compose --profile full up` runs the API in Docker too
     environment:
-      DATABASE_URL: postgresql://opentransit:opentransit@postgres:5432/opentransit
-      OTP_BOGOTA_URL: http://otp-bogota:8080
-      ADMIN_TOKEN: ${ADMIN_TOKEN:-change-me}
-      CORS_ORIGINS: "*"
+      DATABASE_URL: postgresql://opentransit:${POSTGRES_PASSWORD:-opentransit}@postgres:5432/opentransit
+      OTP_URL: http://otp:8080  # default router for every city; override per city with OTP_<CITY>_URL
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env (openssl rand -hex 32)}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
     ports: ["${API_HOST_PORT:-8001}:8000"]
     depends_on:
       postgres: { condition: service_healthy }

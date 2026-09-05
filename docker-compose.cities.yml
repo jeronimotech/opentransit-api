@@ -1,0 +1,21 @@
+# Example override for running SEVERAL cities on one host:
+#   docker compose -f docker-compose.yml -f docker-compose.cities.yml --profile full up -d
+# One OTP service per city (each serving its own data/<city>/graph.obj) and one OTP_<CITY>_URL per city for the API.
+services:
+  otp-bogota:
+    image: opentripplanner/opentripplanner:${OTP_VERSION:-2.9.0}
+    command: ["--load"]
+    environment: { JAVA_OPTS: "-Xmx8G" }
+    volumes: ["./data/bogota:/var/opentripplanner"]
+  otp-mycity:
+    image: opentripplanner/opentripplanner:${OTP_VERSION:-2.9.0}
+    command: ["--load"]
+    environment: { JAVA_OPTS: "-Xmx4G" }
+    volumes: ["./data/mycity:/var/opentripplanner"]
+  api:
+    environment:
+      OTP_BOGOTA_URL: http://otp-bogota:8080
+      OTP_MYCITY_URL: http://otp-mycity:8080
+    depends_on:
+      otp-bogota: { condition: service_started }
+      otp-mycity: { condition: service_started }

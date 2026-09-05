@@ -19,7 +19,7 @@ down:            ## stop everything started by compose
 graph:           ## download GTFS + OSM, clip, build the OTP graph for CITY (native on macOS, Docker elsewhere)
 	scripts/build-graph.sh $(CITY)
 
-otp:             ## serve the OTP graph for CITY natively on :8080 (or `docker compose up -d otp-$(CITY)`)
+otp:             ## serve the OTP graph for CITY natively on :8080 (or `CITY=$(CITY) docker compose up -d otp`)
 	scripts/otp-native.sh serve $(CITY) 8080
 
 otp-stop:        ## stop the native OTP for CITY
