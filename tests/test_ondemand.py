@@ -192,7 +192,7 @@ async def test_providers_estimate_handoff_endpoints(bogota: City):
         body = r.json()
         p = body["estimates"][0]["price"]
         assert body["route"]["durationFactor"] == 1.1 and body["route"]["durationSeconds"] == 1401   # night factor
-        assert p["surchargesApplied"] == ["night"] and p["amount"] == 40700     # 198 + 7 units + 3,800
+        assert p["surchargesApplied"] == ["night"] and p["amount"] == 40900     # (198 + 7) units → 37,100 + 3,800
         assert fake.calls == 2
         r = await c.get("/v1/cities/bogota/ondemand/estimate", params={**q, "providerId": "nope"})
         assert r.status_code == 404 and r.json()["error"]["code"] == "PROVIDER_NOT_FOUND"
