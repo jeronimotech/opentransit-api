@@ -100,3 +100,13 @@ async def test_admin_toggle_disables_landing(bogota: City):
         r = await c.delete("/v1/admin/cities/bogota/config", headers=H)
         assert r.status_code == 200
         assert (await c.get("/v1/cities/bogota/landing")).status_code == 200
+
+
+def test_landing_city_block_carries_on_demand_and_features(bogota):
+    """The city landing highlights taxi/ride-hailing only if the payload says the city has providers."""
+    from app.cities import City  # noqa: F401
+    providers = bogota.on_demand_providers()
+    assert providers, "fixture city should declare on-demand providers"
+    pub = [{"id": p.id, "name": p.name, "kind": p.kind, "color": p.color} for p in providers]
+    assert all(set(x) == {"id", "name", "kind", "color"} for x in pub)
+    assert bogota.public()["features"]["onDemand"] is True

@@ -59,7 +59,13 @@ async def city_landing(rt: CityRuntime = Depends(city_runtime)):
         "stats": await landing_stats(rt),
         "apps": city.landing.apps.model_dump(by_alias=True),
     }
-    body["city"]["mobility"] = {"bikeShare": [{"id": n.id, "name": n.name, "color": n.color, "url": n.url}
-                                              for n in city.mobility.bike_share]}
+    body["city"]["features"] = pub["features"]
+    body["city"]["mobility"] = {
+        "bikeShare": [{"id": n.id, "name": n.name, "color": n.color, "url": n.url}
+                      for n in city.mobility.bike_share],
+        # public shape only (no templates or credentials): enough for the landing's "taxi y apps" highlight
+        "onDemand": [{"id": p.id, "name": p.name, "kind": p.kind, "color": p.color}
+                     for p in city.on_demand_providers()],
+    }
     return JSONResponse(LandingResponse.model_validate(body).model_dump(by_alias=True),
                         headers={"Cache-Control": f"public, max-age={CACHE_MAX_AGE}"})
