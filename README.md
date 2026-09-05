@@ -1,5 +1,7 @@
 # opentransit-api
 
+[![ci](https://github.com/jeronimotech/opentransit-api/actions/workflows/ci.yml/badge.svg)](https://github.com/jeronimotech/opentransit-api/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Docs](https://img.shields.io/badge/docs-jeronimotech.github.io%2Fopentransit-informational)](https://jeronimotech.github.io/opentransit/)
+
 Open-source, **multi-city**, **multimodal** trip-planning backend: static GTFS + GTFS-Realtime +
 [OpenTripPlanner 2](https://www.opentripplanner.org/), behind one small FastAPI service with a clean,
 app-friendly JSON contract. First city: **Bogotá** (TransMilenio troncal, alimentadores, dual, SITP zonal,
@@ -89,7 +91,7 @@ open http://localhost:8001/docs
 ```
 
 Stop / restart: `make otp-stop`, `make down`, `Ctrl-C` the API. Full Docker (Linux hosts with ≥ 12 GB for
-the VM): `docker compose --profile full up -d` runs Postgres, `otp-bogota` and the API in containers
+the VM): `docker compose --profile full up -d` runs Postgres, `otp` (for `CITY`, default bogota) and the API in containers
 (build the graph first with `OTP_RUNTIME=docker make graph`).
 
 ## Endpoints (summary)
@@ -113,7 +115,7 @@ Full schema and examples: [`docs/API.md`](docs/API.md). Errors are always
 
 ### Editing fares and client config without a redeploy
 
-Set `ADMIN_TOKEN` in `.env` (any long random string; the admin web UI sends it as `X-Admin-Token`).
+Set `ADMIN_TOKEN` in `.env` (generate it with `openssl rand -hex 32`; the admin web UI sends it as `X-Admin-Token`). Never commit the real value — `.env` is git-ignored.
 `PUT /v1/admin/cities/{city}/config` deep-merges an override over the city YAML for `fares`, `config`,
 `links`, `services` and `branding.primaryColor`; it is validated, stored in Postgres with a history, and
 applied in memory at once — `/plan` estimates fares with the new values on the next request, and

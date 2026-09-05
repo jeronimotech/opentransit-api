@@ -1,0 +1,38 @@
+name: New city
+description: Ask for (or offer) support for a new city
+labels: [new-city]
+body:
+  - type: input
+    id: city
+    attributes: { label: City and country, placeholder: "Medellín, CO" }
+    validations: { required: true }
+  - type: input
+    id: gtfs
+    attributes: { label: GTFS static URL, description: Stable, public URL of the zip (a dated file name is fine, say so). }
+    validations: { required: true }
+  - type: textarea
+    id: rt
+    attributes: { label: GTFS-Realtime URLs, description: vehicle positions / trip updates / service alerts, if published. }
+  - type: input
+    id: gbfs
+    attributes: { label: GBFS URL (shared bikes / scooters), placeholder: "https://.../gbfs.json" }
+  - type: input
+    id: tz
+    attributes: { label: Time zone (IANA), placeholder: "America/Bogota" }
+    validations: { required: true }
+  - type: input
+    id: bbox
+    attributes: { label: Bounding box, placeholder: "minLon, minLat, maxLon, maxLat" }
+    validations: { required: true }
+  - type: textarea
+    id: agencies
+    attributes: { label: Agencies / components, description: "agency_id → name and component (trunk, feeder, zonal, cable, rail...)." }
+  - type: input
+    id: contact
+    attributes: { label: Contact at the agency or city (optional), placeholder: "name · role · public email" }
+  - type: checkboxes
+    id: license
+    attributes:
+      label: Data licence
+      options:
+        - label: The feeds are published under an open licence (or the agency has confirmed reuse is allowed)

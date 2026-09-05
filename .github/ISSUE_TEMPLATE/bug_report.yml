@@ -1,0 +1,22 @@
+name: Bug report
+description: Something in the API behaves incorrectly
+labels: [bug]
+body:
+  - type: input
+    id: endpoint
+    attributes: { label: Endpoint, placeholder: "GET /v1/cities/bogota/plan?fromLat=..." }
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes: { label: What did you expect? }
+    validations: { required: true }
+  - type: textarea
+    id: actual
+    attributes: { label: What happened instead?, description: Paste the response body (redact tokens) and any log lines. }
+    validations: { required: true }
+  - type: input
+    id: city
+    attributes: { label: City / feed, placeholder: "bogota (TransMilenio GTFS 2026-09-04)" }
+  - type: input
+    id: version
+    attributes: { label: Commit or version, placeholder: "main @ abc1234 · OTP 2.9.0" }
