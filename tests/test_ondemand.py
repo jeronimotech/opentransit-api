@@ -377,7 +377,8 @@ async def test_handoff_redirects_for_browser_navigation(bogota: City):
     app, rt = _app(bogota)
     q = "providerId=taxi&fromLat=4.67&fromLon=-74.05&toLat=4.6&toLon=-74.16&platform=ios"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        r = await c.get(f"/v1/cities/bogota/ondemand/handoff?{q}", headers={"accept": "text/html,application/xhtml+xml"})
+        html = {"accept": "text/html,application/xhtml+xml"}
+        r = await c.get(f"/v1/cities/bogota/ondemand/handoff?{q}", headers=html)
         assert r.status_code == 302 and r.headers["location"].startswith("http")
         r = await c.get(f"/v1/cities/bogota/ondemand/handoff?{q}", headers={"accept": "application/json"})
         assert r.status_code == 200 and "url" in r.json()
