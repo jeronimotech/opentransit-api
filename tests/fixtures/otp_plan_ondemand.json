@@ -1,0 +1,1736 @@
+{
+ "planConnection": {
+  "searchDateTime": "2026-09-08T10:00:00-05:00",
+  "routingErrors": [],
+  "edges": [
+   {
+    "node": {
+     "start": "2026-09-08T10:00:54-05:00",
+     "end": "2026-09-08T11:01:08-05:00",
+     "duration": 3614,
+     "numberOfTransfers": 1,
+     "walkDistance": 1349.67,
+     "walkTime": 1126,
+     "waitingTime": 127,
+     "accessibilityScore": null,
+     "legs": [
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 31.0,
+       "distance": 38.65,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:00:54-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:01:25-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Origin",
+        "lat": 4.6845,
+        "lon": -74.053,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:00:54-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:00:54-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "corner of sidewalk and Calle 97",
+        "lat": 4.6842396,
+        "lon": -74.0532006,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:01:25-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:01:25-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "a}q[fn~bMZd@L@H@",
+        "length": 4
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 38.65,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "SOUTHWEST",
+         "streetName": "path",
+         "lat": 4.6844947,
+         "lon": -74.0529959
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "CAR",
+       "transitLeg": false,
+       "duration": 344.0,
+       "distance": 4327.55,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:01:25-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:07:09-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "corner of sidewalk and Calle 97",
+        "lat": 4.6842396,
+        "lon": -74.0532006,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:01:25-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:01:25-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Avenida Carrera 30",
+        "lat": 4.6583055,
+        "lon": -74.0780421,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:07:09-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:07:09-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "m{q[po~bMT}B@O?EnD^\\BTBR@b@DH@FBD@FBB@B@",
+        "length": 137
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 82.53,
+         "relativeDirection": "HARD_LEFT",
+         "absoluteDirection": "EAST",
+         "streetName": "Calle 97",
+         "lat": 4.6842396,
+         "lon": -74.0532006
+        },
+        {
+         "distance": 219.56,
+         "relativeDirection": "RIGHT",
+         "absoluteDirection": "SOUTH",
+         "streetName": "Avenida Carrera 19",
+         "lat": 4.6841114,
+         "lon": -74.0524671
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 60.0,
+       "distance": 0.0,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:07:09-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:08:09-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Avenida Carrera 30",
+        "lat": 4.6583055,
+        "lon": -74.0780421,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:07:09-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:07:09-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Estaci\u00f3n Sim\u00f3n Bol\u00edvar",
+        "lat": 4.6583055,
+        "lon": -74.0780421,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:08:09-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:08:09-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:52438",
+         "code": "103A05_TM"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "kyl[xjccM??",
+        "length": 2
+       },
+       "intermediateStops": [],
+       "steps": [],
+       "alerts": []
+      },
+      {
+       "mode": "BUS",
+       "transitLeg": true,
+       "duration": 394.0,
+       "distance": 1504.9,
+       "headsign": "H608",
+       "realTime": false,
+       "realtimeState": "SCHEDULED",
+       "rentedBike": null,
+       "start": {
+        "scheduledTime": "2026-09-08T10:08:09-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:14:43-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Estaci\u00f3n Sim\u00f3n Bol\u00edvar",
+        "lat": 4.6583055,
+        "lon": -74.0780421,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:08:09-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:08:09-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:52438",
+         "code": "103A05_TM"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Estaci\u00f3n EL Camp\u00edn",
+        "lat": 4.6448279,
+        "lon": -74.0791471,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:14:43-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:14:43-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:52437",
+         "code": "102A05_TM"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": {
+        "gtfsId": "bogota:10505",
+        "shortName": "HB608",
+        "longName": "B608 Chic\u00f3 Navarra || H608 Arabia",
+        "color": "0000ff",
+        "textColor": "ffffff",
+        "mode": "BUS",
+        "agency": {
+         "gtfsId": "bogota:3",
+         "name": "Zonal-Urbano"
+        }
+       },
+       "agency": {
+        "gtfsId": "bogota:3",
+        "name": "Zonal-Urbano"
+       },
+       "trip": {
+        "gtfsId": "bogota:BC3900027.1.10505"
+       },
+       "legGeometry": {
+        "points": "kyl[tjccML@pAJ`ADnDNtCN|CN??ZBzAJtH^fDN?",
+        "length": 36
+       },
+       "intermediateStops": [
+        {
+         "gtfsId": "bogota:53183",
+         "code": "455A05_TM",
+         "name": "Br. El Rosario",
+         "lat": 4.6550777,
+         "lon": -74.0783607
+        },
+        {
+         "gtfsId": "bogota:52445",
+         "code": "112A05_TM",
+         "name": "Calle 63",
+         "lat": 4.6520855,
+         "lon": -74.0786682
+        }
+       ],
+       "steps": [],
+       "alerts": []
+      },
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 251.0,
+       "distance": 309.65,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:14:43-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:18:54-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Estaci\u00f3n EL Camp\u00edn",
+        "lat": 4.6448279,
+        "lon": -74.0791471,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:14:43-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:14:43-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:52437",
+         "code": "102A05_TM"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Camp\u00edn-UAN B - 2 \u00f3 5",
+        "lat": 4.6455423,
+        "lon": -74.0787181,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:18:54-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:18:54-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61560",
+         "code": "E028"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "cej[tqccM?GE?YAANAVl@D?Ei@C@Gl@Dr@}AF??A",
+        "length": 21
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 17.85,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "NORTH",
+         "streetName": "Avenida Carrera 30",
+         "lat": 4.6448257,
+         "lon": -74.0791075
+        },
+        {
+         "distance": 22.34,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "WEST",
+         "streetName": "path",
+         "lat": 4.644986,
+         "lon": -74.079098
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "BUS",
+       "transitLeg": true,
+       "duration": 1623.0,
+       "distance": 12138.62,
+       "headsign": "G11",
+       "realTime": false,
+       "realtimeState": "SCHEDULED",
+       "rentedBike": null,
+       "start": {
+        "scheduledTime": "2026-09-08T10:21:01-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:48:04-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Camp\u00edn-UAN B - 2 \u00f3 5",
+        "lat": 4.6455423,
+        "lon": -74.0787181,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:21:01-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:21:01-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61560",
+         "code": "E028"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Madelena A - 2 \u00f3 5",
+        "lat": 4.5962615,
+        "lon": -74.157365,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:48:04-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:48:04-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61743",
+         "code": "G024"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": {
+        "gtfsId": "bogota:13008",
+        "shortName": "G11",
+        "longName": "Portal Sur",
+        "color": "ff0000",
+        "textColor": "ffffff",
+        "mode": "BUS",
+        "agency": {
+         "gtfsId": "bogota:1",
+         "name": "Transmilenio-Troncal"
+        }
+       },
+       "agency": {
+        "gtfsId": "bogota:1",
+        "name": "Transmilenio-Troncal"
+       },
+       "trip": {
+        "gtfsId": "bogota:TTB890358.3.13008"
+       },
+       "legGeometry": {
+        "points": "sij[hoccM??`AB\\@h@BhCHnAF~@Bp_@lAR?dBFH?",
+        "length": 236
+       },
+       "intermediateStops": [
+        {
+         "gtfsId": "bogota:61580",
+         "code": "E048",
+         "name": "Paloquemao B - 2 \u00f3 5",
+         "lat": 4.6169157,
+         "lon": -74.0895947
+        },
+        {
+         "gtfsId": "bogota:61599",
+         "code": "E067",
+         "name": "Ricaurte C - 2 \u00f3 5",
+         "lat": 4.6119512,
+         "lon": -74.0936872
+        }
+       ],
+       "steps": [],
+       "alerts": []
+      },
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 784.0,
+       "distance": 1001.37,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:48:04-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T11:01:08-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Madelena A - 2 \u00f3 5",
+        "lat": 4.5962615,
+        "lon": -74.157365,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:48:04-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:48:04-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61743",
+         "code": "G024"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Destination",
+        "lat": 4.5978,
+        "lon": -74.1616,
+        "arrival": {
+         "scheduledTime": "2026-09-08T11:01:08-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T11:01:08-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "su`[pzrcM@?A_@?IEm@?OC]?SCUG{Au@D@n@@PL?",
+        "length": 36
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 207.02,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "EAST",
+         "streetName": "corridor",
+         "lat": 4.5962517,
+         "lon": -74.1573641
+        },
+        {
+         "distance": 10.44,
+         "relativeDirection": "CONTINUE",
+         "absoluteDirection": "WEST",
+         "streetName": "steps",
+         "lat": 4.5966328,
+         "lon": -74.1562956
+        }
+       ],
+       "alerts": []
+      }
+     ]
+    }
+   },
+   {
+    "node": {
+     "start": "2026-09-08T10:05:30-05:00",
+     "end": "2026-09-08T11:02:56-05:00",
+     "duration": 3446,
+     "numberOfTransfers": 1,
+     "walkDistance": 721.6,
+     "walkTime": 645,
+     "waitingTime": 120,
+     "accessibilityScore": null,
+     "legs": [
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 35.0,
+       "distance": 38.88,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:05:30-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:06:05-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Origin",
+        "lat": 4.6845,
+        "lon": -74.053,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:05:30-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:05:30-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "corner of sidewalk and Transversal 19A",
+        "lat": 4.6842958,
+        "lon": -74.0532426,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:06:05-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:06:05-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "a}q[fn~bMZd@L@AH",
+        "length": 4
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 38.88,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "SOUTHWEST",
+         "streetName": "path",
+         "lat": 4.6844947,
+         "lon": -74.0529959
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "CAR",
+       "transitLeg": false,
+       "duration": 150.0,
+       "distance": 620.51,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:06:05-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:08:35-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "corner of sidewalk and Transversal 19A",
+        "lat": 4.6842958,
+        "lon": -74.0532426,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:06:05-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:06:05-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "corner of sidewalk and Calle 95",
+        "lat": 4.683263,
+        "lon": -74.0573657,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:08:35-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:08:35-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "y{q[xo~bMH@L@D?VBjBPH@N@bCTB?H@E\\?DQ`CAF",
+        "length": 27
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 187.71,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "SOUTH",
+         "streetName": "Transversal 19A",
+         "lat": 4.6842958,
+         "lon": -74.0532426
+        },
+        {
+         "distance": 432.8,
+         "relativeDirection": "RIGHT",
+         "absoluteDirection": "WEST",
+         "streetName": "Calle 95",
+         "lat": 4.6826293,
+         "lon": -74.0535128
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 270.0,
+       "distance": 255.67,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:08:35-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:13:05-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "corner of sidewalk and Calle 95",
+        "lat": 4.683263,
+        "lon": -74.0573657,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:08:35-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:08:35-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Calle 100 A - 2 \u00f3 5",
+        "lat": 4.683037,
+        "lon": -74.0578656,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:13:05-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:13:05-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61173",
+         "code": "B034"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "kuq[pi_cMP@AHVBrCV`@hAyAKq@Gc@A?F",
+        "length": 10
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 14.72,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "SOUTH",
+         "streetName": "sidewalk",
+         "lat": 4.683263,
+         "lon": -74.0573657
+        },
+        {
+         "distance": 240.95,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "SOUTH",
+         "streetName": "path",
+         "lat": 4.6831857,
+         "lon": -74.0574253
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "BUS",
+       "transitLeg": true,
+       "duration": 2391.0,
+       "distance": 18169.91,
+       "headsign": "G12",
+       "realTime": false,
+       "realtimeState": "SCHEDULED",
+       "rentedBike": null,
+       "start": {
+        "scheduledTime": "2026-09-08T10:13:05-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:52:56-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Calle 100 A - 2 \u00f3 5",
+        "lat": 4.683037,
+        "lon": -74.0578656,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:13:05-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:13:05-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61173",
+         "code": "B034"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Perdomo A - 1 \u00f3 5",
+        "lat": 4.5958096,
+        "lon": -74.1654065,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:52:56-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:52:56-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61755",
+         "code": "G036"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": {
+        "gtfsId": "bogota:12873",
+        "shortName": "G12",
+        "longName": "P. Sur",
+        "color": "ff0000",
+        "textColor": "ffffff",
+        "mode": "BUS",
+        "agency": {
+         "gtfsId": "bogota:1",
+         "name": "Transmilenio-Troncal"
+        }
+       },
+       "agency": {
+        "gtfsId": "bogota:1",
+        "name": "Transmilenio-Troncal"
+       },
+       "trip": {
+        "gtfsId": "bogota:TTB890170.5.12873"
+       },
+       "legGeometry": {
+        "points": "}sq[xl_cMH?p@DL@L?pAJdAHh@FtAL|BT@?XDH@H",
+        "length": 448
+       },
+       "intermediateStops": [
+        {
+         "gtfsId": "bogota:61566",
+         "code": "E034",
+         "name": "Castellana A - 2 \u00f3 5",
+         "lat": 4.6750241,
+         "lon": -74.0656836
+        },
+        {
+         "gtfsId": "bogota:62032",
+         "code": "E095",
+         "name": "NQS - Calle 75 B - 2 \u00f3 5",
+         "lat": 4.6699666,
+         "lon": -74.0716584
+        }
+       ],
+       "steps": [],
+       "alerts": []
+      },
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 261.0,
+       "distance": 328.2,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:52:56-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:57:17-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Perdomo A - 1 \u00f3 5",
+        "lat": 4.5958096,
+        "lon": -74.1654065,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:52:56-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:52:56-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61755",
+         "code": "G036"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Parque Balmoral",
+        "lat": 4.595496,
+        "lon": -74.163713,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:57:17-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:57:17-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:73851",
+         "code": "473A10_TM"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "wr`[xltcM@??w@?q@?Q?_@?S?U?qBdAA@??mBI??",
+        "length": 15
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 214.41,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "EAST",
+         "streetName": "corridor",
+         "lat": 4.5957911,
+         "lon": -74.1654065
+        },
+        {
+         "distance": 60.67,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "EAST",
+         "streetName": "footbridge",
+         "lat": 4.5954305,
+         "lon": -74.1638304
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "BUS",
+       "transitLeg": true,
+       "duration": 140.0,
+       "distance": 528.65,
+       "headsign": "TC14",
+       "realTime": false,
+       "realtimeState": "SCHEDULED",
+       "rentedBike": null,
+       "start": {
+        "scheduledTime": "2026-09-08T10:59:17-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T11:01:37-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Parque Balmoral",
+        "lat": 4.595496,
+        "lon": -74.163713,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:59:17-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:59:17-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:73851",
+         "code": "473A10_TM"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Br. Villa del R\u00edo",
+        "lat": 4.5973819,
+        "lon": -74.162006,
+        "arrival": {
+         "scheduledTime": "2026-09-08T11:01:37-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T11:01:37-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:51227",
+         "code": "064A09_TM"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": {
+        "gtfsId": "bogota:12795",
+        "shortName": "TC14",
+        "longName": "Nueva Roma ||  Portal Sur",
+        "color": "0000ff",
+        "textColor": "ffffff",
+        "mode": "BUS",
+        "agency": {
+         "gtfsId": "bogota:3",
+         "name": "Zonal-Urbano"
+        }
+       },
+       "agency": {
+        "gtfsId": "bogota:3",
+        "name": "Zonal-Urbano"
+       },
+       "trip": {
+        "gtfsId": "bogota:BO6F90005.10.12795"
+       },
+       "legGeometry": {
+        "points": "aq`[fbtcM@oC@k@?OBK@IBKBGBIHMFCFIFIDGBGB",
+        "length": 48
+       },
+       "intermediateStops": [],
+       "steps": [],
+       "alerts": []
+      },
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 79.0,
+       "distance": 98.85,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T11:01:37-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T11:02:56-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Br. Villa del R\u00edo",
+        "lat": 4.5973819,
+        "lon": -74.162006,
+        "arrival": {
+         "scheduledTime": "2026-09-08T11:01:37-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T11:01:37-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:51227",
+         "code": "064A09_TM"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Destination",
+        "lat": 4.5978,
+        "lon": -74.1616,
+        "arrival": {
+         "scheduledTime": "2026-09-08T11:02:56-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T11:02:56-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "s|`[pwscM?CyAHAgA?M",
+        "length": 5
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 50.36,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "NORTH",
+         "streetName": "bike path",
+         "lat": 4.5973843,
+         "lon": -74.1619858
+        },
+        {
+         "distance": 48.5,
+         "relativeDirection": "RIGHT",
+         "absoluteDirection": "EAST",
+         "streetName": "Calle 57H Sur",
+         "lat": 4.597834,
+         "lon": -74.1620392
+        }
+       ],
+       "alerts": []
+      }
+     ]
+    }
+   },
+   {
+    "node": {
+     "start": "2026-09-08T10:04:53-05:00",
+     "end": "2026-09-08T11:07:23-05:00",
+     "duration": 3750,
+     "numberOfTransfers": 1,
+     "walkDistance": 1207.94,
+     "walkTime": 1005,
+     "waitingTime": 251,
+     "accessibilityScore": null,
+     "legs": [
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 31.0,
+       "distance": 38.65,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:04:53-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:05:24-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Origin",
+        "lat": 4.6845,
+        "lon": -74.053,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:04:53-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:04:53-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "corner of sidewalk and Calle 97",
+        "lat": 4.6842396,
+        "lon": -74.0532006,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:05:24-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:05:24-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "a}q[fn~bMZd@L@H@",
+        "length": 4
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 38.65,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "SOUTHWEST",
+         "streetName": "path",
+         "lat": 4.6844947,
+         "lon": -74.0529959
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "CAR",
+       "transitLeg": false,
+       "duration": 238.0,
+       "distance": 2082.06,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:05:24-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:09:22-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "corner of sidewalk and Calle 97",
+        "lat": 4.6842396,
+        "lon": -74.0532006,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:05:24-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:05:24-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "corner of path and Calle 86A",
+        "lat": 4.6770473,
+        "lon": -74.0667752,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:09:22-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:09:22-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "m{q[po~bMT}B@O?EnD^\\BTBR@b@DH@FBD@FBB@B@",
+        "length": 67
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 82.53,
+         "relativeDirection": "HARD_LEFT",
+         "absoluteDirection": "EAST",
+         "streetName": "Calle 97",
+         "lat": 4.6842396,
+         "lon": -74.0532006
+        },
+        {
+         "distance": 219.56,
+         "relativeDirection": "RIGHT",
+         "absoluteDirection": "SOUTH",
+         "streetName": "Avenida Carrera 19",
+         "lat": 4.6841114,
+         "lon": -74.0524671
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 109.0,
+       "distance": 60.52,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:09:22-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:11:11-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "corner of path and Calle 86A",
+        "lat": 4.6770473,
+        "lon": -74.0667752,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:09:22-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:09:22-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "San Mart\u00edn B - 1 \u00f3 5",
+        "lat": 4.6765999,
+        "lon": -74.0670879,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:11:11-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:11:11-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61448",
+         "code": "C039T"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "onp[jdacMFD@@f@TJF\\PAD",
+        "length": 7
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 60.51,
+         "relativeDirection": "LEFT",
+         "absoluteDirection": "SOUTHWEST",
+         "streetName": "path",
+         "lat": 4.6770473,
+         "lon": -74.0667752
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "BUS",
+       "transitLeg": true,
+       "duration": 121.0,
+       "distance": 720.95,
+       "headsign": "7",
+       "realTime": false,
+       "realtimeState": "SCHEDULED",
+       "rentedBike": null,
+       "start": {
+        "scheduledTime": "2026-09-08T10:11:11-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:13:12-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "San Mart\u00edn B - 1 \u00f3 5",
+        "lat": 4.6765999,
+        "lon": -74.0670879,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:11:11-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:11:11-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61448",
+         "code": "C039T"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Escuela Militar A - 2 \u00f3 5",
+        "lat": 4.6752734,
+        "lon": -74.0694607,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:13:12-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:13:12-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61511",
+         "code": "D042"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": {
+        "gtfsId": "bogota:11627",
+        "shortName": "7",
+        "longName": "Polo FINCOMERCIO",
+        "color": "ff0000",
+        "textColor": "ffffff",
+        "mode": "BUS",
+        "agency": {
+         "gtfsId": "bogota:1",
+         "name": "Transmilenio-Troncal"
+        }
+       },
+       "agency": {
+        "gtfsId": "bogota:1",
+        "name": "Transmilenio-Troncal"
+       },
+       "trip": {
+        "gtfsId": "bogota:TTB890307.9.11627"
+       },
+       "legGeometry": {
+        "points": "ykp[lfacMbAh@TJd@TPHFDr@^`Az@x@j@j@^b@ZF",
+        "length": 62
+       },
+       "intermediateStops": [],
+       "steps": [],
+       "alerts": []
+      },
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 81.0,
+       "distance": 107.4,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:13:12-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:14:33-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Escuela Militar A - 2 \u00f3 5",
+        "lat": 4.6752734,
+        "lon": -74.0694607,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:13:12-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:13:12-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61511",
+         "code": "D042"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Escuela Militar B - 4 \u00f3 6",
+        "lat": 4.6758715,
+        "lon": -74.0702713,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:14:33-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:14:33-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61507",
+         "code": "D038"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "mcp[duacMGEa@t@Wf@MR]p@IB",
+        "length": 7
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 107.41,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "NORTHWEST",
+         "streetName": "corridor",
+         "lat": 4.6753148,
+         "lon": -74.0694346
+        }
+       ],
+       "alerts": []
+      },
+      {
+       "mode": "BUS",
+       "transitLeg": true,
+       "duration": 2135.0,
+       "distance": 15966.95,
+       "headsign": "G11",
+       "realTime": false,
+       "realtimeState": "SCHEDULED",
+       "rentedBike": null,
+       "start": {
+        "scheduledTime": "2026-09-08T10:18:44-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:54:19-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Escuela Militar B - 4 \u00f3 6",
+        "lat": 4.6758715,
+        "lon": -74.0702713,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:18:44-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:18:44-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61507",
+         "code": "D038"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Madelena A - 2 \u00f3 5",
+        "lat": 4.5962615,
+        "lon": -74.157365,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:54:19-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:54:19-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61743",
+         "code": "G024"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": {
+        "gtfsId": "bogota:13008",
+        "shortName": "G11",
+        "longName": "Portal Sur",
+        "color": "ff0000",
+        "textColor": "ffffff",
+        "mode": "BUS",
+        "agency": {
+         "gtfsId": "bogota:1",
+         "name": "Transmilenio-Troncal"
+        }
+       },
+       "agency": {
+        "gtfsId": "bogota:1",
+        "name": "Transmilenio-Troncal"
+       },
+       "trip": {
+        "gtfsId": "bogota:TTB891218.4.13008"
+       },
+       "legGeometry": {
+        "points": "ggp[dzacMCDEF?B?@?D?D?D?D@@@B@@@@B@D@LBL",
+        "length": 376
+       },
+       "intermediateStops": [
+        {
+         "gtfsId": "bogota:61560",
+         "code": "E028",
+         "name": "Camp\u00edn-UAN B - 2 \u00f3 5",
+         "lat": 4.6455423,
+         "lon": -74.0787181
+        },
+        {
+         "gtfsId": "bogota:61580",
+         "code": "E048",
+         "name": "Paloquemao B - 2 \u00f3 5",
+         "lat": 4.6169157,
+         "lon": -74.0895947
+        }
+       ],
+       "steps": [],
+       "alerts": []
+      },
+      {
+       "mode": "WALK",
+       "transitLeg": false,
+       "duration": 784.0,
+       "distance": 1001.37,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:54:19-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T11:07:23-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Madelena A - 2 \u00f3 5",
+        "lat": 4.5962615,
+        "lon": -74.157365,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:54:19-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:54:19-05:00",
+         "estimated": null
+        },
+        "stop": {
+         "gtfsId": "bogota:61743",
+         "code": "G024"
+        },
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Destination",
+        "lat": 4.5978,
+        "lon": -74.1616,
+        "arrival": {
+         "scheduledTime": "2026-09-08T11:07:23-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T11:07:23-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "su`[pzrcM@?A_@?IEm@?OC]?SCUG{Au@D@n@@PL?",
+        "length": 36
+       },
+       "intermediateStops": [],
+       "steps": [
+        {
+         "distance": 207.02,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "EAST",
+         "streetName": "corridor",
+         "lat": 4.5962517,
+         "lon": -74.1573641
+        },
+        {
+         "distance": 10.44,
+         "relativeDirection": "CONTINUE",
+         "absoluteDirection": "WEST",
+         "streetName": "steps",
+         "lat": 4.5966328,
+         "lon": -74.1562956
+        }
+       ],
+       "alerts": []
+      }
+     ]
+    }
+   }
+  ]
+ }
+}

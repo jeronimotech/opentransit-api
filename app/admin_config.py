@@ -27,10 +27,19 @@ from .cities import (
     Maintenance,
     MinAppVersion,
     Mobility,
+    OnDemandEstimateCfg,
+    OnDemandHandoff,
+    OnDemandPolicy,
+    OnDemandProvider,
     ServiceTile,
+    TaxiSurcharge,
+    TaxiSurchargeWhen,
+    TaxiTariff,
+    TaxiZone,
 )
 from .db import pool
 from .errors import ApiError
+from .ondemand import PLACEHOLDER, mask_credentials
 
 log = logging.getLogger("ot.admin_config")
 
@@ -132,8 +141,101 @@ class BikeShareCfg(_Strict):
     _v = field_validator("gbfsUrl", "url")(_https)
 
 
+# ---- v1.4 on-demand mobility (taxi tariffs, providers, policy)
+_HM = r"^([01]\d|2[0-3]):[0-5]\d$"
+
+
+class TaxiSurchargeWhenCfg(_Strict):
+    nightFrom: str | None = Field(None, pattern=_HM)
+    nightTo: str | None = Field(None, pattern=_HM)
+    sundays: bool = False
+    holidays: bool = False
+    zones: list[str] = []
+    optional: bool = False
+
+
+class TaxiSurchargeCfg(_Strict):
+    id: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    label: str = Field(min_length=1, max_length=60)
+    amount: float = Field(ge=0)
+    when: TaxiSurchargeWhenCfg = TaxiSurchargeWhenCfg()
+
+
+class TaxiZoneCfg(_Strict):
+    id: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    name: str = Field(min_length=1, max_length=80)
+    polygon: list[list[float]] = Field(min_length=3, max_length=500)
+
+
+class TaxiTariffCfg(_Strict):
+    id: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    name: str = Field(min_length=1, max_length=80)
+    currency: str = Field("COP", pattern=r"^[A-Z]{3}$")
+    flagFall: float = Field(ge=0)
+    unitPrice: float = Field(ge=0)
+    unitMeters: int = Field(100, gt=0, le=5000)
+    unitSeconds: int = Field(30, gt=0, le=600)
+    minimumFare: float = Field(0, ge=0)
+    surcharges: list[TaxiSurchargeCfg] = Field([], max_length=12)
+    zones: list[TaxiZoneCfg] = Field([], max_length=20)
+    source: dict[str, str | None] | None = None
+    validFrom: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    note: str | None = Field(None, max_length=200)
+    waitingShare: float = Field(0.15, ge=0, le=0.6)
+    rounding: int = Field(100, gt=0)
+    bandPct: float = Field(0.10, ge=0, le=0.5)
+
+
+class OnDemandEstimateCfgA(_Strict):
+    kind: Literal["tariff", "api", "none"] = "none"
+    tariffId: str | None = None
+
+
+class OnDemandHandoffCfg(_Strict):
+    kind: Literal["none", "url", "template"] = "url"
+    template: str | None = Field(None, max_length=1000)
+    web: str | None = None
+    apps: AppLinksCfg = AppLinksCfg()
+    scheme: str | None = Field(None, pattern=r"^[a-z][a-z0-9+.-]*://")
+
+    _v = field_validator("web")(_https)
+
+    @field_validator("template")
+    @classmethod
+    def _tpl(cls, v: str | None) -> str | None:
+        if v is not None and not v.startswith("https://"):
+            raise ValueError("must be an https:// URL template")
+        return v
+
+
+class OnDemandProviderCfg(_Strict):
+    id: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    name: str = Field(min_length=1, max_length=60)
+    kind: Literal["taxi", "ridehail"] = "ridehail"
+    color: str = Field("#333333", pattern=r"^#[0-9A-Fa-f]{6}$")
+    textColor: str = Field("#FFFFFF", pattern=r"^#[0-9A-Fa-f]{6}$")
+    logoUrl: str | None = None
+    estimate: OnDemandEstimateCfgA = OnDemandEstimateCfgA()
+    handoff: OnDemandHandoffCfg = OnDemandHandoffCfg()
+    credentials: dict[str, str] = {}
+    enabled: bool = True
+    order: int = Field(0, ge=0, le=100)
+
+    _v = field_validator("logoUrl")(_https)
+
+
+class OnDemandPolicyCfg(_Strict):
+    maxDirectDistanceKm: float = Field(40, gt=0, le=300)
+    firstLastMile: bool = True
+    maxFeederKm: float = Field(8, gt=0, le=50)
+    showWhenTransitFaster: bool = True
+
+
 class MobilityCfg(_Strict):
     bikeShare: list[BikeShareCfg] = []
+    taxiTariffs: list[TaxiTariffCfg] = Field([], max_length=10)
+    onDemand: list[OnDemandProviderCfg] = Field([], max_length=20)
+    onDemandPolicy: OnDemandPolicyCfg = OnDemandPolicyCfg()
 
 
 # ---- landing (v1.3): every URL https (or null); CTA urls may also be "#anchor" / "/path"; sizes bounded
@@ -306,7 +408,8 @@ def yaml_sections(base: City) -> dict:
     """The editable sections of the YAML city in the public camelCase shape."""
     pub = base.public()
     return {"fares": pub["fares"], "config": pub["config"], "links": pub["links"], "services": pub["services"],
-            "branding": {"primaryColor": pub["branding"]["primaryColor"]}, "mobility": pub["mobility"],
+            "branding": {"primaryColor": pub["branding"]["primaryColor"]},
+            "mobility": base.mobility_public(admin=True),      # credentials included (masked by describe())
             "landing": base.landing.public()}
 
 
@@ -336,7 +439,35 @@ def validate_sections(sections: dict) -> dict:
     nids = [n["id"] for n in out["mobility"]["bikeShare"]]
     if len(nids) != len(set(nids)):
         raise ApiError("mobility.bikeShare: duplicate network id", status=422)
+    _validate_ondemand(out["mobility"])
     return out
+
+
+def _validate_ondemand(mob: dict) -> None:
+    tids = [t["id"] for t in mob["taxiTariffs"]]
+    if len(tids) != len(set(tids)):
+        raise ApiError("mobility.taxiTariffs: duplicate tariff id", status=422)
+    for i, t in enumerate(mob["taxiTariffs"]):
+        zone_ids = {z["id"] for z in t["zones"]}
+        for j, sc in enumerate(t["surcharges"]):
+            unknown = [z for z in sc["when"]["zones"] if z not in zone_ids]
+            if unknown:
+                raise ApiError(f"mobility.taxiTariffs.{i}.surcharges.{j}.when.zones: unknown zone {unknown[0]}",
+                               status=422)
+    pids = [p["id"] for p in mob["onDemand"]]
+    if len(pids) != len(set(pids)):
+        raise ApiError("mobility.onDemand: duplicate provider id", status=422)
+    orders = [p["order"] for p in mob["onDemand"]]
+    if len(orders) != len(set(orders)):
+        raise ApiError("mobility.onDemand: order must be unique", status=422)
+    for i, p in enumerate(mob["onDemand"]):
+        est, h = p["estimate"], p["handoff"]
+        if est["kind"] == "tariff" and est["tariffId"] not in tids:
+            raise ApiError(f"mobility.onDemand.{i}.estimate.tariffId: unknown tariff", status=422)
+        if h["kind"] == "template":
+            if not h["template"] or not PLACEHOLDER.search(h["template"]):
+                raise ApiError(f"mobility.onDemand.{i}.handoff.template: must contain at least one {{placeholder}}",
+                               status=422)
 
 
 def build_city(base: City, sections: dict) -> City:
@@ -359,8 +490,42 @@ def build_city(base: City, sections: dict) -> City:
                              pricing_summary=n.get("pricingSummary"), single_trip_price=n.get("singleTripPrice"),
                              form_factors=n.get("formFactors") or [])
             for n in sections["mobility"]["bikeShare"]]
-    upd["mobility"] = Mobility(bike_share=nets)
-    upd["features"] = base.features.model_copy(update={"bike_share": bool(nets)})
+    mob = sections["mobility"]
+    tariffs = [TaxiTariff(id=t["id"], name=t["name"], currency=t["currency"], flag_fall=t["flagFall"],
+                          unit_price=t["unitPrice"], unit_meters=t["unitMeters"], unit_seconds=t["unitSeconds"],
+                          minimum_fare=t["minimumFare"],
+                          surcharges=[TaxiSurcharge(id=x["id"], label=x["label"], amount=x["amount"],
+                                                    when=TaxiSurchargeWhen(night_from=x["when"]["nightFrom"],
+                                                                           night_to=x["when"]["nightTo"],
+                                                                           sundays=x["when"]["sundays"],
+                                                                           holidays=x["when"]["holidays"],
+                                                                           zones=x["when"]["zones"],
+                                                                           optional=x["when"]["optional"]))
+                                      for x in t["surcharges"]],
+                          zones=[TaxiZone(id=z["id"], name=z["name"], polygon=z["polygon"]) for z in t["zones"]],
+                          source=t.get("source"), valid_from=t.get("validFrom"), note=t.get("note"),
+                          waiting_share=t["waitingShare"], rounding=t["rounding"], band_pct=t["bandPct"])
+               for t in mob["taxiTariffs"]]
+    providers = [OnDemandProvider(id=p["id"], name=p["name"], kind=p["kind"], color=p["color"],
+                                  text_color=p["textColor"], logo_url=p.get("logoUrl"),
+                                  estimate=OnDemandEstimateCfg(kind=p["estimate"]["kind"],
+                                                               tariff_id=p["estimate"].get("tariffId")),
+                                  handoff=OnDemandHandoff(kind=p["handoff"]["kind"],
+                                                          template=p["handoff"].get("template"),
+                                                          web=p["handoff"].get("web"),
+                                                          apps=p["handoff"].get("apps") or {},
+                                                          scheme=p["handoff"].get("scheme")),
+                                  credentials={k: v for k, v in (p.get("credentials") or {}).items() if v},
+                                  enabled=p["enabled"], order=p["order"])
+                 for p in mob["onDemand"]]
+    pol = mob["onDemandPolicy"]
+    upd["mobility"] = Mobility(bike_share=nets, taxi_tariffs=tariffs, on_demand=providers,
+                               on_demand_policy=OnDemandPolicy(max_direct_distance_km=pol["maxDirectDistanceKm"],
+                                                               first_last_mile=pol["firstLastMile"],
+                                                               max_feeder_km=pol["maxFeederKm"],
+                                                               show_when_transit_faster=pol["showWhenTransitFaster"]))
+    upd["features"] = base.features.model_copy(update={"bike_share": bool(nets),
+                                                       "on_demand": any(p.enabled for p in providers)})
     upd["landing"] = Landing.model_validate(sections["landing"])
     return base.model_copy(update=upd)
 
@@ -477,6 +642,7 @@ async def load_overrides(store: ConfigStore, runtimes: dict) -> None:
 def describe(rt) -> dict:
     """Shape shared by GET/PUT/DELETE of the admin config endpoint."""
     base = rt.base_city or rt.city
-    return {"effective": rt.city.public(), "override": rt.override, "yaml": yaml_sections(base),
+    return {"effective": rt.city.public(), "override": mask_credentials(rt.override),
+            "yaml": mask_credentials(yaml_sections(base)),
             "revision": rt.config_revision, "updatedAt": rt.config_updated_at, "updatedBy": rt.config_updated_by,
             "editable": list(EDITABLE)}

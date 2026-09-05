@@ -18,6 +18,7 @@ features:
   alerts: false
   fares: false
   bike_share: false
+  on_demand: false               # v1.4: true when `mobility.on_demand` lists at least one enabled provider
 attribution: "Data: <agency> (GTFS) · Map: © OpenMapTiles © OpenStreetMap contributors"
 
 feeds:
@@ -52,6 +53,16 @@ links: { pqrs: null, recharge: null, support: null, privacy: null }
 services: []                     # [{ id, label, icon, url, kind: external|deeplink }]
 mobility:                        # v1.2 shared mobility; each entry is a GBFS feed + the OTP `vehicle-rental` updater network id
   bike_share: []                 # [{ id, name, network, gbfs_url, color, url, apps: {ios, android}, pricing_summary, single_trip_price: {amount, currency, label}, form_factors }]
+  # ── v1.4 on-demand mobility (taxi / ride-hailing); all optional, admin-editable, credentials masked ──
+  taxi_tariffs: []               # [{ id, name, currency, flag_fall, unit_price, unit_meters, unit_seconds, minimum_fare,
+                                 #    surcharges: [{ id, label, amount, when: { night_from, night_to, sundays, holidays, zones: [], optional } }],
+                                 #    zones: [{ id, name, polygon: [[lon, lat], ...] }], source: { label, url }, valid_from, note,
+                                 #    waiting_share: 0.15, rounding: 100, band_pct: 0.10 }]
+  on_demand: []                  # [{ id, name, kind: taxi|ridehail, color, text_color, logo_url,
+                                 #    estimate: { kind: tariff|api|none, tariff_id }, handoff: { kind: none|url|template, template, web, apps: {ios, android}, scheme },
+                                 #    credentials: { clientId: "${MY_PROVIDER_CLIENT_ID:-}" }, enabled, order }]
+                                 # template placeholders: {clientId} {pickupLat} {pickupLon} {pickupName} {dropoffLat} {dropoffLon} {dropoffName} {pickupJson} {dropoffJson}
+  on_demand_policy: { max_direct_distance_km: 40, first_last_mile: true, max_feeder_km: 8, show_when_transit_faster: true }
 # pois_file: mycity/pois.geojson # default cities/<slug>/pois.geojson (built by scripts/build-pois.sh)
 # ── v1.3 · white-label landing page (optional; admin-editable; GET /v1/cities/<slug>/landing) ──
 landing:

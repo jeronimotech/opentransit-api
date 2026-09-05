@@ -24,6 +24,7 @@ from .routers import (
     geocode,
     health,
     landing,
+    ondemand,
     plan,
     platform,
     pois,
@@ -124,13 +125,15 @@ def create_app() -> FastAPI:
         description="Open-source, multi-city, multimodal trip-planning API (GTFS + GTFS-RT + OpenTripPlanner).",
         version=__version__, lifespan=lifespan,
         openapi_tags=[{"name": "planning"}, {"name": "search"}, {"name": "stops"}, {"name": "routes"},
-                      {"name": "realtime"}, {"name": "rental"}, {"name": "platform"}, {"name": "admin"}],
+                      {"name": "realtime"}, {"name": "rental"}, {"name": "ondemand"}, {"name": "platform"},
+                      {"name": "admin"}],
     )
     origins = [o.strip() for o in settings().CORS_ORIGINS.split(",") if o.strip()]
     app.add_middleware(CORSMiddleware, allow_origins=origins or ["*"], allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
-    for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, landing, admin):
+    for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, ondemand,
+              landing, admin):
         app.include_router(r.router)
 
     @app.get("/", include_in_schema=False)

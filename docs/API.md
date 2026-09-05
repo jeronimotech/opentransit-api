@@ -320,6 +320,77 @@ Fallbacks resolved by the API (stored config keeps the nulls): `theme.primaryCol
   Public, `Cache-Control: public, max-age=300`; stats are computed at most once per minute (routes/stops from the active feed, vehiclesLive from the RT frame — `0` when the realtime layer is stale — alertsActive from active alerts, bikeStations from the GBFS caches). `404 LANDING_DISABLED` when `landing.enabled` is false.
 - Admin: `PUT /v1/admin/cities/{city}/config` accepts `"landing": {...}` (partial deep-merge; `null` resets a key to the YAML). Bogotá ships a full Spanish landing in `cities/bogota.yaml`.
 
+## v1.4 additions (implemented 2026-09-05) — on-demand mobility (taxi / ride-hailing)
+
+Taxi and ride-hailing providers are **per-city configuration** (`mobility.taxi_tariffs[]`, `mobility.on_demand[]`,
+`mobility.on_demand_policy`; admin-editable under `mobility`). No provider is named in code, labels or i18n.
+Credentials (`credentials.clientId`…) are injected server-side when a hand-off link is built; they never appear
+in public responses, are **masked** (`••••1a2b`) in admin GET/PUT replies and in history rows, and a masked value
+echoed back in a PUT keeps the stored one.
+
+### City (extended)
+```jsonc
+"features": { ..., "onDemand": true },              // true when at least one enabled provider is configured
+"mobility": {
+  "taxiTariffs": [ { "id", "name", "currency", "flagFall", "unitPrice", "unitMeters", "unitSeconds", "minimumFare",
+                     "surcharges": [ { "id", "label", "amount", "when": { "nightFrom", "nightTo", "sundays", "holidays", "zones": [], "optional" } } ],
+                     "zones": [ { "id", "name", "polygon": [[lon, lat], ...] } ], "source": {"label", "url"}, "validFrom", "note",
+                     "waitingShare": 0.15, "rounding": 100, "bandPct": 0.10 } ],
+  "onDemand": [ { "id", "name", "kind": "taxi"|"ridehail", "color", "textColor", "logoUrl",
+                  "estimate": { "kind": "tariff"|"api"|"none", "tariffId" },
+                  "handoff": { "kind": "none"|"url"|"template", "hasTemplate": bool, "web", "apps": {"ios", "android"}, "scheme" },
+                  "enabled", "order" } ],                 // public shape: no template, no credentials
+  "onDemandPolicy": { "maxDirectDistanceKm": 40, "firstLastMile": true, "maxFeederKm": 8, "showWhenTransitFaster": true }
+}
+```
+Template placeholders (URL-encoded by the API): `{clientId}` (and other credential keys), `{pickupLat}`, `{pickupLon}`,
+`{pickupName}`, `{dropoffLat}`, `{dropoffLon}`, `{dropoffName}`, `{pickupJson}`, `{dropoffJson}`
+(`{"latitude","longitude","addressLine1"}` objects). A template that needs a credential the city has not configured
+resolves to the provider's store/web fallback, never to a broken link.
+
+### Tariff estimate
+`price = max(minimumFare, flagFall + (ceil(distance / unitMeters) + floor(duration · waitingShare / unitSeconds)) · unitPrice)`
+rounded to `rounding`, plus every applicable surcharge (night window — may wrap midnight —, Sundays, public
+holidays of the city's country, a zone touched by origin or destination, optional extras requested with
+`options=`). `min`/`max` = ±`bandPct`. Breakdown labels are localized (`locale=es|en`).
+
+### Endpoints
+- `GET /v1/cities/{city}/ondemand/providers` → `{ "providers": [public provider…], "policy": {...}, "tariffs": [...] }`
+  (cache 5 min; `404 ONDEMAND_DISABLED` when nothing is configured).
+- `GET /v1/cities/{city}/ondemand/estimate?fromLat&fromLon&toLat&toLon&time=&providerId=&options=&fromName=&toName=&locale=` →
+  `{ "route": { "distanceMeters", "durationSeconds", "geometry" }, "when", "estimates": [ { "providerId", "name", "kind", "color",
+  "textColor", "logoUrl", "price": { "amount", "min", "max", "currency", "estimated": true, "breakdown": [{label, amount}],
+  "surchargesApplied": ["night"], "note", "tariffId" } | null, "waitSeconds": null, "source": "tariff"|"api"|"none",
+  "priceLabel": "Precio en la app"|null, "handoffUrl": "<API hand-off url for this trip>" } ] }`
+  — route from OTP direct `CAR` (cached 30 s per rounded trip and 5-minute bucket); `404 NO_ROUTE`, `404 PROVIDER_NOT_FOUND`.
+- `GET /v1/cities/{city}/ondemand/handoff?providerId&fromLat&fromLon&toLat&toLon&fromName&toName&platform=ios|android|web` →
+  `{ "url", "fallback", "kind": "none"|"url"|"template", "provider": {...}, "missingCredentials": [] }`; `redirect=1` → HTTP 302
+  to `url` (or its fallback); `404 HANDOFF_UNAVAILABLE` when the provider has no link at all. Never cached.
+- `GET /v1/cities/{city}/health` gains `"ondemand": { "providers", "tariffs", "routerCar": bool|null }` (a short car
+  route near the city centre, probed every 10 min).
+
+### Plan
+`/plan?onDemand=true` (or `modes=…,ONDEMAND`) adds, when the module is enabled: (a) a **direct** ride (OTP direct
+`CAR`) when origin→destination is within `maxDirectDistanceKm`; (b) with transit and `firstLastMile`, **combos**
+via OTP kiss-and-ride modes (`CAR_DROP_OFF` access, `CAR_PICKUP` egress — both paired with WALK), keeping only
+those whose car leg is ≤ `maxFeederKm`. At most 1 direct + 2 combos (shortest first, same-shape combos at other
+departures deduplicated) are merged next to the transit results (`source: "ondemand"`, cap `numItineraries + 3`,
+the best transit itinerary is never displaced; `showWhenTransitFaster=false` hides rides slower than it).
+Every CAR leg carries:
+```jsonc
+"onDemand": { "kind": "taxi"|"ridehail"|"mixed",
+  "providers": [ { ...same quote shape as /ondemand/estimate, "handoffUrl": "..." } ],
+  "recommendedProviderId": "taxi" }          // cheapest priced provider, else the first configured
+```
+`modesUsed` shows `CAR_ONDEMAND`; `fare.breakdown` gets a `kind: "ondemand"` line with the recommended
+provider's amount, or `amount: null` plus `fare.note = "Precio en la app"` when no provider has an estimate.
+
+### Admin
+`PUT /v1/admin/cities/{city}/config` accepts `"mobility": { "taxiTariffs", "onDemand", "onDemandPolicy" }`.
+Validation: slug ids, hex colours, https links, `HH:MM` windows, zone references, `tariffId` must exist, unique
+provider ids and `order`, a `template` hand-off must contain a placeholder. GET/PUT/DELETE replies and
+`…/config/history` show credentials masked.
+
 ## Implementation notes & deviations (what this repo actually does)
 
 - **v1.2 rental (deviations from CONTRACT-bikeshare.md):** `stops/nearby` returns rental stations in a separate `rentalStations` array (typed) instead of mixing them into `stops`; `priceEstimate` is one pass per network per itinerary; `Itinerary.fare` is non-null for rental-only trips even without city fares; OTP 2.9 counts (`availableVehicles.total`) are flattened; a rental leg from a network the city does not configure is still returned with `networkId` = OTP's id and no colour/price.

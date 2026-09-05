@@ -7,6 +7,7 @@ from ..config import settings
 from ..errors import Unauthorized
 from ..gtfs_static import ingest, load_route_index, load_service_index
 from ..normalize import set_feed_flags
+from ..ondemand import mask_credentials, unmask_patch
 from ..runtime import CityRuntime, city_runtime
 
 router = APIRouter(tags=["admin"])
@@ -53,6 +54,9 @@ async def put_config(patch: ConfigPatch, request: Request, rt: CityRuntime = Dep
     so the YAML value applies again. The effective result is validated strictly before anything is saved."""
     sections = {k: v for k, v in patch.model_dump(exclude={"note", "updatedBy"}).items()
                 if k in patch.model_fields_set}
+    if sections.get("mobility"):
+        # masked credentials echoed back by the UI keep their stored value; new values are stored as sent
+        sections["mobility"] = unmask_patch(sections["mobility"], rt.city)
     new_override = deep_merge(rt.override or {}, sections)
     effective_city(rt.base_city or rt.city, new_override)          # raises 422 with the field path
     row = await request.app.state.config_store.save(rt.city.id, new_override, patch.updatedBy, patch.note)
@@ -73,7 +77,8 @@ async def delete_config(request: Request, rt: CityRuntime = Depends(city_runtime
 @router.get("/v1/admin/cities/{city}/config/history", dependencies=[Depends(require_admin)])
 async def config_history(request: Request, rt: CityRuntime = Depends(city_runtime),
                          limit: int = Query(20, ge=1, le=200)):
-    return {"items": await request.app.state.config_store.history(rt.city.id, limit)}
+    items = await request.app.state.config_store.history(rt.city.id, limit)
+    return {"items": [{**i, "data": mask_credentials(i.get("data"))} for i in items]}
 
 
 def _sync_gbfs(rt: CityRuntime) -> None:

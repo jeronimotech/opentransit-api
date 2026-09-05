@@ -2,13 +2,14 @@ import asyncio
 import datetime as dt
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from ..errors import ApiError
 from ..gbfs import GbfsNetwork as GbfsNetworkForms
 from ..geocode import reverse
 from ..models import PlanResponse
 from ..normalize import apply_endpoint_names, enrich_rental, plan_from_otp
+from ..ondemand import attach_to_plan, haversine_m, is_ondemand_leg
 from ..otp import PLAN_QUERY
 from ..runtime import CityRuntime, city_runtime
 
@@ -53,7 +54,8 @@ RENTAL_BIAS = {"walk_reluctance": 5.0, "bicycle_reluctance": 1.0}
 def build_variables(*, from_lat: float, from_lon: float, to_lat: float, to_lon: float, when: dt.datetime,
                     arrive_by: bool, transit: list[str], street: list[str], wheelchair: bool,
                     num: int, locale: str, walk_reluctance: float | None,
-                    bicycle_reluctance: float | None = None) -> dict:
+                    bicycle_reluctance: float | None = None, access_extra: list[str] | None = None,
+                    egress_extra: list[str] | None = None) -> dict:
     modes: dict = {}
     rental = [m for m in street if m in RENTAL_MODES]
     if len(rental) > 1:
@@ -65,8 +67,11 @@ def build_variables(*, from_lat: float, from_lon: float, to_lat: float, to_lon: 
         # Access/egress stay on foot: feeds rarely declare bikes_allowed, and OTP then finds nothing.
         # A requested BICYCLE is offered as a direct (bike-only) alternative next to the transit options.
         # Shared vehicles (GBFS) are allowed as access/egress AND as a direct alternative.
+        # v1.4 on-demand combos: OTP's kiss-and-ride modes (CAR_DROP_OFF access, CAR_PICKUP egress) must be
+        # paired with WALK in the same list.
         modes["transit"] = {"transit": [{"mode": m} for m in transit],
-                            "access": ["WALK", *rental], "egress": ["WALK", *rental], "transfer": ["WALK"]}
+                            "access": ["WALK", *rental, *(access_extra or [])],
+                            "egress": ["WALK", *rental, *(egress_extra or [])], "transfer": ["WALK"]}
         modes["direct"] = direct
     else:
         modes["direct"] = direct or ["WALK"]
@@ -179,15 +184,76 @@ def merge_plans(primary: list[dict], rental_searches: list[list[dict]], num: int
     return chosen
 
 
+def merge_ondemand(chosen: list[dict], ondemand_searches: list[list[dict]], num: int, *,
+                   max_feeder_m: float, show_when_transit_faster: bool = True, max_direct: int = 1,
+                   max_combos: int = 2) -> list[dict]:
+    """Add taxi / ride-hailing itineraries next to the transit ones.
+
+    Candidates are itineraries with a CAR leg: the direct ride (one CAR leg) and first/last-mile combos whose
+    CAR leg is within `max_feeder_m`. The best transit itinerary is never displaced; at most `max_direct`
+    direct rides and `max_combos` combos (shortest first) are added, capped at `num + 3` by dropping the
+    worst-ranked plain transit results; the list is sorted by arrival time and re-numbered."""
+    seen = {_signature(it) for it in chosen}
+    shapes: set[tuple] = set()          # time-less signature: the same combo at another departure is not new
+    direct: list[dict] = []
+    combos: list[dict] = []
+    for search in ondemand_searches:
+        for it in sorted((x for s in [search] for x in s), key=lambda it: it.get("durationSeconds") or 0):
+            legs = it.get("legs") or []
+            car = [lg for lg in legs if is_ondemand_leg(lg)]
+            if not car:
+                continue
+            sig = _signature(it)
+            shape = tuple(x[:4] for x in sig)
+            if sig in seen or shape in shapes:
+                continue
+            seen.add(sig)
+            shapes.add(shape)
+            it["source"] = "ondemand"
+            if any(lg.get("transit") for lg in legs):
+                if all((lg.get("distanceMeters") or 0) <= max_feeder_m for lg in car):
+                    combos.append(it)
+            else:
+                direct.append(it)
+    best_transit = next((it for it in chosen if any(lg.get("transit") for lg in it.get("legs") or [])), None)
+    if best_transit and not show_when_transit_faster:
+        limit = best_transit.get("durationSeconds") or 0
+        direct = [it for it in direct if (it.get("durationSeconds") or 0) <= limit]
+        combos = [it for it in combos if (it.get("durationSeconds") or 0) <= limit]
+    direct.sort(key=lambda it: it.get("durationSeconds") or 0)
+    combos.sort(key=lambda it: it.get("durationSeconds") or 0)
+    picks = direct[:max_direct] + combos[:max_combos]
+    cap = num + 3
+    for it in picks:
+        while len(chosen) >= cap:
+            idx = next((i for i in range(len(chosen) - 1, 0, -1)
+                        if chosen[i].get("source") == "primary" and not chosen[i].get("rentalLegs")), None)
+            if idx is None:
+                break
+            chosen.pop(idx)
+        if len(chosen) >= cap:
+            break
+        chosen.append(it)
+    chosen.sort(key=lambda it: (it.get("endTime") or "", it.get("durationSeconds") or 0))
+    for i, it in enumerate(chosen):
+        it["id"] = f"it-{i}"
+    return chosen
+
+
+ONDEMAND_TOKEN = "ONDEMAND"
+
+
 @router.get("/v1/cities/{city}/plan", response_model=PlanResponse, response_model_by_alias=True)
 async def plan(
+    request: Request,
     rt: CityRuntime = Depends(city_runtime),
     fromLat: float = Query(..., ge=-90, le=90), fromLon: float = Query(..., ge=-180, le=180),
     toLat: float = Query(..., ge=-90, le=90), toLon: float = Query(..., ge=-180, le=180),
     time: str | None = Query(None, description="ISO-8601; default now in the city's timezone"),
     arriveBy: bool = False,
     modes: str | None = Query(None, description="comma list: TRANSIT,WALK,BUS,RAIL,SUBWAY,TRAM,CABLE_CAR,BICYCLE,"
-                                                "BIKE_RENTAL,SCOOTER_RENTAL"),
+                                                "BIKE_RENTAL,SCOOTER_RENTAL,ONDEMAND"),
+    onDemand: bool = Query(False, description="add taxi / ride-hailing options (direct + first/last mile)"),
     wheelchair: bool = False,
     numItineraries: int = Query(5, ge=1, le=10),
     maxWalkDistance: int = Query(1500, ge=100, le=10000),
@@ -205,6 +271,10 @@ async def plan(
         when = when.replace(tzinfo=tz) if when.tzinfo is None else when.astimezone(tz)
     else:
         when = dt.datetime.now(tz)
+    if modes and ONDEMAND_TOKEN in {t.strip().upper() for t in modes.split(",")}:
+        onDemand = True
+        modes = ",".join(t for t in modes.split(",") if t.strip().upper() != ONDEMAND_TOKEN) or None
+    on_demand = onDemand and city.on_demand_enabled()
     transit, street = parse_modes(modes, city.transit_modes())
     if any(m in RENTAL_MODES for m in street) and not city.mobility.bike_share:
         raise ApiError(f"shared vehicles are not available in {city.name}", code="MODE_UNAVAILABLE")
@@ -228,6 +298,20 @@ async def plan(
             searches.append(build_variables(**common, street=["WALK", m], num=max(6, numItineraries + 4),
                                             walk_reluctance=RENTAL_BIAS["walk_reluctance"],
                                             bicycle_reluctance=RENTAL_BIAS["bicycle_reluctance"]))
+    # v1.4 on-demand: a direct car ride (within the policy distance) and, with transit, kiss-and-ride combos
+    # (car to the first stop / car from the last stop, bounded by maxFeederKm after the fact).
+    od_start = len(searches)
+    policy = city.mobility.on_demand_policy
+    if on_demand:
+        if haversine_m(fromLat, fromLon, toLat, toLon) <= policy.max_direct_distance_km * 1000:
+            searches.append(build_variables(**{**common, "transit": []}, street=["CAR"], num=1,
+                                            walk_reluctance=None))
+        if policy.first_last_mile and transit:
+            n = max(4, numItineraries)
+            searches.append(build_variables(**common, street=base_street, num=n, walk_reluctance=reluctance,
+                                            access_extra=["CAR_DROP_OFF"]))
+            searches.append(build_variables(**common, street=base_street, num=n, walk_reluctance=reluctance,
+                                            egress_extra=["CAR_PICKUP"]))
     # Names: the caller's label wins; otherwise a reverse geocode runs concurrently with the plan and is
     # only used if it comes back within a short budget, so it never adds latency to the itinerary search.
     results = await asyncio.gather(
@@ -239,9 +323,17 @@ async def plan(
     dest = {"name": toName or rev_to, "lat": toLat, "lon": toLon}
     plans = [plan_from_otp(city, d, origin, dest, rt.otp.version, locale, rt.rental_prices()) for d in datas]
     plan_out = plans[0]
+    base_plans, od_plans = plans[:od_start], plans[od_start:]
+    if len(base_plans) > 1:
+        plan_out["itineraries"] = merge_plans(base_plans[0]["itineraries"],
+                                             [p["itineraries"] for p in base_plans[1:]], numItineraries)
+    if od_plans:
+        for it in plan_out["itineraries"]:
+            it.setdefault("source", "primary")
+        plan_out["itineraries"] = merge_ondemand(plan_out["itineraries"], [p["itineraries"] for p in od_plans],
+                                                 numItineraries, max_feeder_m=policy.max_feeder_km * 1000,
+                                                 show_when_transit_faster=policy.show_when_transit_faster)
     if len(plans) > 1:
-        plan_out["itineraries"] = merge_plans(plans[0]["itineraries"], [p["itineraries"] for p in plans[1:]],
-                                             numItineraries)
         plan_out["warnings"] = [w for w in plan_out["warnings"]
                                 if not (w.startswith("NO_ITINERARIES") and plan_out["itineraries"])]
     plan_out["warnings"] = mode_warnings + plan_out["warnings"]
@@ -249,6 +341,8 @@ async def plan(
         for leg in it["legs"]:
             rt.with_window(leg.get("route"))
     enrich_rental(plan_out, rt.rental_lookup)
+    if on_demand:
+        attach_to_plan(city, plan_out, when=when, base_url=str(request.base_url), locale=locale)
     return apply_endpoint_names(plan_out, origin["name"], dest["name"])
 
 

@@ -108,6 +108,44 @@ class RentalInfo(Out):
     price_estimate: PriceEstimate | None = None
 
 
+class PriceLine(Out):
+    label: str
+    amount: float
+
+
+class OnDemandPrice(Out):
+    """Taximeter-style estimate: a band around the expected amount, with the surcharges that applied."""
+    amount: float
+    min: float
+    max: float
+    currency: str
+    estimated: bool = True
+    breakdown: list[PriceLine] = []
+    surcharges_applied: list[str] = []
+    note: str | None = None
+    tariff_id: str | None = None
+
+
+class OnDemandQuote(Out):
+    provider_id: str
+    name: str
+    kind: Literal["taxi", "ridehail"]
+    color: str
+    text_color: str = "#FFFFFF"
+    logo_url: str | None = None
+    price: OnDemandPrice | None = None
+    wait_seconds: int | None = None
+    source: Literal["tariff", "api", "none"] = "none"
+    price_label: str | None = None           # "Precio en la app" when there is no estimate
+    handoff_url: str | None = None           # the API's hand-off endpoint for this trip (add &platform=)
+
+
+class LegOnDemand(Out):
+    kind: Literal["taxi", "ridehail", "mixed"]
+    providers: list[OnDemandQuote] = []
+    recommended_provider_id: str | None = None
+
+
 class WalkStep(Out):
     instruction: str | None = None
     distance_meters: float = 0
@@ -139,13 +177,14 @@ class Leg(Out):
     steps: list[WalkStep] = []
     alerts: list[Alert] = []
     rental: RentalInfo | None = None
+    on_demand: LegOnDemand | None = None     # v1.4: taxi / ride-hailing options for a CAR leg
 
 
 class FareItem(Out):
     label: str
-    amount: float
+    amount: float | None = None              # None: the provider only shows the price in its own app
     route: str | None = None
-    kind: Literal["transit", "rental"] = "transit"
+    kind: Literal["transit", "rental", "ondemand"] = "transit"
 
 
 class Fare(Out):
@@ -153,6 +192,7 @@ class Fare(Out):
     currency: str
     estimated: bool = True
     breakdown: list[FareItem] = []
+    note: str | None = None                  # e.g. "Precio en la app" when a line has no amount
 
 
 class Itinerary(Out):
@@ -168,7 +208,7 @@ class Itinerary(Out):
     accessible: bool | None = None
     rental_legs: int = 0
     modes_used: list[str] = []
-    source: Literal["primary", "rental"] = "primary"   # diagnostic: which search produced the itinerary
+    source: Literal["primary", "rental", "ondemand"] = "primary"   # diagnostic: which search produced it
     legs: list[Leg]
 
 
@@ -465,11 +505,18 @@ class RentalHealth(Out):
     networks: list[RentalNetworkHealth] = []
 
 
+class OnDemandHealth(Out):
+    providers: int = 0
+    tariffs: int = 0
+    router_car: bool | None = None           # None until the first probe
+
+
 class CityHealth(Out):
     static: StaticHealth
     realtime: RealtimeHealth
     router: RouterHealth
     rental: RentalHealth = RentalHealth()
+    ondemand: OnDemandHealth = OnDemandHealth()
 
 
 # ------------------------------------------------------------------ v1.2 shared vehicles (GBFS)
@@ -574,3 +621,43 @@ class LandingResponse(Out):
     landing: dict                    # effective landing config with fallbacks resolved (see docs/API.md)
     stats: LandingStatsOut
     apps: dict                       # {ios, android, web}
+
+
+# ------------------------------------------------------------------ v1.4 on-demand mobility (taxi / ride-hailing)
+class OnDemandProviderOut(Out):
+    id: str
+    name: str
+    kind: Literal["taxi", "ridehail"]
+    color: str
+    text_color: str = "#FFFFFF"
+    logo_url: str | None = None
+    estimate: dict                            # {kind, tariffId}
+    handoff: dict                             # {kind, hasTemplate, web, apps, scheme}  (never the template/credentials)
+    enabled: bool = True
+    order: int = 0
+
+
+class OnDemandProvidersResponse(Out):
+    providers: list[OnDemandProviderOut]
+    policy: dict
+    tariffs: list[dict]
+
+
+class OnDemandRoute(Out):
+    distance_meters: int
+    duration_seconds: int
+    geometry: Geometry | None = None
+
+
+class OnDemandEstimateResponse(Out):
+    route: OnDemandRoute
+    when: str
+    estimates: list[OnDemandQuote]
+
+
+class OnDemandHandoffResponse(Out):
+    url: str | None
+    fallback: str | None
+    kind: Literal["none", "url", "template"]
+    provider: OnDemandProviderOut
+    missing_credentials: list[str] = []

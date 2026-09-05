@@ -5,10 +5,22 @@ All notable changes to `opentransit-api` are documented here. The format follows
 releases start.
 
 ## [Unreleased]
+
+## [1.4.0] - 2026-09-05 — on-demand mobility (taxi / ride-hailing), provider-agnostic
 ### Added
+- `mobility.taxi_tariffs[]`, `mobility.on_demand[]` and `mobility.on_demand_policy` per city (admin-editable;
+  provider credentials injected server-side, returned masked, stripped from public responses and history).
+- Taximeter tariff engine (`app/tariff.py`): distance/waiting units, minimum fare, surcharges by night window,
+  Sundays, public holidays (per country), tariff zones (polygons) and optional extras, ±band, es/en breakdown.
+- `GET /ondemand/providers`, `GET /ondemand/estimate` (OTP direct car route + one quote per provider),
+  `GET /ondemand/handoff` (deep link built server-side, `redirect=1` → 302, store/web fallback), `health.ondemand`.
+- `/plan?onDemand=true` (or mode `ONDEMAND`): a direct ride plus taxi-to-stop / stop-to-taxi combos
+  (OTP `CAR_DROP_OFF` access / `CAR_PICKUP` egress) merged next to transit, `Leg.onDemand` with per-provider
+  prices and hand-off links, `CAR_ONDEMAND` in `modesUsed`, `fare.breakdown[].kind = "ondemand"`, `fare.note`.
 - Rental-aware planning: one OTP search per rental mode plus a rental-biased companion search, merged with a
   guarantee that the best two shared-bike options are returned when they exist (`Itinerary.source`).
 ### Changed
+- `FareItem.amount` may be `null` (provider prices only shown in its app); `Itinerary.source` adds `ondemand`.
 - Requested rental modes with no vehicles available are dropped with a `MODE_NO_VEHICLES` warning instead of
   producing an empty plan; `formFactors` lists `scooter` only when scooters are actually reported available.
 

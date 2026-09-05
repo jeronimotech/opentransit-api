@@ -138,6 +138,17 @@ class OtpClient:
         except Exception:  # noqa: BLE001
             return None
 
+# v1.4: a direct car route (distance, time, geometry) for taxi / ride-hailing estimates.
+CAR_QUERY = """
+query CarRoute($origin: PlanLabeledLocationInput!, $destination: PlanLabeledLocationInput!,
+               $dateTime: PlanDateTimeInput, $modes: PlanModesInput, $first: Int) {
+  planConnection(origin: $origin, destination: $destination, dateTime: $dateTime, modes: $modes, first: $first) {
+    routingErrors { code description }
+    edges { node { duration legs { mode duration distance legGeometry { points } } } }
+  }
+}
+"""
+
 RENTAL_STATIONS_QUERY = f"""
 query RentalStations {{
   vehicleRentalStations {{ {RENTAL_STATION_FIELDS} }}

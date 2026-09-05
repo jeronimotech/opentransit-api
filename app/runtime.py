@@ -30,6 +30,14 @@ class CityRuntime:
     config_updated_by: str | None = None
     # v1.2 shared vehicles: our network id -> live GBFS cache
     gbfs: dict = field(default_factory=dict)
+    # v1.4 on-demand: direct car routes (lazy)
+    _car_router: object | None = None
+
+    def car_router(self):
+        if self._car_router is None:
+            from .ondemand import CarRouter
+            self._car_router = CarRouter(self.otp)
+        return self._car_router
 
     def rental_lookup(self, otp_network: str | None, station_id: str | None) -> dict | None:
         """Fresh availability for a station OTP mentioned (by its updater network id + raw station id)."""

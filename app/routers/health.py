@@ -31,6 +31,8 @@ async def city_health(rt: CityRuntime = Depends(city_runtime)):
                    "graphBuiltAt": (info or {}).get("transitTimeZone") and None or _built_at(info),
                    "baseUrl": rt.city.otp.base_url},
         "rental": {"networks": [g.health() for g in rt.gbfs.values()]},
+        "ondemand": {"providers": len(rt.city.on_demand_providers()), "tariffs": len(rt.city.mobility.taxi_tariffs),
+                     "routerCar": (await rt.car_router().probe(rt.city)) if rt.city.on_demand_providers() else None},
     }
 
 

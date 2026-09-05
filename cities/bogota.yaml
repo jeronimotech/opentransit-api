@@ -17,6 +17,7 @@ features:
   alerts: true
   fares: false
   bike_share: true
+  on_demand: true             # v1.4: taxi / ride-hailing options (providers below)
 attribution: "Datos: TRANSMILENIO S.A. (GTFS) · Mapa: © OpenMapTiles © OpenStreetMap contributors"
 
 feeds:
@@ -101,6 +102,104 @@ mobility:
       pricing_summary: null                                     # derived from system_pricing_plans when null
       single_trip_price: null                                   # { amount: 4850, currency: COP, label: "1 viaje" } to pin the estimate
       form_factors: [bicycle, scooter]
+
+  # ── v1.4 · on-demand mobility (taxi / ride-hailing). Provider-agnostic: everything below is data. ──────
+  # Taxi tariff: Decreto Distrital 042 de 2026 (Secretaría Distrital de Movilidad), in force since 2026-02-12.
+  taxi_tariffs:
+    - id: bogota-taxi-2026
+      name: Tarifa oficial de taxi 2026
+      currency: COP
+      flag_fall: 4500                 # banderazo
+      unit_price: 159                 # por unidad (cada 100 m, o ~30 s detenido)
+      unit_meters: 100
+      unit_seconds: 30
+      minimum_fare: 8000              # carrera mínima
+      surcharges:
+        - { id: night,   label: "Nocturno / dominical / festivo", amount: 3800,
+            when: { night_from: "19:00", night_to: "06:00", sundays: true, holidays: true } }
+        - { id: airport, label: "Aeropuerto", amount: 8000, when: { zones: [airport] } }
+        - { id: door,    label: "Puerta a puerta", amount: 1500, when: { optional: true } }
+      zones:
+        # Approximate box around El Dorado's terminals (T1/T2) and access roads. Refine with OSM aeroway=aerodrome.
+        - id: airport
+          name: Aeropuerto El Dorado
+          polygon: [[-74.165, 4.684], [-74.118, 4.684], [-74.118, 4.716], [-74.165, 4.716]]
+      source: { label: "Decreto Distrital 042 de 2026", url: "https://bogota.gov.co/mi-ciudad/movilidad/en-firme-el-decreto-que-fija-las-tarifas-de-taxi-en-bogota-en-2026" }
+      valid_from: "2026-02-12"
+      note: "Estimación según la tarifa oficial; el taxímetro manda."
+      waiting_share: 0.15             # share of the drive spent stopped in traffic (meter advances by time)
+      rounding: 100
+      band_pct: 0.10
+  # Providers shown in the planner (order = display order). Store/web links verified 2026-09-05.
+  # `credentials` come from the environment (never commit real values); the admin panel shows them masked.
+  on_demand:
+    - id: taxi
+      name: Taxi
+      kind: taxi
+      color: "#F2C200"
+      text_color: "#111111"
+      estimate: { kind: tariff, tariff_id: bogota-taxi-2026 }
+      handoff:
+        kind: url
+        web: https://www.taxislibres.com.co/
+        apps: { ios: "https://apps.apple.com/co/app/id686270238", android: "https://play.google.com/store/search?q=taxis%20libres&c=apps" }
+      enabled: true
+      order: 1
+    - id: uber
+      name: Uber
+      kind: ridehail
+      color: "#000000"
+      text_color: "#FFFFFF"
+      estimate: { kind: none }        # estimates need Uber's partner API; the hand-off prefills the trip
+      handoff:
+        kind: template
+        template: "https://m.uber.com/looking?client_id={clientId}&pickup={pickupJson}&drop[0]={dropoffJson}"
+        web: https://m.uber.com/
+        apps: { ios: "https://apps.apple.com/co/app/id368677368", android: "https://play.google.com/store/apps/details?id=com.ubercab" }
+      credentials: { clientId: "${UBER_CLIENT_ID:-}" }
+      enabled: true
+      order: 2
+    - id: cabify
+      name: Cabify
+      kind: ridehail
+      color: "#7145D6"
+      text_color: "#FFFFFF"
+      estimate: { kind: none }
+      handoff:
+        kind: url
+        web: https://cabify.com/co
+        apps: { ios: "https://apps.apple.com/co/app/id476087442", android: "https://play.google.com/store/apps/details?id=com.cabify.rider" }
+      enabled: true
+      order: 3
+    - id: didi
+      name: DiDi
+      kind: ridehail
+      color: "#FF7F41"
+      text_color: "#111111"
+      estimate: { kind: none }
+      handoff:
+        kind: url
+        web: https://web.didiglobal.com/co/
+        apps: { ios: "https://apps.apple.com/co/app/id1362398401", android: "https://play.google.com/store/apps/details?id=com.didiglobal.passenger" }
+      enabled: true
+      order: 4
+    - id: indrive
+      name: inDrive
+      kind: ridehail
+      color: "#A6E22E"
+      text_color: "#111111"
+      estimate: { kind: none }
+      handoff:
+        kind: url
+        web: https://indrive.com/
+        apps: { ios: "https://apps.apple.com/co/app/id780125801", android: "https://play.google.com/store/apps/details?id=sinet.startup.inDriver" }
+      enabled: true
+      order: 5
+  on_demand_policy:
+    max_direct_distance_km: 40
+    first_last_mile: true
+    max_feeder_km: 8
+    show_when_transit_faster: true
 
 # ── v1.3 · white-label landing page (served by /v1/cities/bogota/landing, editable in the admin panel) ──
 # Screenshots are the web app's own live captures (docs/screenshots on jeronimotech/opentransit-web main).

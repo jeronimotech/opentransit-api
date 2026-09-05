@@ -41,6 +41,7 @@ class Features(BaseModel):
     alerts: bool = False
     fares: bool = False
     bike_share: bool = False
+    on_demand: bool = False
 
 
 class Feeds(BaseModel):
@@ -134,9 +135,129 @@ class BikeShareNetwork(BaseModel):
                 "formFactors": self.form_factors}
 
 
+# ── v1.4 · on-demand mobility (taxi / ride-hailing), provider-agnostic ─────────────
+class TaxiSurchargeWhen(BaseModel):
+    """When a surcharge applies: a nightly window (may wrap midnight), Sundays, public holidays (by the city's
+    country), a tariff zone touched by the trip, or only on request (`optional`, e.g. door-to-door)."""
+    night_from: str | None = None      # "HH:MM" local
+    night_to: str | None = None
+    sundays: bool = False
+    holidays: bool = False
+    zones: list[str] = []
+    optional: bool = False
+
+
+class TaxiSurcharge(BaseModel):
+    id: str = Field(pattern=r"^[a-z0-9-]+$")
+    label: str
+    amount: float = Field(ge=0)
+    when: TaxiSurchargeWhen = TaxiSurchargeWhen()
+
+
+class TaxiZone(BaseModel):
+    id: str = Field(pattern=r"^[a-z0-9-]+$")
+    name: str
+    polygon: list[list[float]]         # [[lon, lat], ...] (closed or not)
+
+
+class TaxiTariff(BaseModel):
+    """A regulated taximeter tariff. The estimate is flag fall + distance/waiting units, never below the minimum,
+    plus the surcharges that apply; a ±band models traffic. The meter always wins — the apps say so."""
+    id: str = Field(pattern=r"^[a-z0-9-]+$")
+    name: str
+    currency: str = "COP"
+    flag_fall: float = Field(ge=0)
+    unit_price: float = Field(ge=0)
+    unit_meters: int = Field(100, gt=0)
+    unit_seconds: int = Field(30, gt=0)
+    minimum_fare: float = Field(0, ge=0)
+    surcharges: list[TaxiSurcharge] = []
+    zones: list[TaxiZone] = []
+    source: dict | None = None         # {label, url}
+    valid_from: str | None = None
+    note: str | None = None
+    waiting_share: float = Field(0.15, ge=0, le=0.6)   # share of the drive spent stopped (meter advances by time)
+    rounding: int = Field(100, gt=0)   # amounts are rounded to this unit (COP taxis round to 100)
+    band_pct: float = Field(0.10, ge=0, le=0.5)
+
+    def public(self) -> dict:
+        return {"id": self.id, "name": self.name, "currency": self.currency, "flagFall": self.flag_fall,
+                "unitPrice": self.unit_price, "unitMeters": self.unit_meters, "unitSeconds": self.unit_seconds,
+                "minimumFare": self.minimum_fare,
+                "surcharges": [{"id": x.id, "label": x.label, "amount": x.amount,
+                                "when": {"nightFrom": x.when.night_from, "nightTo": x.when.night_to,
+                                         "sundays": x.when.sundays, "holidays": x.when.holidays,
+                                         "zones": x.when.zones, "optional": x.when.optional}}
+                               for x in self.surcharges],
+                "zones": [{"id": z.id, "name": z.name, "polygon": z.polygon} for z in self.zones],
+                "source": self.source, "validFrom": self.valid_from, "note": self.note,
+                "waitingShare": self.waiting_share, "rounding": self.rounding, "bandPct": self.band_pct}
+
+
+class OnDemandEstimateCfg(BaseModel):
+    kind: Literal["tariff", "api", "none"] = "none"
+    tariff_id: str | None = None
+
+
+class OnDemandHandoff(BaseModel):
+    """How the apps hand the rider over to the provider: a deep-link template with placeholders, a plain
+    url/store link, or nothing (name only)."""
+    kind: Literal["none", "url", "template"] = "url"
+    template: str | None = None
+    web: str | None = None
+    apps: dict[str, str | None] = {}
+    scheme: str | None = None
+
+
+class OnDemandProvider(BaseModel):
+    id: str = Field(pattern=r"^[a-z0-9-]+$")
+    name: str
+    kind: Literal["taxi", "ridehail"] = "ridehail"
+    color: str = "#333333"
+    text_color: str = "#FFFFFF"
+    logo_url: str | None = None
+    estimate: OnDemandEstimateCfg = OnDemandEstimateCfg()
+    handoff: OnDemandHandoff = OnDemandHandoff()
+    credentials: dict[str, str] = {}   # secret-ish (client ids...): never in public responses, masked in admin
+    enabled: bool = True
+    order: int = 0
+
+    def public(self) -> dict:
+        h = self.handoff
+        return {"id": self.id, "name": self.name, "kind": self.kind, "color": self.color,
+                "textColor": self.text_color, "logoUrl": self.logo_url,
+                "estimate": {"kind": self.estimate.kind, "tariffId": self.estimate.tariff_id},
+                "handoff": {"kind": h.kind, "hasTemplate": bool(h.template), "web": h.web,
+                            "apps": {"ios": h.apps.get("ios"), "android": h.apps.get("android")},
+                            "scheme": h.scheme},
+                "enabled": self.enabled, "order": self.order}
+
+    def admin(self) -> dict:
+        """Full shape for the admin config (credentials included; the router masks them before replying)."""
+        out = self.public()
+        out["handoff"]["template"] = self.handoff.template
+        del out["handoff"]["hasTemplate"]
+        out["credentials"] = dict(self.credentials)
+        return out
+
+
+class OnDemandPolicy(BaseModel):
+    max_direct_distance_km: float = Field(40, gt=0)
+    first_last_mile: bool = True
+    max_feeder_km: float = Field(8, gt=0)
+    show_when_transit_faster: bool = True
+
+    def public(self) -> dict:
+        return {"maxDirectDistanceKm": self.max_direct_distance_km, "firstLastMile": self.first_last_mile,
+                "maxFeederKm": self.max_feeder_km, "showWhenTransitFaster": self.show_when_transit_faster}
+
+
 class Mobility(BaseModel):
     """Shared / on-demand mobility attached to the city. Bike-share first; scooters ride the same GBFS."""
     bike_share: list[BikeShareNetwork] = []
+    taxi_tariffs: list[TaxiTariff] = []
+    on_demand: list[OnDemandProvider] = []
+    on_demand_policy: OnDemandPolicy = OnDemandPolicy()
 
 
 # ── v1.3 · configurable city landing page (white-label) ─────────────────────────
@@ -331,6 +452,31 @@ class City(BaseModel):
                 return n
         return None
 
+    # ---- v1.4 on-demand helpers ----
+    def on_demand_providers(self) -> list[OnDemandProvider]:
+        return sorted((p for p in self.mobility.on_demand if p.enabled), key=lambda p: (p.order, p.id))
+
+    def on_demand_provider(self, provider_id: str | None) -> OnDemandProvider | None:
+        for p in self.mobility.on_demand:
+            if p.id == provider_id:
+                return p
+        return None
+
+    def taxi_tariff(self, tariff_id: str | None) -> TaxiTariff | None:
+        for t in self.mobility.taxi_tariffs:
+            if t.id == tariff_id:
+                return t
+        return None
+
+    def on_demand_enabled(self) -> bool:
+        return self.features.on_demand and bool(self.on_demand_providers())
+
+    def mobility_public(self, *, admin: bool = False) -> dict:
+        return {"bikeShare": [n.public() for n in self.mobility.bike_share],
+                "taxiTariffs": [t.public() for t in self.mobility.taxi_tariffs],
+                "onDemand": [(p.admin() if admin else p.public()) for p in self.mobility.on_demand],
+                "onDemandPolicy": self.mobility.on_demand_policy.public()}
+
     def transit_modes(self) -> list[str]:
         return [m for m in self.modes if m not in ("WALK", "BICYCLE", "CAR", "SCOOTER")]
 
@@ -344,6 +490,7 @@ class City(BaseModel):
             "features": {
                 "realtimeVehicles": self.features.realtime_vehicles, "tripUpdates": self.features.trip_updates,
                 "alerts": self.features.alerts, "fares": self.features.fares, "bikeShare": self.features.bike_share,
+                "onDemand": self.on_demand_enabled(),
             },
             "agencies": [{"id": a.id, "name": a.name, "component": a.component, "color": a.color}
                          for a in self.agencies],
@@ -359,7 +506,7 @@ class City(BaseModel):
                        "maintenance": self.config.maintenance.model_dump()},
             "links": self.links.model_dump(),
             "services": [s.model_dump() for s in self.services],
-            "mobility": {"bikeShare": [n.public() for n in self.mobility.bike_share]},
+            "mobility": self.mobility_public(),
             "attribution": self.attribution,
         }
 

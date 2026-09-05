@@ -107,6 +107,8 @@ the VM): `docker compose --profile full up -d` runs Postgres, `otp` (for `CITY`,
 | `GET …/routes`, `GET …/routes/{id}`, `GET …/network` | routes & map layer (network shapes are deduped server-side; `?all=true` for every shape) |
 | `GET …/vehicles`, `GET …/vehicles/stream?bbox=&routeIds=` (SSE), `GET …/vehicles/{id}` | realtime |
 | `GET …/alerts`, `GET …/health` | realtime & health |
+| `GET …/ondemand/providers`, `GET …/ondemand/estimate`, `GET …/ondemand/handoff` | taxi / ride-hailing quotes and hand-off links (v1.4) |
+| `GET …/plan?onDemand=true` | direct ride + taxi-to-stop combos next to transit (v1.4) |
 | `POST /v1/admin/cities/{city}/ingest-static`, `…/purge` | admin (`X-Admin-Token`) |
 | `GET /v1/admin/me`, `GET/PUT/DELETE …/admin/cities/{city}/config`, `…/config/history` | runtime-editable fares, client config, links, services (`X-Admin-Token`) |
 
@@ -166,6 +168,39 @@ Then `scripts/otp-updaters.py <city>` (run automatically by `scripts/otp-native.
   runtime from the admin config. The API polls each feed itself (ttl-aware) and never proxies per client.
 
 Bogotá ships with the city's public bike system (252 stations, GBFS 3.0) configured in `cities/bogota.yaml`.
+
+## v1.4 · taxi & ride-hailing — provider-agnostic, no booking, no accounts
+
+Taxi and app rides show up **inside the planner** — a direct ride and "taxi to the station" combos — with an
+honest price band and a one-tap hand-off into the provider's app. Everything is data in the city YAML (and
+editable in the admin panel); nothing in the code names a provider.
+
+```yaml
+mobility:
+  taxi_tariffs:                       # the regulated taximeter; the estimate says "el taxímetro manda"
+    - { id: mycity-taxi-2026, name: Official taxi tariff, currency: COP, flag_fall: 4500, unit_price: 159,
+        unit_meters: 100, unit_seconds: 30, minimum_fare: 8000,
+        surcharges: [ { id: night, label: Night / Sunday / holiday, amount: 3800,
+                        when: { night_from: "19:00", night_to: "06:00", sundays: true, holidays: true } },
+                      { id: airport, label: Airport, amount: 8000, when: { zones: [airport] } } ],
+        zones: [ { id: airport, name: Airport, polygon: [[lon, lat], ...] } ] }
+  on_demand:
+    - { id: taxi, name: Taxi, kind: taxi, color: "#F2C200", estimate: { kind: tariff, tariff_id: mycity-taxi-2026 },
+        handoff: { kind: url, web: https://taxi.example, apps: { ios: ..., android: ... } }, order: 1 }
+    - { id: ride, name: RideApp, kind: ridehail, color: "#000000", estimate: { kind: none },
+        handoff: { kind: template, template: "https://ride.example/go?client_id={clientId}&pickup={pickupJson}&drop[0]={dropoffJson}" },
+        credentials: { clientId: "${RIDEAPP_CLIENT_ID:-}" }, order: 2 }
+  on_demand_policy: { max_direct_distance_km: 40, first_last_mile: true, max_feeder_km: 8, show_when_transit_faster: true }
+```
+
+- **Estimates**: `GET …/ondemand/estimate` routes the car through OpenTripPlanner and prices it with the tariff
+  (distance + waiting units, minimum fare, night/Sunday/holiday/zone surcharges, ±10 % band). Providers without a
+  tariff show "Precio en la app".
+- **Hand-off**: `GET …/ondemand/handoff` builds the provider link server-side (credentials never reach clients;
+  a missing credential falls back to the store/web link), `redirect=1` returns a 302.
+- **Planner**: `…/plan?onDemand=true` merges a direct ride and up to two kiss-and-ride combos (OTP `CAR_DROP_OFF`
+  / `CAR_PICKUP`) next to the transit itineraries; every `CAR` leg carries `onDemand.providers[]`.
+- **Holidays** come from the `holidays` package for the city's `country`.
 
 ## Add a city in five steps
 

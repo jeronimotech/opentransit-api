@@ -24,7 +24,8 @@ def estimate_fare(city: City, legs: list[dict], locale: str = "es") -> dict | No
     `transfer` (up to `max_transfers` of them), anything else pays `base` again and restarts the window."""
     f = city.fares
     rentals = [lg for lg in legs if lg.get("rental") and (lg["rental"].get("priceEstimate") or {}).get("amount")]
-    if f is None and not rentals:
+    ondemand = [lg for lg in legs if lg.get("onDemand")]
+    if f is None and not rentals and not ondemand:
         return None
     lbl_fare, lbl_transfer = _LABELS.get(locale, _LABELS["es"])
     transit = [lg for lg in legs if lg.get("transit")] if f is not None else []
@@ -59,8 +60,28 @@ def estimate_fare(city: City, legs: list[dict], locale: str = "es") -> dict | No
         currency = currency or pe.get("currency")
         breakdown.append({"label": f"{r.get('networkName') or r['networkId']} · {pe.get('label') or 'pase'}",
                           "amount": pe["amount"], "route": None, "kind": "rental"})
+    # v1.4: on-demand (taxi / ride-hailing) legs add the recommended provider's estimate; providers without an
+    # estimate contribute a line with no amount and a note ("price in the app") instead of a fake number.
+    note = None
+    in_app = "Price in the app" if (locale or "es").startswith("en") else "Precio en la app"
+    for lg in ondemand:
+        od = lg["onDemand"]
+        rec = next((q for q in od.get("providers", []) if q.get("providerId") == od.get("recommendedProviderId")),
+                   None) or (od.get("providers") or [None])[0]
+        if not rec:
+            continue
+        price = rec.get("price")
+        if price and price.get("amount") is not None:
+            total += float(price["amount"])
+            currency = currency or price.get("currency")
+            breakdown.append({"label": rec.get("name") or "Taxi", "amount": price["amount"], "route": None,
+                              "kind": "ondemand"})
+        else:
+            breakdown.append({"label": rec.get("name") or "Taxi", "amount": None, "route": None, "kind": "ondemand"})
+            note = in_app
     return {"amount": _num(total), "currency": currency or "COP", "estimated": True,
-            "breakdown": [{**b, "amount": _num(b["amount"])} for b in breakdown]}
+            "breakdown": [{**b, "amount": _num(b["amount"]) if b["amount"] is not None else None} for b in breakdown],
+            "note": note}
 
 
 def _num(x: float) -> float | int:

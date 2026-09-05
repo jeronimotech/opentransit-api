@@ -7,3 +7,4 @@ protobuf==7.36.1
 pydantic==2.13.5
 pydantic-settings==2.15.0
 PyYAML==6.0.3
+holidays==0.103

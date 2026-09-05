@@ -1,0 +1,107 @@
+{
+ "planConnection": {
+  "searchDateTime": "2026-09-08T10:00:00-05:00",
+  "routingErrors": [],
+  "edges": [
+   {
+    "node": {
+     "start": "2026-09-08T10:00:00-05:00",
+     "end": "2026-09-08T10:21:14-05:00",
+     "duration": 1274,
+     "numberOfTransfers": 0,
+     "walkDistance": 0.0,
+     "walkTime": 0,
+     "waitingTime": 0,
+     "accessibilityScore": null,
+     "legs": [
+      {
+       "mode": "CAR",
+       "transitLeg": false,
+       "duration": 1274.0,
+       "distance": 19762.23,
+       "headsign": null,
+       "realTime": false,
+       "realtimeState": null,
+       "rentedBike": false,
+       "start": {
+        "scheduledTime": "2026-09-08T10:00:00-05:00",
+        "estimated": null
+       },
+       "end": {
+        "scheduledTime": "2026-09-08T10:21:14-05:00",
+        "estimated": null
+       },
+       "from": {
+        "name": "Origin",
+        "lat": 4.6766,
+        "lon": -74.0483,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:00:00-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:00:00-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "to": {
+        "name": "Destination",
+        "lat": 4.5978,
+        "lon": -74.1616,
+        "arrival": {
+         "scheduledTime": "2026-09-08T10:21:14-05:00",
+         "estimated": null
+        },
+        "departure": {
+         "scheduledTime": "2026-09-08T10:21:14-05:00",
+         "estimated": null
+        },
+        "stop": null,
+        "vehicleRentalStation": null,
+        "rentalVehicle": null
+       },
+       "route": null,
+       "agency": null,
+       "trip": null,
+       "legGeometry": {
+        "points": "kjp[rq}bMdAcClDxAbAb@LFu@zAWh@sAnCABABABkAbCa@z@INGJUj@oAdCA",
+        "length": 600
+       },
+       "intermediateStops": null,
+       "steps": [
+        {
+         "distance": 82.85,
+         "relativeDirection": "DEPART",
+         "absoluteDirection": "SOUTHEAST",
+         "streetName": "Calle 93A",
+         "lat": 4.6763866,
+         "lon": -74.0484128
+        },
+        {
+         "distance": 160.61,
+         "relativeDirection": "RIGHT",
+         "absoluteDirection": "SOUTHWEST",
+         "streetName": "Carrera 11A",
+         "lat": 4.6760393,
+         "lon": -74.0477514
+        },
+        {
+         "distance": 1095.11,
+         "relativeDirection": "RIGHT",
+         "absoluteDirection": "NORTHWEST",
+         "streetName": "Calle 93",
+         "lat": 4.6747584,
+         "lon": -74.0484211
+        }
+       ],
+       "alerts": []
+      }
+     ]
+    }
+   }
+  ]
+ }
+}
