@@ -175,9 +175,11 @@ async def test_providers_estimate_handoff_endpoints(bogota: City):
         assert r.status_code == 200, r.text
         est = r.json()
         assert est["route"]["distanceMeters"] == 19762 and est["route"]["geometry"]["precision"] == 5
+        assert est["route"]["durationSeconds"] == 1911 and est["route"]["durationFactor"] == 1.5   # 1274 s × 1.5
         taxi = est["estimates"][0]
         assert taxi["providerId"] == "taxi" and taxi["source"] == "tariff"
-        assert taxi["price"]["amount"] == 36900 and taxi["price"]["min"] == 33200 and taxi["price"]["max"] == 40600
+        # 198 distance units + 9 waiting units (1911 s × 15 % / 30 s) → 4500 + 207 × 159 = 37,413 → 37,400
+        assert taxi["price"]["amount"] == 37400 and taxi["price"]["min"] == 33700 and taxi["price"]["max"] == 41100
         assert taxi["handoffUrl"].startswith("http://t/v1/cities/bogota/ondemand/handoff?providerId=taxi&")
         assert est["estimates"][1]["price"] is None and est["estimates"][1]["priceLabel"] == "Precio en la app"
         # same trip again (same 5-minute bucket): served from the car-route cache
@@ -187,8 +189,10 @@ async def test_providers_estimate_handoff_endpoints(bogota: City):
         # night surcharge at 21:00 (another time bucket -> one more OTP call)
         r = await c.get("/v1/cities/bogota/ondemand/estimate", params={**q, "time": "2026-09-08T21:00:00",
                                                                         "providerId": "taxi"})
-        p = r.json()["estimates"][0]["price"]
-        assert p["surchargesApplied"] == ["night"] and p["amount"] == 40700
+        body = r.json()
+        p = body["estimates"][0]["price"]
+        assert body["route"]["durationFactor"] == 1.1 and body["route"]["durationSeconds"] == 1401   # night factor
+        assert p["surchargesApplied"] == ["night"] and p["amount"] == 40700     # 198 + 7 units + 3,800
         assert fake.calls == 2
         r = await c.get("/v1/cities/bogota/ondemand/estimate", params={**q, "providerId": "nope"})
         assert r.status_code == 404 and r.json()["error"]["code"] == "PROVIDER_NOT_FOUND"
@@ -291,3 +295,78 @@ def test_admin_validation_errors(bogota: City):
     # a valid override round-trips and reaches the effective city
     city = effective_city(bogota, {"mobility": {"onDemandPolicy": {"maxFeederKm": 3}}})
     assert city.mobility.on_demand_policy.max_feeder_km == 3 and len(city.on_demand_providers()) == 5
+
+
+# ------------------------------------------------------------------ credential rules on PUT (list replaces)
+PROV = {"id": "uber", "name": "Uber", "kind": "ridehail", "estimate": {"kind": "none"},
+        "handoff": {"kind": "template", "template": "https://m.uber.com/looking?client_id={clientId}",
+                    "apps": {"ios": None, "android": None}}, "order": 2}
+
+
+async def _put(c, providers):
+    r = await c.put("/v1/admin/cities/bogota/config", headers=H, json={"mobility": {"onDemand": providers}})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+async def test_credentials_omit_keeps_null_clears_masked_keeps_new_empty(bogota: City):
+    app, rt = _app(bogota)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        await _put(c, [{**PROV, "credentials": {"clientId": "real-client-id-1a2b"}}])
+        assert rt.city.on_demand_provider("uber").credentials == {"clientId": "real-client-id-1a2b"}
+        # omitted key -> kept
+        body = await _put(c, [PROV])
+        assert rt.city.on_demand_provider("uber").credentials == {"clientId": "real-client-id-1a2b"}
+        assert body["override"]["mobility"]["onDemand"][0]["credentials"]["clientId"] == "••••1a2b"
+        # masked echo -> kept
+        await _put(c, [{**PROV, "credentials": {"clientId": "••••1a2b"}}])
+        assert rt.city.on_demand_provider("uber").credentials == {"clientId": "real-client-id-1a2b"}
+        # a new provider without credentials gets none (and does not inherit anything)
+        await _put(c, [PROV, {**PROV, "id": "newride", "name": "New", "order": 7}])
+        assert rt.city.on_demand_provider("newride").credentials == {}
+        assert rt.city.on_demand_provider("uber").credentials == {"clientId": "real-client-id-1a2b"}
+        # key set to null -> that key cleared
+        await _put(c, [{**PROV, "credentials": {"clientId": None}}])
+        assert rt.city.on_demand_provider("uber").credentials == {}
+        # set again, then credentials: null -> all cleared
+        await _put(c, [{**PROV, "credentials": {"clientId": "again-9z9z"}}])
+        assert rt.city.on_demand_provider("uber").credentials == {"clientId": "again-9z9z"}
+        await _put(c, [{**PROV, "credentials": None}])
+        assert rt.city.on_demand_provider("uber").credentials == {}
+        # the YAML env-driven value survives an omitted key as well (empty env -> no credential to keep)
+        assert "credentials" not in json.dumps(rt.city.public())
+
+
+# ------------------------------------------------------------------ duration factor
+def test_duration_factor_policy_and_plan_stretch(bogota: City):
+    from app.ondemand import adjusted_route, duration_factor
+    day = dt.datetime(2026, 9, 8, 10, tzinfo=TZ)
+    night = dt.datetime(2026, 9, 8, 22, tzinfo=TZ)
+    assert duration_factor(bogota, day) == 1.5 and duration_factor(bogota, night) == 1.1
+    r = adjusted_route(bogota, {"distanceMeters": 1000, "durationSeconds": 100}, day)
+    assert r["durationSeconds"] == 150 and r["durationFactor"] == 1.5
+    with pytest.raises(ApiError) as e:
+        effective_city(bogota, {"mobility": {"onDemandPolicy": {"durationFactor": 0.5}}})
+    assert e.value.message.startswith("mobility.onDemandPolicy.durationFactor")
+    city = effective_city(bogota, {"mobility": {"onDemandPolicy": {"durationFactor": 2.0, "nightDurationFactor": 1.0}}})
+    assert city.public()["mobility"]["onDemandPolicy"]["durationFactor"] == 2.0
+
+    origin, dest = {"name": "A", "lat": 4.6845, "lon": -74.053}, {"name": "B", "lat": 4.5978, "lon": -74.1616}
+    car = plan_from_otp(bogota, json.loads((FIX / "otp_plan_car.json").read_text()), origin, dest, "2.9.0")
+    combos = plan_from_otp(bogota, json.loads((FIX / "otp_plan_ondemand.json").read_text()), origin, dest, "2.9.0")
+    direct = car["itineraries"][0]
+    combo = combos["itineraries"][0]
+    d0, end0 = direct["durationSeconds"], direct["endTime"]
+    cdur0, cstart0 = combo["durationSeconds"], combo["startTime"]
+    car_leg = next(lg for lg in combo["legs"] if lg["mode"] == "CAR")
+    bus_start = next(lg for lg in combo["legs"] if lg["transit"])["startTime"]
+    attach_to_plan(bogota, {"itineraries": [direct, combo]}, when=day, base_url="http://t/")
+    # direct ride: ends later, duration × 1.5
+    assert direct["legs"][0]["durationFactor"] == 1.5
+    stretched = direct["legs"][0]["durationSeconds"]
+    assert direct["durationSeconds"] == d0 + (stretched - round(stretched / 1.5))
+    assert direct["endTime"] > end0 and direct["legs"][0]["endTime"] == direct["endTime"]
+    # feeder ride: starts earlier so the bus is still caught; bus times untouched
+    assert combo["durationSeconds"] > cdur0 and combo["startTime"] < cstart0
+    assert next(lg for lg in combo["legs"] if lg["transit"])["startTime"] == bus_start
+    assert car_leg["startTime"] == combo["legs"][0]["startTime"] or combo["legs"][0]["startTime"] < cstart0

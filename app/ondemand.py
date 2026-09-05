@@ -71,21 +71,61 @@ def _walk(node, fn) -> None:
 
 
 def unmask_patch(patch_mobility: dict | None, city: City) -> dict | None:
-    """A PUT may echo masked credentials back; replace them with the currently stored values (by provider id)."""
+    """Credential rules for a PUT of `mobility.onDemand[]` (the list replaces the stored one, so secrets must be
+    carried over explicitly): for a provider the city already knows, an OMITTED `credentials` key keeps every
+    stored value; `credentials: null` clears them all; a key set to null clears that key; a MASKED value keeps
+    the stored one; any other value is stored as sent. New providers get exactly what they send."""
     if not patch_mobility or not isinstance(patch_mobility.get("onDemand"), list):
         return patch_mobility
     out = copy.deepcopy(patch_mobility)
     for prov in out["onDemand"]:
-        if not isinstance(prov, dict) or not isinstance(prov.get("credentials"), dict):
+        if not isinstance(prov, dict):
             continue
         current = city.on_demand_provider(prov.get("id"))
-        for k, v in list(prov["credentials"].items()):
-            if is_masked(v):
-                stored = (current.credentials if current else {}).get(k)
-                if stored:
-                    prov["credentials"][k] = stored
+        stored = dict(current.credentials) if current else {}
+        if "credentials" not in prov:
+            if stored:
+                prov["credentials"] = stored
+            continue
+        creds = prov["credentials"]
+        if creds is None:
+            prov["credentials"] = {}
+            continue
+        if not isinstance(creds, dict):
+            continue
+        for k, v in list(creds.items()):
+            if v is None:
+                del creds[k]
+            elif is_masked(v):
+                if stored.get(k):
+                    creds[k] = stored[k]
                 else:
-                    del prov["credentials"][k]
+                    del creds[k]
+    return out
+
+
+# ------------------------------------------------------------------ car duration realism
+def is_night(city: City, when: dt.datetime) -> bool:
+    """Inside the night window of the city's (first) tariff that defines one."""
+    from .tariff import _in_night_window
+    for t in city.mobility.taxi_tariffs:
+        for s in t.surcharges:
+            if s.when.night_from and s.when.night_to:
+                return _in_night_window(when, s.when.night_from, s.when.night_to)
+    return False
+
+
+def duration_factor(city: City, when: dt.datetime) -> float:
+    pol = city.mobility.on_demand_policy
+    return pol.night_duration_factor if is_night(city, when) else pol.duration_factor
+
+
+def adjusted_route(city: City, route: dict, when: dt.datetime) -> dict:
+    """Copy of an OTP car route with the traffic factor applied to its duration."""
+    f = duration_factor(city, when)
+    out = dict(route)
+    out["durationSeconds"] = int(round((route.get("durationSeconds") or 0) * f))
+    out["durationFactor"] = f
     return out
 
 
@@ -272,11 +312,13 @@ def attach_to_plan(city: City, plan: dict, *, when: dt.datetime, base_url: str, 
     from .features import estimate_fare
     for it in plan.get("itineraries", []):
         touched = False
-        for leg in it.get("legs", []):
+        legs = it.get("legs", [])
+        for idx, leg in enumerate(legs):
             if not is_ondemand_leg(leg):
                 continue
             f, t = leg.get("from") or {}, leg.get("to") or {}
             start = _parse(leg.get("startTime")) or when
+            _stretch_car_leg(it, idx, duration_factor(city, start))
             quotes = quotes_for(city, distance_m=float(leg.get("distanceMeters") or 0),
                                 duration_s=float(leg.get("durationSeconds") or 0), when=start,
                                 from_lat=f.get("lat"), from_lon=f.get("lon"), to_lat=t.get("lat"),
@@ -291,6 +333,37 @@ def attach_to_plan(city: City, plan: dict, *, when: dt.datetime, base_url: str, 
             it["modesUsed"] = [("CAR_ONDEMAND" if m == "CAR" else m) for m in it.get("modesUsed", [])]
             it["fare"] = estimate_fare(city, it["legs"], locale)
     return plan
+
+
+def _shift(s: str | None, seconds: int) -> str | None:
+    d = _parse(s)
+    return (d + dt.timedelta(seconds=seconds)).isoformat() if d else s
+
+
+def _stretch_car_leg(it: dict, idx: int, factor: float) -> None:
+    """Apply the traffic factor to one CAR leg of an itinerary, keeping the timeline consistent: a car ride that
+    feeds a transit leg starts earlier (you must leave sooner to catch the same bus); any other ride ends later
+    and pushes the legs after it. The itinerary duration grows by the same delta."""
+    legs = it.get("legs", [])
+    leg = legs[idx]
+    base = int(leg.get("durationSeconds") or 0)
+    delta = int(round(base * factor)) - base
+    if delta <= 0:
+        return
+    leg["durationSeconds"] = base + delta
+    leg["durationFactor"] = factor
+    feeds_transit = any(lg.get("transit") for lg in legs[idx + 1:])
+    if feeds_transit:
+        leg["startTime"] = _shift(leg.get("startTime"), -delta)
+        for lg in legs[:idx]:
+            lg["startTime"], lg["endTime"] = _shift(lg.get("startTime"), -delta), _shift(lg.get("endTime"), -delta)
+        it["startTime"] = _shift(it.get("startTime"), -delta)
+    else:
+        leg["endTime"] = _shift(leg.get("endTime"), delta)
+        for lg in legs[idx + 1:]:
+            lg["startTime"], lg["endTime"] = _shift(lg.get("startTime"), delta), _shift(lg.get("endTime"), delta)
+        it["endTime"] = _shift(it.get("endTime"), delta)
+    it["durationSeconds"] = int(it.get("durationSeconds") or 0) + delta
 
 
 def _parse(s: str | None) -> dt.datetime | None:

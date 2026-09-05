@@ -14,6 +14,9 @@ releases start.
   Sundays, public holidays (per country), tariff zones (polygons) and optional extras, ±band, es/en breakdown.
 - `GET /ondemand/providers`, `GET /ondemand/estimate` (OTP direct car route + one quote per provider),
   `GET /ondemand/handoff` (deep link built server-side, `redirect=1` → 302, store/web fallback), `health.ondemand`.
+- `onDemandPolicy.durationFactor` (default 1.4) / `nightDurationFactor` (1.1): car durations from OTP (free-flow)
+  are scaled in estimates, on-demand plan legs (timeline kept consistent) and tariff waiting units.
+- Admin PUT credential rules: omitted `credentials` keeps the stored secret, `null` clears, masked keeps.
 - `/plan?onDemand=true` (or mode `ONDEMAND`): a direct ride plus taxi-to-stop / stop-to-taxi combos
   (OTP `CAR_DROP_OFF` access / `CAR_PICKUP` egress) merged next to transit, `Leg.onDemand` with per-provider
   prices and hand-off links, `CAR_ONDEMAND` in `modesUsed`, `fare.breakdown[].kind = "ondemand"`, `fare.note`.

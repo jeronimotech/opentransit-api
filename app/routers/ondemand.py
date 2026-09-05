@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from ..errors import ApiError
 from ..models import OnDemandEstimateResponse, OnDemandHandoffResponse, OnDemandProvidersResponse
-from ..ondemand import build_handoff, quotes_for
+from ..ondemand import adjusted_route, build_handoff, quotes_for
 from ..runtime import CityRuntime, city_runtime
 
 router = APIRouter(tags=["ondemand"])
@@ -80,6 +80,7 @@ async def estimate(request: Request, rt: CityRuntime = Depends(city_runtime),
     route = await rt.car_router().route(fromLat, fromLon, toLat, toLon, when)
     if not route:
         raise NoCarRoute("no car route found between these points")
+    route = adjusted_route(city, route, when)      # traffic factor (policy.durationFactor / nightDurationFactor)
     optional = {t.strip() for t in (options or "").split(",") if t.strip()} or None
     quotes = quotes_for(city, distance_m=route["distanceMeters"], duration_s=route["durationSeconds"], when=when,
                         from_lat=fromLat, from_lon=fromLon, to_lat=toLat, to_lon=toLon, from_name=fromName,

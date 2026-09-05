@@ -178,6 +178,7 @@ class Leg(Out):
     alerts: list[Alert] = []
     rental: RentalInfo | None = None
     on_demand: LegOnDemand | None = None     # v1.4: taxi / ride-hailing options for a CAR leg
+    duration_factor: float | None = None     # traffic factor applied to a CAR leg's duration (v1.4)
 
 
 class FareItem(Out):
@@ -645,7 +646,8 @@ class OnDemandProvidersResponse(Out):
 
 class OnDemandRoute(Out):
     distance_meters: int
-    duration_seconds: int
+    duration_seconds: int                     # OTP free-flow duration × policy.durationFactor (or the night factor)
+    duration_factor: float | None = None
     geometry: Geometry | None = None
 
 

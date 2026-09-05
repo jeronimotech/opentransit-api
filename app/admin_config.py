@@ -229,6 +229,8 @@ class OnDemandPolicyCfg(_Strict):
     firstLastMile: bool = True
     maxFeederKm: float = Field(8, gt=0, le=50)
     showWhenTransitFaster: bool = True
+    durationFactor: float = Field(1.4, ge=1.0, le=3.0)
+    nightDurationFactor: float = Field(1.1, ge=1.0, le=3.0)
 
 
 class MobilityCfg(_Strict):
@@ -523,7 +525,9 @@ def build_city(base: City, sections: dict) -> City:
                                on_demand_policy=OnDemandPolicy(max_direct_distance_km=pol["maxDirectDistanceKm"],
                                                                first_last_mile=pol["firstLastMile"],
                                                                max_feeder_km=pol["maxFeederKm"],
-                                                               show_when_transit_faster=pol["showWhenTransitFaster"]))
+                                                               show_when_transit_faster=pol["showWhenTransitFaster"],
+                                                               duration_factor=pol["durationFactor"],
+                                                               night_duration_factor=pol["nightDurationFactor"]))
     upd["features"] = base.features.model_copy(update={"bike_share": bool(nets),
                                                        "on_demand": any(p.enabled for p in providers)})
     upd["landing"] = Landing.model_validate(sections["landing"])

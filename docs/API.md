@@ -340,9 +340,16 @@ echoed back in a PUT keeps the stored one.
                   "estimate": { "kind": "tariff"|"api"|"none", "tariffId" },
                   "handoff": { "kind": "none"|"url"|"template", "hasTemplate": bool, "web", "apps": {"ios", "android"}, "scheme" },
                   "enabled", "order" } ],                 // public shape: no template, no credentials
-  "onDemandPolicy": { "maxDirectDistanceKm": 40, "firstLastMile": true, "maxFeederKm": 8, "showWhenTransitFaster": true }
+  "onDemandPolicy": { "maxDirectDistanceKm": 40, "firstLastMile": true, "maxFeederKm": 8, "showWhenTransitFaster": true,
+                      "durationFactor": 1.4, "nightDurationFactor": 1.1 }   // car durations × factor (1.0–3.0); OTP is free-flow
 }
 ```
+**Car duration realism.** OTP routes cars at free-flow speed. Every car duration — the `/ondemand/estimate`
+route, the CAR legs of `/plan?onDemand=true` (their end time, or their start time when the ride feeds a transit
+leg, plus the itinerary duration) and the tariff's waiting units — is multiplied by `durationFactor`, or by
+`nightDurationFactor` when the departure falls inside the tariff's night window. The factor used is echoed as
+`route.durationFactor` / `Leg.durationFactor`.
+
 Template placeholders (URL-encoded by the API): `{clientId}` (and other credential keys), `{pickupLat}`, `{pickupLon}`,
 `{pickupName}`, `{dropoffLat}`, `{dropoffLon}`, `{dropoffName}`, `{pickupJson}`, `{dropoffJson}`
 (`{"latitude","longitude","addressLine1"}` objects). A template that needs a credential the city has not configured
@@ -390,6 +397,10 @@ provider's amount, or `amount: null` plus `fare.note = "Precio en la app"` when 
 Validation: slug ids, hex colours, https links, `HH:MM` windows, zone references, `tariffId` must exist, unique
 provider ids and `order`, a `template` hand-off must contain a placeholder. GET/PUT/DELETE replies and
 `…/config/history` show credentials masked.
+**Credential rules on PUT** (the `onDemand` list replaces the stored one): for a provider the city already
+knows, an omitted `credentials` key keeps every stored value; `credentials: null` clears them all; a key set to
+`null` clears that key; a masked value (`••••1a2b`) keeps the stored one; anything else is stored as sent. A new
+provider gets exactly what it sends.
 
 ## Implementation notes & deviations (what this repo actually does)
 

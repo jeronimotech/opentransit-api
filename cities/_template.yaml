@@ -62,7 +62,8 @@ mobility:                        # v1.2 shared mobility; each entry is a GBFS fe
                                  #    estimate: { kind: tariff|api|none, tariff_id }, handoff: { kind: none|url|template, template, web, apps: {ios, android}, scheme },
                                  #    credentials: { clientId: "${MY_PROVIDER_CLIENT_ID:-}" }, enabled, order }]
                                  # template placeholders: {clientId} {pickupLat} {pickupLon} {pickupName} {dropoffLat} {dropoffLon} {dropoffName} {pickupJson} {dropoffJson}
-  on_demand_policy: { max_direct_distance_km: 40, first_last_mile: true, max_feeder_km: 8, show_when_transit_faster: true }
+  on_demand_policy: { max_direct_distance_km: 40, first_last_mile: true, max_feeder_km: 8, show_when_transit_faster: true,
+                      duration_factor: 1.4, night_duration_factor: 1.1 }   # car durations × factor (OTP is free-flow)
 # pois_file: mycity/pois.geojson # default cities/<slug>/pois.geojson (built by scripts/build-pois.sh)
 # ── v1.3 · white-label landing page (optional; admin-editable; GET /v1/cities/<slug>/landing) ──
 landing:

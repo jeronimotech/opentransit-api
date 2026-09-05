@@ -200,6 +200,8 @@ mobility:
     first_last_mile: true
     max_feeder_km: 8
     show_when_transit_faster: true
+    duration_factor: 1.5            # OTP routes cars at free-flow speed; Bogotá traffic is ~50 % slower by day
+    night_duration_factor: 1.1      # inside the tariff's night window (19:00–06:00)
 
 # ── v1.3 · white-label landing page (served by /v1/cities/bogota/landing, editable in the admin panel) ──
 # Screenshots are the web app's own live captures (docs/screenshots on jeronimotech/opentransit-web main).

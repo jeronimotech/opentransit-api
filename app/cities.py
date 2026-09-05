@@ -246,10 +246,16 @@ class OnDemandPolicy(BaseModel):
     first_last_mile: bool = True
     max_feeder_km: float = Field(8, gt=0)
     show_when_transit_faster: bool = True
+    # OTP routes cars at free-flow speeds; real city traffic is slower. Car durations (estimate + plan legs +
+    # the tariff's waiting units) are multiplied by `duration_factor`, or by `night_duration_factor` when the
+    # departure falls inside the tariff's night window.
+    duration_factor: float = Field(1.4, ge=1.0, le=3.0)
+    night_duration_factor: float = Field(1.1, ge=1.0, le=3.0)
 
     def public(self) -> dict:
         return {"maxDirectDistanceKm": self.max_direct_distance_km, "firstLastMile": self.first_last_mile,
-                "maxFeederKm": self.max_feeder_km, "showWhenTransitFaster": self.show_when_transit_faster}
+                "maxFeederKm": self.max_feeder_km, "showWhenTransitFaster": self.show_when_transit_faster,
+                "durationFactor": self.duration_factor, "nightDurationFactor": self.night_duration_factor}
 
 
 class Mobility(BaseModel):
