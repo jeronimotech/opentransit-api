@@ -3,7 +3,6 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from ..errors import ApiError
