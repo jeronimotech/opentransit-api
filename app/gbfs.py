@@ -299,6 +299,50 @@ class GbfsNetwork:
                 parts.append(f"{word.capitalize()} {_money(price)}")
         return " · ".join(parts) or None
 
+    @staticmethod
+    def form_factor_of(raw: str | None) -> str:
+        """GBFS form_factor -> the coarse family used in config (`form_factors`) and planning modes."""
+        raw = (raw or "").lower()
+        if raw.startswith("scooter"):
+            return "scooter"
+        if raw in ("bicycle", "cargo_bicycle", "moped", "car"):
+            return raw
+        return "other"
+
+    def available_by_form_factor(self) -> dict[str, int]:
+        """Vehicles available right now per form-factor family, from station_status (renting stations only)."""
+        out: dict[str, int] = {}
+        for st in self.station_status.values():
+            if not st.get("is_renting", True):
+                continue
+            for t in st.get("vehicle_types_available") or []:
+                n = int(t.get("count") or 0)
+                if n <= 0:
+                    continue
+                v = self.vehicle_types.get(t.get("vehicle_type_id") or "") or {}
+                ff = self.form_factor_of(v.get("form_factor"))
+                out[ff] = out.get(ff, 0) + n
+        return out
+
+    def form_factors(self) -> list[str]:
+        """Configured form factors, but `scooter` only when the feed actually reports scooters available
+        (a network can list a scooter type it never stocks; advertising it would produce empty plans)."""
+        configured = list(self.cfg.form_factors)
+        if not self.station_status:
+            return configured
+        avail = self.available_by_form_factor()
+        return [f for f in configured if f != "scooter" or avail.get("scooter", 0) > 0]
+
+    def mode_available(self, mode: str) -> bool | None:
+        """Is a planning mode (BICYCLE_RENTAL / SCOOTER_RENTAL) backed by vehicles right now?
+        None when the status feed has not been loaded yet (caller should assume the configured factors)."""
+        if not self.station_status:
+            return None
+        avail = self.available_by_form_factor()
+        if mode == "SCOOTER_RENTAL":
+            return avail.get("scooter", 0) > 0
+        return avail.get("bicycle", 0) + avail.get("cargo_bicycle", 0) > 0
+
     def vehicles_available(self) -> int:
         return sum(int(s.get("num_vehicles_available", s.get("num_bikes_available")) or 0)
                    for s in self.station_status.values())
@@ -313,7 +357,7 @@ class GbfsNetwork:
 
     def summary(self) -> dict:
         return {
-            **self.cfg.public(), "pricingSummary": self.pricing_summary(),
+            **self.cfg.public(), "pricingSummary": self.pricing_summary(), "formFactors": self.form_factors(),
             "systemId": self.system.get("system_id"), "systemName": text(self.system.get("name")),
             "timezone": self.system.get("timezone"), "gbfsVersion": self.version,
             "stations": len(self.station_info), "vehiclesAvailable": self.vehicles_available(),

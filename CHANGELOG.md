@@ -5,6 +5,12 @@ All notable changes to `opentransit-api` are documented here. The format follows
 releases start.
 
 ## [Unreleased]
+### Added
+- Rental-aware planning: one OTP search per rental mode plus a rental-biased companion search, merged with a
+  guarantee that the best two shared-bike options are returned when they exist (`Itinerary.source`).
+### Changed
+- Requested rental modes with no vehicles available are dropped with a `MODE_NO_VEHICLES` warning instead of
+  producing an empty plan; `formFactors` lists `scooter` only when scooters are actually reported available.
 
 ## [1.3.0] - 2026-09-04 — white-label city landing
 ### Added

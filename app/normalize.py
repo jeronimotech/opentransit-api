@@ -327,6 +327,7 @@ def itinerary_from_otp(city: City, it: dict, idx: int, locale: str = "es",
         "accessible": None if score is None else score >= 0.99,
         "rentalLegs": sum(1 for lg in legs if lg.get("rental")),
         "modesUsed": modes_used,
+        "source": "primary",        # diagnostic: which search produced it (see routers/plan.py merge_plans)
         "legs": legs,
     }
 

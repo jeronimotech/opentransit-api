@@ -168,6 +168,7 @@ class Itinerary(Out):
     accessible: bool | None = None
     rental_legs: int = 0
     modes_used: list[str] = []
+    source: Literal["primary", "rental"] = "primary"   # diagnostic: which search produced the itinerary
     legs: list[Leg]
 
 

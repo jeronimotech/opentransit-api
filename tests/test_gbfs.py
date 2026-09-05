@@ -118,5 +118,8 @@ async def test_two_networks_keep_distinct_ids_and_colors():
     await b.refresh()
     assert a.station("1")["id"] == "acme:1" and b.station("1")["id"] == "zed:1"
     assert a.summary()["color"] == "#112233" and b.summary()["color"] == "#AA00FF"
-    assert b.summary()["formFactors"] == ["scooter"]
+    # `scooter` is advertised only when the feed reports scooters available; the fixture stocks bicycles only
+    assert b.summary()["formFactors"] == [] and b.form_factors() == []
+    assert a.summary()["formFactors"] == ["bicycle"]
+    assert a.mode_available("BICYCLE_RENTAL") is True and b.mode_available("SCOOTER_RENTAL") is False
     assert a.station("zed:1") is None           # a foreign scoped id is not silently accepted

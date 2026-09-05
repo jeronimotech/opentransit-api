@@ -293,6 +293,15 @@ still needs `scripts/otp-updaters.py <city>` + an OTP restart (documented in the
 `otp/<city>/router-config.json` (`network` = YAML `network`, url = `gbfs_url`); `scripts/otp-native.sh serve`
 runs it automatically. `--check` fails when the file is stale (used by CI).
 
+## v1.2.1 — rental-aware planning (implemented 2026-09-04)
+
+- **One OTP query per rental mode.** OTP 2.9 allows at most two street modes per leg and every rental mode must be paired with WALK, so `modes=TRANSIT,WALK,BIKE_RENTAL,SCOOTER_RENTAL` is executed as separate searches (`WALK+BICYCLE_RENTAL`, `WALK+SCOOTER_RENTAL`) and merged, instead of failing.
+- **Rental-biased companion search.** With transit, each rental mode also runs a second search with walking made expensive and cycling cheap (walk reluctance 5, bicycle reluctance 1, up to `numItineraries + 4` results). The balanced search tends to drop "rent a bike to the station" options as marginally slower; the companion brings them back.
+- **Merge guarantees.** Primary results come first (up to `numItineraries`); rental itineraries from the other searches are added when new (deduplicated by leg signature: mode, route, boarding/alighting stop or rental station, start minute); when any rental itinerary exists, at least the best 2 (shortest) are included; the total is capped at `numItineraries + 2` by dropping the lowest-ranked non-rental primary results; the final list is sorted by arrival time and re-numbered.
+- `Itinerary.source`: `"primary"` | `"rental"` — diagnostic, says which search produced the itinerary.
+- **Modes without vehicles are dropped, not fatal.** If a requested rental mode has no vehicles available in any configured network right now (from the GBFS `station_status` cache: bicycle/cargo families for `BIKE_RENTAL`, scooter families for `SCOOTER_RENTAL`), the mode is removed and `warnings` gets `MODE_NO_VEHICLES: SCOOTER_RENTAL`; the rest of the search runs normally. While a network's status has not loaded yet the configured form factors are trusted.
+- `RentalNetwork.formFactors` now reflects reality: `scooter` is listed only when the feed reports scooter-type vehicles available at renting stations.
+
 ## v1.3 additions (implemented 2026-09-04) — white-label city landing page
 
 Each tenant can publish a public landing page presenting **its** app without code changes. The content is a new
