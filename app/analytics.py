@@ -674,6 +674,15 @@ def _sum(rows: list[dict], key: str) -> int:
     return int(sum(r.get(key) or 0 for r in rows))
 
 
+def camel(key: str) -> str:
+    head, *rest = key.split("_")
+    return head + "".join(w.capitalize() for w in rest)
+
+
+def _camel_dict(d: dict) -> dict:
+    return {camel(k): v for k, v in d.items()}
+
+
 def _top(rows: list[dict], group: tuple[str, ...], metrics: tuple[str, ...], k: int,
          k_metric: str | tuple[str, ...], limit: int, names: dict | None = None) -> list[dict]:
     """Group + sum; keep a row only when its k-metric (any of them, when a tuple) reaches the threshold."""
@@ -691,7 +700,7 @@ def _top(rows: list[dict], group: tuple[str, ...], metrics: tuple[str, ...], k: 
             item.update(names[key[0]])
         out.append(item)
     out.sort(key=lambda x: -x[sort_key])
-    return out[:limit]
+    return [_camel_dict(x) for x in out[:limit]]
 
 
 class AnalyticsQueries:
@@ -720,7 +729,7 @@ class AnalyticsQueries:
                         ("platform", "app_version"), ("n",), self.k, "n", 10)
         return {"period": {"from": f.isoformat(), "to": t.isoformat(), "days": span},
                 "previous": {"from": pf.isoformat(), "to": pt.isoformat()},
-                "totals": cur, "previousTotals": prev,
+                "kpis": cur, "totals": cur, "previousTotals": prev,
                 "delta": {k: (cur[k] - prev[k]) for k in cur},
                 "topModes": modes, "topRoutes": routes, "topStops": stops,
                 "platforms": platforms, "versions": versions, "kThreshold": self.k}
@@ -781,43 +790,47 @@ class AnalyticsQueries:
     async def funnel(self, f, t):
         rows = sorted(await self.funnel_rows(f, t), key=lambda r: r["day"])
         keys = ("app_opens", "sessions", "plan_requests", "itinerary_selects", "go_starts", "go_completions")
-        return {"days": [{"day": r["day"].isoformat(), **{k: int(r.get(k) or 0) for k in keys}} for r in rows],
-                "totals": {k: _sum(rows, k) for k in keys}}
+        return {"days": [{"day": r["day"].isoformat(), **{camel(k): int(r.get(k) or 0) for k in keys}}
+                         for r in rows],
+                "totals": {camel(k): _sum(rows, k) for k in keys}}
 
     async def hours(self, f, t):
         rows = await self.store.fetch("agg_hours_daily", self.city.id, f, t)
         grid = [[0] * 24 for _ in range(7)]
         for r in rows:
             grid[r["day"].weekday()][int(r["hour"])] += int(r["plan_requests"] or 0)
-        return {"weekdays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], "hours": list(range(24)),
-                "planRequests": grid}
+        names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        return {"weekdays": names, "hours": list(range(24)), "planRequests": grid,
+                "rows": [{"weekday": names[w], "hour": h, "planRequests": grid[w][h]}
+                         for w in range(7) for h in range(24) if grid[w][h]]}
 
     async def export_csv(self, dataset: str, f: dt.date, t: dt.date) -> str:
         buf = io.StringIO()
         w = csv.writer(buf)
         if dataset == "od":
             d = await self.od(f, t, 5000, None)
-            w.writerow(["from_gh7", "to_gh7", "from_lat", "from_lon", "to_lat", "to_lon", "n"])
+            w.writerow(["fromGh7", "toGh7", "fromLat", "fromLon", "toLat", "toLon", "n"])
             for p in d["pairs"]:
                 w.writerow([p["fromGh7"], p["toGh7"], p["fromCenter"]["lat"], p["fromCenter"]["lon"],
                             p["toCenter"]["lat"], p["toCenter"]["lon"], p["n"]])
         elif dataset == "routes":
-            _rows(w, await self.routes(f, t, 5000), ("route_id", "views", "selects", "locates"))
+            _rows(w, await self.routes(f, t, 5000), ("routeId", "shortName", "longName", "views", "selects",
+                                                     "locates"))
         elif dataset == "stops":
-            _rows(w, await self.stops(f, t, 5000), ("stop_id", "views", "boards", "locates"))
+            _rows(w, await self.stops(f, t, 5000), ("stopId", "name", "views", "boards", "locates"))
         elif dataset == "modes":
-            _rows(w, await self.modes(f, t, 5000), ("mode_set", "requests", "selects"))
+            _rows(w, await self.modes(f, t, 5000), ("modeSet", "requests", "selects"))
         elif dataset == "searches":
-            _rows(w, await self.searches(f, t, 5000), ("result_type", "result_id", "label", "n"))
+            _rows(w, await self.searches(f, t, 5000), ("resultType", "resultId", "label", "n"))
         elif dataset == "providers":
-            _rows(w, await self.providers(f, t), ("provider_id", "handoffs", "had_estimate"))
+            _rows(w, await self.providers(f, t), ("providerId", "handoffs", "hadEstimate"))
         elif dataset == "funnel":
             fu = await self.funnel(f, t)
-            _rows(w, fu["days"], ("day", "app_opens", "sessions", "plan_requests", "itinerary_selects", "go_starts",
-                                  "go_completions"))
+            _rows(w, fu["days"], ("day", "appOpens", "sessions", "planRequests", "itinerarySelects", "goStarts",
+                                  "goCompletions"))
         elif dataset == "hours":
             h = await self.hours(f, t)
-            w.writerow(["weekday", "hour", "plan_requests"])
+            w.writerow(["weekday", "hour", "planRequests"])
             for i, wd in enumerate(h["weekdays"]):
                 for hr in range(24):
                     w.writerow([wd, hr, h["planRequests"][i][hr]])

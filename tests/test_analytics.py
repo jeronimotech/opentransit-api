@@ -56,6 +56,19 @@ def _app(bogota: City) -> tuple[FastAPI, CityRuntime, MemoryAnalyticsStore]:
     return app, rt, store
 
 
+def _keys(obj) -> list[str]:
+    """Every dict key in a nested JSON body (to assert the camelCase dialect)."""
+    out: list[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            out.append(k)
+            out.extend(_keys(v))
+    elif isinstance(obj, list):
+        for v in obj:
+            out.extend(_keys(v))
+    return out
+
+
 # ------------------------------------------------------------------ primitives
 def test_geohash_roundtrip_and_cell_size():
     gh = geohash.encode(4.6534, -74.0836, 7)
@@ -213,19 +226,29 @@ async def test_endpoints_apply_k_threshold_and_export(bogota: City):
         assert len(od["pairs"]) == 1 and od["pairs"][0]["n"] == 6 and od["pairs"][0]["fromCenter"]["lat"]
         assert od["cells"]["features"][0]["geometry"]["type"] == "Polygon"
         assert (await c.get(f"/v1/admin/cities/bogota/analytics/routes{q}", headers=H)).json()["items"][0] == \
-            {"route_id": "bogota:12873", "views": 0, "selects": 6, "locates": 0}
+            {"routeId": "bogota:12873", "views": 0, "selects": 6, "locates": 0}
         srch = (await c.get(f"/v1/admin/cities/bogota/analytics/searches{q}", headers=H)).json()["items"]
-        assert srch[0]["label"] == "Portal Norte" and srch[0]["n"] == 6
+        assert srch[0]["label"] == "Portal Norte" and srch[0]["n"] == 6 and srch[0]["resultType"] == "station"
+        prov_csv = (await c.get(f"/v1/admin/cities/bogota/analytics/export.csv{q}&dataset=providers", headers=H)).text
+        assert prov_csv.splitlines()[0] == "providerId,handoffs,hadEstimate"
         prov = (await c.get(f"/v1/admin/cities/bogota/analytics/providers{q}", headers=H)).json()["items"]
         assert prov == []                                             # 1 handoff < k
         fun = (await c.get(f"/v1/admin/cities/bogota/analytics/funnel{q}", headers=H)).json()
-        assert fun["totals"]["go_completions"] == 3 and fun["days"][0]["sessions"] == 6
+        assert fun["totals"]["goCompletions"] == 3 and fun["days"][0]["sessions"] == 6
+        assert set(fun["days"][0]) == {"day", "appOpens", "sessions", "planRequests", "itinerarySelects", "goStarts",
+                                       "goCompletions"}
+        s = (await c.get(f"/v1/admin/cities/bogota/analytics/summary{q}", headers=H)).json()   # now 6 >= k
+        assert s["kpis"] == s["totals"] and set(s["topModes"][0]) == {"modeSet", "requests", "selects"}
+        assert s["topRoutes"][0]["routeId"] == "bogota:12873" and s["topStops"][0]["stopId"] == "bogota:2000"
         hrs = (await c.get(f"/v1/admin/cities/bogota/analytics/hours{q}", headers=H)).json()
         assert hrs["planRequests"][dt.date(2026, 9, 6).weekday()][10] == 6
+        assert hrs["rows"] == [{"weekday": "sun", "hour": 10, "planRequests": 6}]
+        for body in (od, fun, hrs, s, srch, prov):
+            assert all("_" not in k for k in _keys(body)), body
         csv_r = await c.get(f"/v1/admin/cities/bogota/analytics/export.csv{q}&dataset=modes", headers=H)
         assert csv_r.status_code == 200 and csv_r.headers["content-type"].startswith("text/csv")
         lines = csv_r.text.splitlines()
-        assert lines[0] == "mode_set,requests,selects"
+        assert lines[0] == "modeSet,requests,selects"
         assert "TRANSIT+WALK,6,0" in lines and "BUS+WALK,0,6" in lines      # requested vs. actually used
         assert (await c.get(f"/v1/admin/cities/bogota/analytics/summary{q}")).status_code == 401
         assert (await c.get("/v1/admin/cities/bogota/analytics/summary?from=2026-09-10&to=2026-09-01",

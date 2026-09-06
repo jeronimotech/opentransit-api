@@ -434,14 +434,19 @@ the whole batch. Rate limit 60 batches/min per client (`429 RATE_LIMITED`). When
 (> 7 days from receipt) are rejected).
 
 ### Admin analytics (`X-Admin-Token`, all aggregated, k applied; `from`/`to` = `YYYY-MM-DD`, default last 30 days)
-- `GET /v1/admin/cities/{city}/analytics/summary` → `totals` (sessions, appOpens, planRequests, itinerarySelects,
-  goStarts, goCompletions, handoffs, activeDays), `previousTotals`, `delta`, `topModes`, `topRoutes`, `topStops`,
-  `platforms`, `versions`.
+All keys are camelCase (`routeId`, `modeSet`, `planRequests`, `hadEstimate`…), including CSV headers.
+- `GET /v1/admin/cities/{city}/analytics/summary` → `kpis` (= `totals`: sessions, appOpens, planRequests,
+  itinerarySelects, goStarts, goCompletions, handoffs, activeDays), `previousTotals`, `delta`, `topModes`
+  (`modeSet`, requests, selects), `topRoutes` (`routeId`, views, selects, locates), `topStops` (`stopId`, views,
+  boards, locates), `platforms`, `versions`.
 - `GET …/analytics/od?limit=500&min=` → `cells` (GeoJSON FeatureCollection of geohash-7 polygons with
   `origins`/`destinations`/`searches` counts and `center`) + `pairs` (`fromGh7`, `toGh7`, `fromCenter`, `toCenter`, `n`).
 - `GET …/analytics/places?kind=origin|destination|search` → top cells with centers.
 - `GET …/analytics/routes` (+ `shortName`/`longName` from the active feed), `/stops` (+ `name`), `/modes`,
-  `/searches`, `/providers`, `/funnel` (`days[]` + `totals`), `/hours` (7 × 24 grid of plan requests, local time).
+  `/searches` (`resultType`, `resultId`, `label`, `n`), `/providers` (`providerId`, `handoffs`, `hadEstimate`),
+  `/funnel` (`days[]` of `{day, appOpens, sessions, planRequests, itinerarySelects, goStarts, goCompletions}` +
+  `totals`), `/hours` (`planRequests` 7 × 24 matrix in local time, `weekdays`, `hours`, plus `rows[]` of
+  `{weekday, hour, planRequests}` for the non-zero cells).
 - `GET …/analytics/export.csv?dataset=od|routes|stops|modes|searches|providers|funnel|hours` → CSV attachment.
 - `POST …/analytics/rollup` → run the rollup now (it also runs every `ANALYTICS_ROLLUP_SECONDS`, default 600).
 - `config.analytics { enabled, retentionDays (7–730), kThreshold (2–100) }` is admin-editable and exposed publicly
