@@ -451,7 +451,10 @@ All keys are camelCase (`routeId`, `modeSet`, `planRequests`, `hadEstimate`…),
 - `POST …/analytics/rollup` → run the rollup now (it also runs every `ANALYTICS_ROLLUP_SECONDS`, default 600).
 - `config.analytics { enabled, retentionDays (7–730), kThreshold (2–100) }` is admin-editable and exposed publicly
   under `/v1/cities/{city}.config.analytics` so clients can show the opt-out explanation.
-- `health.analytics { enabled, eventsToday, lastRollupAt, queueLag }`.
+- `health.analytics { enabled, eventsToday, lastRollupAt, pendingEvents, queueLag }` — `pendingEvents` is the
+  number of raw events not yet consolidated and `queueLag` the seconds between the newest consolidated event and
+  the newest received one (`0` when nothing is pending, `null` before the first rollup). Both are the operational
+  signal: a healthy service sits at `pendingEvents: 0, queueLag: 0` between rollups.
 
 ### Storage
 `analytics_event` (daily partitions on `received_at`; columns `at_bucket`, `type`, `session_hash`, `cohort_hash`,

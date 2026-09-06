@@ -406,7 +406,9 @@ class AnalyticsStore(Protocol):
                  ) -> dict: ...
     async def places(self, city_id: str, day_from: dt.date, day_to: dt.date, kind: str, k: int, limit: int,
                      tz: ZoneInfo) -> list[dict]: ...
-    async def health(self, city_id: str) -> dict: ...
+    async def health(self, city_id: str) -> dict:
+        """{eventsToday, lastRollupAt, pendingEvents, queueLag} — see the store implementations."""
+        ...
 
 
 def _touched(rows: list[dict], tz: ZoneInfo) -> tuple[set[dt.date], set[dt.datetime]]:
@@ -481,12 +483,15 @@ class MemoryAnalyticsStore:
 
     async def health(self, city_id: str) -> dict:
         today = dt.datetime.now(dt.UTC).date()
-        n = sum(1 for r in self.rows if r["city_id"] == city_id and r["received_at"].date() == today)
+        mine = [r for r in self.rows if r["city_id"] == city_id]
+        n = sum(1 for r in mine if r["received_at"].date() == today)
         wm = self.watermark.get(city_id)
-        lag = int((dt.datetime.now(dt.UTC) - wm).total_seconds()) if wm else None
+        pending = [r["received_at"] for r in mine if wm is None or r["received_at"] > wm]
+        done = [r["received_at"] for r in mine if wm is not None and r["received_at"] <= wm]
+        lag = int((max(pending) - max(done)).total_seconds()) if (pending and done) else (0 if not pending else None)
         lr = self.last_rollup.get(city_id)
         return {"eventsToday": n, "lastRollupAt": lr.isoformat().replace("+00:00", "Z") if lr else None,
-                "queueLag": lag}
+                "pendingEvents": len(pending), "queueLag": lag}
 
 
 class PgAnalyticsStore:
@@ -650,17 +655,29 @@ class PgAnalyticsStore:
         return [dict(r) for r in rows]
 
     async def health(self, city_id: str) -> dict:
+        """`queueLag` is the age of the backlog: newest received event minus newest already-consolidated event
+        (0 when nothing is pending). `pendingEvents` is what actually matters to operate."""
         async with pool().acquire() as c:
             n = await c.fetchval("SELECT count(*) FROM analytics_event WHERE city_id=$1 AND received_at >= "
                                  "date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'", city_id)
             st = await c.fetchrow("SELECT watermark, last_rollup_at FROM analytics_rollup_state WHERE city_id=$1",
                                   city_id)
-            newest = await c.fetchval("SELECT max(received_at) FROM analytics_event WHERE city_id=$1", city_id)
-        wm = st["watermark"] if st else None
-        lag = int((newest - wm).total_seconds()) if (newest and wm and newest > wm) else (0 if wm else None)
+            wm = st["watermark"] if st else None
+            r = await c.fetchrow(
+                "SELECT count(*) FILTER (WHERE received_at > $2) AS pending, "
+                "max(received_at) FILTER (WHERE received_at > $2) AS newest_pending, "
+                "max(received_at) FILTER (WHERE received_at <= $2) AS newest_done "
+                "FROM analytics_event WHERE city_id=$1", city_id, wm or dt.datetime(1970, 1, 1, tzinfo=dt.UTC))
+        pending = int(r["pending"] or 0)
+        if not pending:
+            lag = 0
+        elif r["newest_done"]:
+            lag = int((r["newest_pending"] - r["newest_done"]).total_seconds())
+        else:
+            lag = None                       # nothing consolidated yet: no baseline to measure against
         lr = st["last_rollup_at"] if st else None
         return {"eventsToday": int(n or 0), "lastRollupAt": lr.isoformat().replace("+00:00", "Z") if lr else None,
-                "queueLag": lag}
+                "pendingEvents": pending, "queueLag": lag}
 
 
 def _hour_range(day_from: dt.date, day_to: dt.date, tz: ZoneInfo) -> tuple[dt.datetime, dt.datetime]:

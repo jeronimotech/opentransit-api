@@ -279,5 +279,31 @@ async def test_ingest_gzip_rate_limit_and_disabled(bogota: City):
         assert len(store.rows) == 2
 
 
+@pytest.mark.anyio
+async def test_health_queue_lag_is_zero_after_rollup_and_reports_pending(bogota: City):
+    """queueLag must measure the backlog, not the age of the watermark (a healthy service reports 0/0)."""
+    store = MemoryAnalyticsStore()
+    hasher = Hasher()
+    base = T0 - dt.timedelta(hours=9)                       # events received long ago, already consolidated
+    for sid, evs in _fixture_events(2):
+        rows, _ = await prepare_rows(bogota, BatchIn.model_validate(_batch(evs, session=sid)), hasher,
+                                     received_at=base)
+        await store.insert(rows)
+    assert (await store.health("bogota"))["queueLag"] is None        # nothing consolidated yet
+    await store.rollup(bogota)
+    h = await store.health("bogota")
+    assert h["pendingEvents"] == 0 and h["queueLag"] == 0            # hours later, still 0: no backlog
+    assert h["lastRollupAt"]
+    # a fresh batch arrives 30 min after the consolidated ones -> backlog of 1800 s
+    rows, _ = await prepare_rows(bogota, BatchIn.model_validate(_batch([_ev("app_open")], session="sess-pending")),
+                                 hasher, received_at=base + dt.timedelta(minutes=30))
+    await store.insert(rows)
+    h = await store.health("bogota")
+    assert h["pendingEvents"] == 1 and h["queueLag"] == 1800
+    await store.rollup(bogota)
+    h = await store.health("bogota")
+    assert h["pendingEvents"] == 0 and h["queueLag"] == 0
+
+
 def test_public_city_exposes_analytics_config(bogota: City):
     assert bogota.public()["config"]["analytics"] == {"enabled": True, "retentionDays": 90, "kThreshold": 5}

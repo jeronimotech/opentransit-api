@@ -516,7 +516,8 @@ class AnalyticsHealth(Out):
     enabled: bool = True
     events_today: int = 0
     last_rollup_at: str | None = None
-    queue_lag: int | None = None            # seconds of events not yet rolled up
+    pending_events: int = 0                 # raw events not yet consolidated
+    queue_lag: int | None = None            # seconds between the newest consolidated and the newest received event
 
 
 class CityHealth(Out):
