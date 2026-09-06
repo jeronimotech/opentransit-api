@@ -220,6 +220,22 @@ async def test_nearby_ranks_legal_first_and_filters_user_class(bogota: City):
         assert names == [ZONE_100["name"]]
 
 
+async def test_a_private_car_is_not_told_it_may_use_a_taxi_only_bay(bogota: City):
+    """User-class matching is deliberately directional: a taxi may use a general car bay, a car may not use a
+    taxi bay. Being silent is better than telling someone they can stop where they cannot."""
+    taxi_bay = {"curb_zone_id": "aaaa1111-2222-4333-8444-555566667777", "name": "Zona amarilla",
+                "geometry": ZONE_93["geometry"], "curb_policy_ids": ["bbbb2222-3333-4444-8555-666677778888"]}
+    taxi_only = {"curb_policy_id": "bbbb2222-3333-4444-8555-666677778888", "name": "Solo taxis", "priority": 1,
+                 "rules": [{"activity": "stopping", "user_classes": ["taxi"]}]}
+    app, _, store = _app(_city(bogota))
+    await _seed(store, zones=[taxi_bay], policies=[taxi_only])
+    async with _client(app) as c:
+        for klass, expected in (("taxi", 1), ("car", 0), ("rideshare", 0)):
+            r = await c.get("/v1/cities/bogota/curbs/nearby",
+                            params={"lat": 4.6766, "lon": -74.0485, "radius": 500, "userClass": klass})
+            assert r.json()["count"] == expected, klass
+
+
 async def test_nearby_rejects_an_unknown_user_class(bogota: City):
     app, _, store = _app(_city(bogota))
     await _seed(store)

@@ -500,3 +500,74 @@ time zone.
 - Mode sets record what was *requested* (`plan_request.modes`) and what was *used* (`itinerary_select.modes`)
   separately; both can differ (e.g. `TRANSIT+WALK` requested, `BUS+WALK` used).
 - Rate limiting is per client address in memory (per API instance); nothing about the address is stored.
+
+
+---
+
+## v1.6 · Open Mobility Foundation (phase A)
+
+Interoperability with two Open Mobility Foundation standards, per city and both optional:
+**CDS 1.1.0** (Curb Data Specification) and **MDS 2.1.0** (Mobility Data Specification, Policy + Geography).
+The city is both a **publisher** (operators consume our kerb inventory and our rules) and a **consumer**
+(we mirror a third-party CDS or MDS document). Enable with `openMobility` in the city config; everything is
+hidden when `features.openMobility` is false.
+
+### Data planes
+| Plane | Content | Exposure |
+|---|---|---|
+| **Open** | CDS curb zones + policies, MDS geographies + policies | Public, unauthenticated, cacheable. Served by every endpoint below. |
+| **Restricted** | MDS Provider `trips`/`telemetry`/`events`, CDS `events` (vehicle and operator identifiers) | Phase B. Own tables (`mds_trip`, `mds_status_change`, `mds_vehicle`, `cds_event`), admin token only, k-anonymised before any aggregate leaves, retention `openMobility.mds.retentionDays`. No endpoint in this section reads them. |
+| **Never stored** | Rider identity, raw operator telemetry beyond retention | — |
+
+### Public (normalised, camelCase — what the apps draw)
+| Endpoint | Notes |
+|---|---|
+| `GET /v1/cities/{city}/curbs?bbox=&lat=&lon=&userClass=&at=&limit=` | Curb zones with their regulations resolved **against the city clock** (and its holiday calendar). `at=` overrides "now" for previews. With `lat/lon`, adds `distanceMeters` and sorts by it. |
+| `GET /v1/cities/{city}/curbs/nearby?lat=&lon=&radius=&userClass=&at=&limit=` | Where this vehicle may stop right now, legal first. A zone whose policies never mention the requested `userClass` is omitted; a zone that explicitly forbids it is returned with `allowed: false` so the app can say why. |
+| `GET /v1/cities/{city}/zones?type=&at=&activeOnly=` | MDS policy rules resolved against their geographies: `no_ride`, `no_parking`, `speed_limit`, `cap`, `preferred_parking`, `other`. |
+
+Each curb carries `allowed`, `whyLegal` ("Estacionamiento · Lun Mar Mié Jue Vie Sáb 07:00–20:00 · $ 4.200 / hora
+(máx $ 8.400) · máx 2 hora"), `nextChange` (when the regulation flips), `priceLabel`, `activePolicyIds`, the live
+availability fields (`available`, `availableSpaces`, `availableSpaceLengths`, `availabilityTime`) and the full
+`policies[]`. Overlapping policies are resolved the way CDS mandates: **lowest `priority` wins**.
+
+**Currency caveat.** CDS defines no currency field: a `rate` is an integer in "the smallest denomination of the
+local currency". Bogotá quotes whole pesos, not centavos, so the city config carries
+`openMobility.cds.rateCurrency` (default: the city's fare currency) and `rateMinorUnits` (COP → 1, USD/EUR → 100).
+Only our `priceLabel` uses them; the verbatim endpoints below keep the integers untouched.
+
+### Publishing (verbatim, snake_case — point a standard client at us)
+| Endpoint | Spec |
+|---|---|
+| `GET /v1/cities/{city}/cds/curbs/zones` · `/policies` · `/areas` | CDS 1.1.0 Curbs. Envelope `{version, time_zone, last_updated, currency, data: {zones\|policies\|areas}, links: {next}}`, `Content-Type: application/vnd.cds+json;version=1.1`. |
+| `GET /v1/cities/{city}/mds/policies` · `/mds/geographies` | MDS 2.1.0. Envelope `{version, last_updated, policies\|geographies}`, `Content-Type: application/vnd.mds+json;version=2.1`. |
+
+All carry `ETag` and `Last-Modified`. An `Accept` header asking for a version we do not serve gets **406
+`NOT_ACCEPTABLE`**, as both specs require. Gated by `cds.publish` / `mds.publishPolicy` (404 when off).
+
+### Admin (`X-Admin-Token`)
+| Endpoint | Notes |
+|---|---|
+| `GET /v1/admin/cities/{city}/curbs` | The stored inventory, verbatim. |
+| `PUT /v1/admin/cities/{city}/curbs?replace=` | Load a CDS document, a `{zones, policies}` pair, or a GeoJSON FeatureCollection whose `properties` carry the CDS fields (policies may be inline under `properties.policies`). Ids that are not UUIDs are derived deterministically from the content, so re-importing the same file never duplicates a zone. A zone referencing an unknown `curb_policy_id` is rejected with 422. |
+| `DELETE /v1/admin/cities/{city}/curbs?zoneId=` | One zone, or the whole inventory when `zoneId` is omitted. |
+| `PUT /v1/admin/cities/{city}/mds/documents?replace=` | Load MDS Policy and/or Geography documents (a policy response, a geography response, or a `{policies, geographies}` bundle). |
+| `POST /v1/admin/cities/{city}/openmobility/refresh?kind=cds\|mds` | Pull the configured third-party feed now. |
+
+`openMobility` is an editable config section, so the whole block can also be changed through
+`PUT /v1/admin/cities/{city}/config`. MDS provider `credentials` follow the on-demand rules exactly: masked on
+read, an omitted key keeps the stored value, `null` clears, a masked value echoed back keeps the stored one.
+
+### Health
+`GET /v1/cities/{city}/health` gains `openMobility: {enabled, cds: {enabled, publishing, source, curbZones,
+curbPolicies, lastUpdatedAt}, mds: {enabled, publishingPolicy, version, policies, geographies, providers}}`.
+
+### v1.6 deviations from CONTRACT-mds-cds.md
+| Contract | Served | Why |
+|---|---|---|
+| `/curbs` returns "CDS Curbs-shaped GeoJSON" | camelCase objects with `geometry` + `center` | The rest of our public API is camelCase; the byte-faithful CDS shape is one call away at `/cds/curbs/zones`. |
+| `distanceMeters` | 0 inside a polygon, else the distance to the nearest vertex | Curb zones are a few metres of kerb, so vertex distance is within noise of true perpendicular distance and far cheaper. |
+| `GET /cds/curbs/spaces`, `/objects` | not served | Optional in CDS and not needed by any client yet; `/areas` is served (empty) because discovery clients probe it. |
+| MDS rule → our `type` | heuristic | MDS 2.1 rules are generic (`count`/`speed`/`time`…). We map `count` + `maximum: 0` + `on_trip` state → `no_ride`, other `count` + `maximum: 0` → `no_parking`, `minimum > 0` → `preferred_parking`, `speed` → `speed_limit`, else `cap`/`other`. The untouched MDS rule is always echoed under `rule`. |
+| `designated_period` | only `holidays` is evaluated | The others ("snow emergency", "game days") are not data we hold; an unknown period never blocks a span. |
+| CDS `currency` envelope field | the city's `rateCurrency` | CDS requires `currency` in the envelope but has no per-rate currency; we fill it from the city config. |

@@ -66,6 +66,71 @@ mobility:                        # v1.2 shared mobility; each entry is a GBFS fe
                                  # template placeholders: {clientId} {pickupLat} {pickupLon} {pickupName} {dropoffLat} {dropoffLon} {dropoffName} {pickupJson} {dropoffJson}
   on_demand_policy: { max_direct_distance_km: 40, first_last_mile: true, max_feeder_km: 8, show_when_transit_faster: true,
                       duration_factor: 1.4, night_duration_factor: 1.1 }   # car durations × factor (OTP is free-flow)
+# ── v1.6 · Open Mobility Foundation (CDS 1.1.0 curbs · MDS 2.1.0 policy/geography) ──
+# Both halves are optional and admin-editable. Everything served from here is the OPEN data plane:
+# public regulation, never a person and never an operator's trips.
+open_mobility:
+  cds:
+    enabled: false               # true -> /curbs, /curbs/nearby and (with publish) /cds/curbs/*
+    publish: false               # serve the verbatim CDS 1.1.0 Curbs API for operators
+    curbs: { source: local, url: null, refresh_minutes: 60 }   # local = our inventory (admin CRUD); url = mirror a third-party CDS feed
+    # CDS has no currency field: a `rate` is an integer in "the smallest denomination of the local currency".
+    # Bogotá quotes whole pesos, so COP -> rate_minor_units 1; USD/EUR quote cents -> 100.
+    rate_currency: null          # null -> the city's fare currency
+    rate_minor_units: 1
+    events: { accept: false, providers: [] }                   # phase B: operators POST curb activity
+  mds:
+    enabled: false               # true -> /zones and (with publish_policy) /mds/policies + /mds/geographies
+    version: "2.1.0"
+    publish_policy: false
+    authority_url: null          # mirror a third-party MDS Policy/Geography document
+    refresh_minutes: 60
+    retention_days: 90           # restricted plane (phase B)
+    providers: []                # [{ id, name, mode, base_url, auth: { kind: oauth2|bearer|jwt, token_url, jwks_url, issuer, audience, provider_id_claim },
+                                 #    ingest: [vehicles, status_changes, trips, events], poll_minutes,
+                                 #    credentials: { clientId: "${MDS_X_CLIENT_ID:-}", clientSecret: "${MDS_X_SECRET:-}" }, enabled }]
+  park_ride: { enabled: false, max_drive_km: 25.0, max_walk_meters: 600, default_dwell_hours: 8.0 }   # phase B
+#
+# EXAMPLE curb inventory (documentation only — load the real one through
+# `PUT /v1/admin/cities/<slug>/curbs`, which accepts this exact shape):
+#
+#   {
+#     "policies": [
+#       { "curb_policy_id": "c0ffee00-1111-4222-8333-444455556666",
+#         "name": "Parqueo pago", "priority": 2,                       # LOWER priority number wins
+#         "time_spans": [{ "days_of_week": ["mon","tue","wed","thu","fri","sat"],
+#                          "time_of_day_start": "07:00", "time_of_day_end": "20:00" }],
+#         "rules": [{ "activity": "parking", "max_stay": 2, "max_stay_unit": "hour",
+#                     "user_classes": ["car"],
+#                     "rate": [{ "rate": 4200, "rate_unit": "hour", "maximum_fee": 8400 }] }] },
+#       { "curb_policy_id": "d1d1d1d1-2222-4333-8444-555566667777",
+#         "name": "Prohibido detenerse en hora pico", "priority": 1,
+#         "time_spans": [{ "days_of_week": ["mon","tue","wed","thu","fri"],
+#                          "time_of_day_start": "17:00", "time_of_day_end": "20:00" }],
+#         "rules": [{ "activity": "no stopping" }] },
+#       { "curb_policy_id": "ba1e0000-8888-4999-8aaa-bbbbccccdddd",
+#         "name": "Cargue nocturno", "priority": 1,
+#         "time_spans": [{ "time_of_day_start": "22:00", "time_of_day_end": "06:00" }],   # wraps midnight
+#         "rules": [{ "activity": "loading", "user_classes": ["truck","van"] }] },
+#       { "curb_policy_id": "5ee5ee00-3333-4444-8555-666677778888",
+#         "name": "Zona de discapacidad", "priority": 0,
+#         "rules": [{ "activity": "parking", "user_classes": ["accessible"] }] }          # no time_spans = 24/7
+#     ],
+#     "zones": [
+#       { "curb_zone_id": "3f5a9d84-2b1e-4c77-9c3f-8f6b1d0a55c1",
+#         "name": "Cra 13 con Cl 93 · costado oriental", "street_name": "Carrera 13",
+#         "geometry": { "type": "Polygon", "coordinates": [[[-74.0487,4.6763],[-74.0483,4.6763],
+#                                                           [-74.0483,4.6769],[-74.0487,4.6769],
+#                                                           [-74.0487,4.6763]]] },
+#         "curb_policy_ids": ["c0ffee00-1111-4222-8333-444455556666",
+#                             "d1d1d1d1-2222-4333-8444-555566667777"],
+#         "available": true, "available_spaces": 4, "availability_time": 1757116800000 }
+#     ]
+#   }
+#
+# A GeoJSON FeatureCollection also works: put the CDS fields in each feature's `properties` (and the
+# policies inline under `properties.policies`). Ids that are not UUIDs are derived deterministically from
+# the content, so re-importing the same file never duplicates a zone.
 # pois_file: mycity/pois.geojson # default cities/<slug>/pois.geojson (built by scripts/build-pois.sh)
 # ── v1.3 · white-label landing page (optional; admin-editable; GET /v1/cities/<slug>/landing) ──
 landing:

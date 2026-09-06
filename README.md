@@ -110,6 +110,8 @@ the VM): `docker compose --profile full up -d` runs Postgres, `otp` (for `CITY`,
 | `GET …/ondemand/providers`, `GET …/ondemand/estimate`, `GET …/ondemand/handoff` | taxi / ride-hailing quotes and hand-off links (v1.4) |
 | `GET …/plan?onDemand=true` | direct ride + taxi-to-stop combos next to transit (v1.4) |
 | `POST /v1/admin/cities/{city}/ingest-static`, `…/purge` | admin (`X-Admin-Token`) |
+| `GET …/curbs`, `GET …/curbs/nearby`, `GET …/zones` | kerb regulation and policy zones, resolved against the city clock (v1.6) |
+| `GET …/cds/curbs/*`, `GET …/mds/policies`, `GET …/mds/geographies` | verbatim CDS 1.1.0 / MDS 2.1.0 for operators (v1.6) |
 | `GET /v1/admin/me`, `GET/PUT/DELETE …/admin/cities/{city}/config`, `…/config/history` | runtime-editable fares, client config, links, services (`X-Admin-Token`) |
 
 Full schema and examples: [`docs/API.md`](docs/API.md). Errors are always

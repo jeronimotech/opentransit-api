@@ -6,6 +6,26 @@ releases start.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-06 — Open Mobility Foundation (CDS 1.1.0 curbs, MDS 2.1.0 policy/geography), phase A
+### Added
+- Per-city `openMobility` config (admin-editable): CDS curbs (local inventory or mirrored URL, publish toggle),
+  MDS policy/geography (authority URL, publish toggle, providers with masked credentials) and the park-and-ride
+  block phase B will use. `features.openMobility` is derived.
+- Public normalised endpoints `GET /v1/cities/{city}/curbs`, `/curbs/nearby`, `/zones`: legality evaluated in the
+  city timezone with its holiday calendar, CDS priority resolution (lowest wins), `whyLegal`, `nextChange`,
+  `priceLabel`, live availability fields, and `userClass` filtering with synonyms (`car`, `rideshare`, `delivery`…).
+- Verbatim publishing endpoints `GET …/cds/curbs/zones|policies|areas` and `…/mds/policies|geographies` with the
+  specs' envelopes, media types (`application/vnd.cds+json;version=1.1`, `application/vnd.mds+json;version=2.1`),
+  `ETag`/`Last-Modified`, and 406 on an unsupported `Accept` version.
+- Admin curb CRUD and MDS document import; both accept a spec document, a `{zones, policies}` pair or a GeoJSON
+  FeatureCollection, deriving non-UUID ids deterministically so re-imports do not duplicate.
+- `health.openMobility` block; `POST …/openmobility/refresh` and a background loop that mirrors configured feeds.
+- `openMobility.cds.rateCurrency` / `rateMinorUnits`: CDS quotes an integer in the smallest denomination of the
+  local currency and defines no currency field. Bogotá quotes whole COP (minor units 1), USD/EUR quote cents (100).
+- Restricted-plane tables created but unused (`mds_vehicle`, `mds_status_change`, `mds_trip`, `cds_event`,
+  `mds_provider_state`) so phase B can serve the MDS Agency API (operators push; JWT claims carry `provider_id`)
+  and poll the Provider API into the same tables without a migration.
+
 ## [1.5.0] - 2026-09-06 — first-party analytics (usage + mobility), privacy by design
 ### Added
 - `POST /v1/cities/{city}/events`: anonymous batch ingestion (≤ 50 events, gzip, schema-validated per type,

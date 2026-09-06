@@ -291,14 +291,16 @@ _DAY_EN = {"mon": "Mon", "tue": "Tue", "wed": "Wed", "thu": "Thu", "fri": "Fri",
 # a curb rule allows a rider pick-up / drop-off when it permits one of these
 _PICKUP_ACTIVITIES = ("stopping", "loading", "unloading", "parking")
 # user class synonyms so a zone written for `car` still matches a rideshare request
+# Directional on purpose: a taxi may use a general car bay, but a private car may NOT use a taxi-only bay.
+# Widening these would make us tell someone they can stop where they cannot, which is worse than silence.
 _USER_CLASS_SYNONYMS = {
-    "car": {"car", "rideshare", "taxi", "autonomous", "combustion", "electric"},
-    "rideshare": {"rideshare", "car", "taxi", "autonomous"},
-    "taxi": {"taxi", "car", "rideshare"},
-    "delivery": {"delivery", "van", "truck", "cargo_bicycle", "car"},
+    "car": {"car", "combustion", "electric", "autonomous"},
+    "rideshare": {"rideshare", "car", "combustion", "electric", "autonomous"},
+    "taxi": {"taxi", "car", "combustion", "electric"},
+    "delivery": {"delivery", "van", "truck", "cargo_bicycle"},
     "disabled": {"disabled", "accessible"},
-    "bicycle": {"bicycle", "cargo_bicycle", "electric_assist"},
-    "scooter": {"scooter", "moped"},
+    "bicycle": {"bicycle", "cargo_bicycle", "electric_assist", "human"},
+    "scooter": {"scooter", "moped", "electric"},
 }
 
 
