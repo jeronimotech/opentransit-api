@@ -34,7 +34,28 @@ async def city_health(request: Request, rt: CityRuntime = Depends(city_runtime))
         "ondemand": {"providers": len(rt.city.on_demand_providers()), "tariffs": len(rt.city.mobility.taxi_tariffs),
                      "routerCar": (await rt.car_router().probe(rt.city)) if rt.city.on_demand_providers() else None},
         "analytics": {"enabled": rt.city.config.analytics.enabled, **(await _analytics_health(request, rt))},
+        "openMobility": await _open_mobility_health(request, rt),
     }
+
+
+async def _open_mobility_health(request: Request, rt: CityRuntime) -> dict:
+    om = rt.city.open_mobility
+    body = {"enabled": rt.city.open_mobility_enabled(),
+            "cds": {"enabled": om.cds.enabled, "publishing": om.cds.enabled and om.cds.publish,
+                    "source": om.cds.curbs.source},
+            "mds": {"enabled": om.mds.enabled, "publishingPolicy": om.mds.enabled and om.mds.publish_policy,
+                    "version": om.mds.version, "providers": len(om.mds.providers)}}
+    store = getattr(request.app.state, "openmobility_store", None)
+    if store is None:
+        return body
+    try:
+        s = await store.stats(rt.city.id)
+    except Exception:  # noqa: BLE001
+        return body
+    body["cds"].update({"curbZones": s["curbZones"], "curbPolicies": s["curbPolicies"],
+                        "lastUpdatedAt": s["lastUpdatedAt"]})
+    body["mds"].update({"policies": s["mdsPolicies"], "geographies": s["mdsGeographies"]})
+    return body
 
 
 async def _analytics_health(request: Request, rt: CityRuntime) -> dict:

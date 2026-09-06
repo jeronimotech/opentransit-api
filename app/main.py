@@ -17,6 +17,7 @@ from .gbfs import GbfsNetwork
 from .gtfs_static import ingest, load_route_index, load_service_index
 from .logging_setup import setup_logging
 from .normalize import set_feed_flags
+from .openmobility import PgOpenMobilityStore, refresh_from_url
 from .otp import OtpClient
 from .routers import (
     admin,
@@ -27,6 +28,7 @@ from .routers import (
     health,
     landing,
     ondemand,
+    openmobility,
     plan,
     platform,
     pois,
@@ -109,6 +111,38 @@ async def _analytics_loop(app: FastAPI, stop: asyncio.Event) -> None:
             pass
 
 
+def _om_sources(rt) -> list[tuple[str, str, int]]:
+    """(kind, url, refresh_minutes) for each third-party document this city mirrors."""
+    om = rt.city.open_mobility
+    out = []
+    if om.cds.enabled and om.cds.curbs.source == "url" and om.cds.curbs.url:
+        out.append(("cds", om.cds.curbs.url, om.cds.curbs.refresh_minutes))
+    if om.mds.enabled and om.mds.authority_url:
+        out.append(("mds", om.mds.authority_url, om.mds.refresh_minutes))
+    return out
+
+
+async def _open_mobility_loop(app: FastAPI, stop: asyncio.Event) -> None:
+    """Mirror the configured CDS / MDS documents. A failing upstream never takes the API down."""
+    store = app.state.openmobility_store
+    last: dict[tuple[str, str], float] = {}
+    while not stop.is_set():
+        now = asyncio.get_running_loop().time()
+        for rt in app.state.cities.values():
+            for kind, url, minutes in _om_sources(rt):
+                key = (rt.city.id, kind)
+                if now - last.get(key, -1e9) < minutes * 60:
+                    continue
+                try:
+                    result = await refresh_from_url(store, rt.city, url, kind=kind)
+                    last[key] = now
+                    log.info("[%s] %s refreshed from %s: %s", rt.city.id, kind.upper(), url, result)
+                except Exception:  # noqa: BLE001
+                    last[key] = now
+                    log.exception("[%s] could not refresh %s from %s", rt.city.id, kind.upper(), url)
+        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=300)
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = settings()
@@ -124,6 +158,7 @@ async def lifespan(app: FastAPI):
     registry = load_registry(cfg.CITIES_DIR)
     app.state.cities = {cid: CityRuntime(city=c, rt=RTCache(c), otp=OtpClient(c)) for cid, c in registry.items()}
     app.state.config_store = PgConfigStore()
+    app.state.openmobility_store = PgOpenMobilityStore()
     await load_overrides(app.state.config_store, app.state.cities)
     stop = asyncio.Event()
     tasks: list[asyncio.Task] = []
@@ -143,6 +178,8 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(rt.otp.server_info())
     if cfg.ENABLE_ANALYTICS_JOBS:
         tasks.append(asyncio.create_task(_analytics_loop(app, stop), name="analytics"))
+    if cfg.ENABLE_RT_POLLERS and any(_om_sources(rt) for rt in app.state.cities.values()):
+        tasks.append(asyncio.create_task(_open_mobility_loop(app, stop), name="openmobility"))
     log.info("opentransit-api %s up · %d cities · %d background tasks", __version__, len(registry), len(tasks))
     try:
         yield
@@ -165,14 +202,15 @@ def create_app() -> FastAPI:
         version=__version__, lifespan=lifespan,
         openapi_tags=[{"name": "planning"}, {"name": "search"}, {"name": "stops"}, {"name": "routes"},
                       {"name": "realtime"}, {"name": "rental"}, {"name": "ondemand"}, {"name": "platform"},
-                      {"name": "analytics"}, {"name": "admin"}],
+                      {"name": "analytics"}, {"name": "openmobility"},
+                      {"name": "admin"}],
     )
     origins = [o.strip() for o in settings().CORS_ORIGINS.split(",") if o.strip()]
     app.add_middleware(CORSMiddleware, allow_origins=origins or ["*"], allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
     for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, ondemand,
-              landing, analytics, admin):
+              landing, analytics, openmobility, admin):
         app.include_router(r.router)
 
     @app.get("/", include_in_schema=False)

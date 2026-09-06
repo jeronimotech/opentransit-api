@@ -42,6 +42,7 @@ class Features(BaseModel):
     fares: bool = False
     bike_share: bool = False
     on_demand: bool = False
+    open_mobility: bool = False
 
 
 class Feeds(BaseModel):
@@ -274,6 +275,90 @@ class Mobility(BaseModel):
     on_demand_policy: OnDemandPolicy = OnDemandPolicy()
 
 
+# ── v1.6 · Open Mobility Foundation: CDS 1.1.0 curbs + MDS 2.1.0 policy/geography ──
+class CdsCurbsCfg(BaseModel):
+    """Where the curb inventory comes from: our own admin-edited copy, or a third-party CDS Curbs feed."""
+    source: Literal["local", "url"] = "local"
+    url: str | None = None
+    refresh_minutes: int = 60
+
+
+class CdsEventsProvider(BaseModel):
+    id: str = Field(pattern=r"^[a-z0-9-]+$")
+    name: str
+    token_hash: str | None = None      # sha256 of the operator's bearer token (phase B); never the token
+
+
+class CdsEventsCfg(BaseModel):
+    accept: bool = False               # phase B
+    providers: list[CdsEventsProvider] = []
+
+
+class Cds(BaseModel):
+    enabled: bool = False
+    curbs: CdsCurbsCfg = CdsCurbsCfg()
+    publish: bool = False              # serve the CDS Curbs API for operators
+    events: CdsEventsCfg = CdsEventsCfg()
+    # CDS 1.1.0 has no currency field: a `rate` is an integer in "the smallest denomination of the local
+    # currency". Bogotá quotes whole COP, not centavos, so the city says which currency and how many minor
+    # units one integer is worth. Only our normalised `priceLabel` uses this; the verbatim CDS endpoints
+    # keep the integers exactly as the spec mandates.
+    rate_currency: str | None = None   # None -> the city's fare currency
+    rate_minor_units: int = 1          # COP -> 1, USD/EUR (cents) -> 100
+
+
+class MdsAuth(BaseModel):
+    """How we authenticate against an operator's Provider API (`oauth2`/`bearer`) **and** how we authenticate
+    an operator pushing into our Agency API (`jwt`: the bearer's claims carry `provider_id`). Phase B uses
+    both directions; the shape is fixed now so the config never has to be rewritten."""
+    kind: Literal["none", "bearer", "oauth2", "jwt"] = "none"
+    token_url: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
+    jwks_url: str | None = None            # agency direction: where the operator's public keys live
+    issuer: str | None = None
+    audience: str | None = None
+    provider_id_claim: str = "provider_id"
+
+
+class MdsProvider(BaseModel):
+    """An operator the city polls (phase B). Declared now so the admin UI and config are stable."""
+    id: str = Field(pattern=r"^[a-z0-9-]+$")
+    name: str
+    mode: Literal["micromobility", "passenger_services", "delivery_robots", "car_share", "transit"] = \
+        "micromobility"
+    base_url: str
+    auth: MdsAuth = MdsAuth()
+    ingest: list[Literal["vehicles", "status_changes", "trips", "events"]] = ["vehicles"]
+    poll_minutes: int = 60
+    credentials: dict[str, str] = {}   # secret-ish: never public, masked in admin
+    enabled: bool = True
+
+
+class Mds(BaseModel):
+    enabled: bool = False
+    version: str = "2.1.0"
+    publish_policy: bool = False       # serve MDS Policy + Geography
+    authority_url: str | None = None   # a third-party MDS Policy/Geography document we mirror
+    refresh_minutes: int = 60
+    providers: list[MdsProvider] = []
+    retention_days: int = 90
+
+
+class ParkRide(BaseModel):
+    """Park & Ride combos (phase B): drive to a parking curb zone near a station, then walk + transit."""
+    enabled: bool = False
+    max_drive_km: float = 25.0
+    max_walk_meters: int = 600
+    default_dwell_hours: float = 8.0       # dwell assumed when estimating the parking fee
+
+
+class OpenMobility(BaseModel):
+    cds: Cds = Cds()
+    mds: Mds = Mds()
+    park_ride: ParkRide = ParkRide()
+
+
 # ── v1.3 · configurable city landing page (white-label) ─────────────────────────
 class _Camel(BaseModel):
     """Landing blocks accept snake_case (YAML) or camelCase (admin API) and serialise as camelCase."""
@@ -426,6 +511,7 @@ class City(BaseModel):
     links: Links = Links()
     services: list[ServiceTile] = []
     mobility: Mobility = Mobility()
+    open_mobility: OpenMobility = OpenMobility()
     landing: Landing = Landing()
     pois_file: str | None = None      # path relative to the cities dir; default cities/<id>/pois.geojson
 
@@ -491,6 +577,45 @@ class City(BaseModel):
                 "onDemand": [(p.admin() if admin else p.public()) for p in self.mobility.on_demand],
                 "onDemandPolicy": self.mobility.on_demand_policy.public()}
 
+    # ---- v1.6 open mobility (CDS curbs / MDS policy) helpers ----
+    def open_mobility_enabled(self) -> bool:
+        om = self.open_mobility
+        return self.features.open_mobility and (om.cds.enabled or om.mds.enabled)
+
+    def open_mobility_public(self, *, admin: bool = False) -> dict:
+        om = self.open_mobility
+        cds = {"enabled": om.cds.enabled,
+               "curbs": {"source": om.cds.curbs.source, "url": om.cds.curbs.url,
+                         "refreshMinutes": om.cds.curbs.refresh_minutes},
+               "publish": om.cds.publish,
+               "rateCurrency": self.rate_currency(),
+               "rateMinorUnits": om.cds.rate_minor_units,
+               "events": {"accept": om.cds.events.accept,
+                          "providers": [{"id": p.id, "name": p.name} for p in om.cds.events.providers]}}
+        mds = {"enabled": om.mds.enabled, "version": om.mds.version, "publishPolicy": om.mds.publish_policy,
+               "authorityUrl": om.mds.authority_url, "refreshMinutes": om.mds.refresh_minutes,
+               "retentionDays": om.mds.retention_days,
+               "providers": [self._mds_provider_public(p, admin=admin) for p in om.mds.providers]}
+        pr = om.park_ride
+        return {"cds": cds, "mds": mds,
+                "parkRide": {"enabled": pr.enabled, "maxDriveKm": pr.max_drive_km,
+                             "maxWalkMeters": pr.max_walk_meters, "defaultDwellHours": pr.default_dwell_hours}}
+
+    def rate_currency(self) -> str:
+        """Currency the CDS `rate` integers are quoted in (CDS itself has no currency field)."""
+        return self.open_mobility.cds.rate_currency or (self.fares.currency if self.fares else "USD")
+
+    @staticmethod
+    def _mds_provider_public(p: "MdsProvider", *, admin: bool) -> dict:
+        out = {"id": p.id, "name": p.name, "mode": p.mode, "baseUrl": p.base_url,
+               "auth": {"kind": p.auth.kind, "tokenUrl": p.auth.token_url, "jwksUrl": p.auth.jwks_url,
+                        "issuer": p.auth.issuer, "audience": p.auth.audience,
+                        "providerIdClaim": p.auth.provider_id_claim},
+               "ingest": list(p.ingest), "pollMinutes": p.poll_minutes, "enabled": p.enabled}
+        if admin:
+            out["credentials"] = dict(p.credentials)
+        return out
+
     def transit_modes(self) -> list[str]:
         return [m for m in self.modes if m not in ("WALK", "BICYCLE", "CAR", "SCOOTER")]
 
@@ -505,6 +630,7 @@ class City(BaseModel):
                 "realtimeVehicles": self.features.realtime_vehicles, "tripUpdates": self.features.trip_updates,
                 "alerts": self.features.alerts, "fares": self.features.fares, "bikeShare": self.features.bike_share,
                 "onDemand": self.on_demand_enabled(),
+                "openMobility": self.open_mobility_enabled(),
             },
             "agencies": [{"id": a.id, "name": a.name, "component": a.component, "color": a.color}
                          for a in self.agencies],
@@ -524,6 +650,7 @@ class City(BaseModel):
             "links": self.links.model_dump(),
             "services": [s.model_dump() for s in self.services],
             "mobility": self.mobility_public(),
+            "openMobility": self.open_mobility_public(),
             "attribution": self.attribution,
         }
 

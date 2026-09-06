@@ -7,7 +7,7 @@ from ..config import settings
 from ..errors import Unauthorized
 from ..gtfs_static import ingest, load_route_index, load_service_index
 from ..normalize import set_feed_flags
-from ..ondemand import mask_credentials, unmask_patch
+from ..ondemand import mask_credentials, unmask_open_mobility_patch, unmask_patch
 from ..runtime import CityRuntime, city_runtime
 
 router = APIRouter(tags=["admin"])
@@ -57,6 +57,8 @@ async def put_config(patch: ConfigPatch, request: Request, rt: CityRuntime = Dep
     if sections.get("mobility"):
         # masked credentials echoed back by the UI keep their stored value; new values are stored as sent
         sections["mobility"] = unmask_patch(sections["mobility"], rt.city)
+    if sections.get("openMobility"):
+        sections["openMobility"] = unmask_open_mobility_patch(sections["openMobility"], rt.city)
     new_override = deep_merge(rt.override or {}, sections)
     effective_city(rt.base_city or rt.city, new_override)          # raises 422 with the field path
     row = await request.app.state.config_store.save(rt.city.id, new_override, patch.updatedBy, patch.note)

@@ -21,17 +21,26 @@ from .cities import (
     AnalyticsConfig,
     AppConfig,
     BikeShareNetwork,
+    Cds,
+    CdsCurbsCfg,
+    CdsEventsCfg,
+    CdsEventsProvider,
     City,
     Fares,
     Landing,
     Links,
     Maintenance,
+    Mds,
+    MdsAuth,
+    MdsProvider,
     MinAppVersion,
     Mobility,
     OnDemandEstimateCfg,
     OnDemandHandoff,
     OnDemandPolicy,
     OnDemandProvider,
+    OpenMobility,
+    ParkRide,
     ServiceTile,
     TaxiSurcharge,
     TaxiSurchargeWhen,
@@ -44,7 +53,7 @@ from .ondemand import PLACEHOLDER, mask_credentials
 
 log = logging.getLogger("ot.admin_config")
 
-EDITABLE = ("fares", "config", "links", "services", "branding", "mobility", "landing")
+EDITABLE = ("fares", "config", "links", "services", "branding", "mobility", "openMobility", "landing")
 SERVICE_ICONS = ("card", "report", "help", "link", "bike", "parking", "taxi", "ticket", "info", "map")
 LANDING_ICONS = ("route", "live", "board", "bike", "open", "alert", "accessibility", "favorites", "offline", "map",
                  "ticket", "info")
@@ -248,6 +257,89 @@ class MobilityCfg(_Strict):
     onDemandPolicy: OnDemandPolicyCfg = OnDemandPolicyCfg()
 
 
+# ---- v1.6 open mobility (CDS curbs + MDS policy/geography)
+class CdsCurbsSourceCfg(_Strict):
+    source: Literal["local", "url"] = "local"
+    url: str | None = None
+    refreshMinutes: int = Field(60, ge=5, le=1440)
+
+    _v = field_validator("url")(_https)
+
+
+class CdsEventsProviderCfg(_Strict):
+    id: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    name: str = Field(min_length=1, max_length=80)
+    tokenHash: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
+
+
+class CdsEventsSectionCfg(_Strict):
+    accept: bool = False
+    providers: list[CdsEventsProviderCfg] = Field([], max_length=20)
+
+
+class CdsCfg(_Strict):
+    enabled: bool = False
+    curbs: CdsCurbsSourceCfg = CdsCurbsSourceCfg()
+    publish: bool = False
+    # CDS has no currency field; these say what its integer `rate` means (COP -> whole pesos, minorUnits 1)
+    rateCurrency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
+    rateMinorUnits: int = Field(1, ge=1, le=1000)
+    events: CdsEventsSectionCfg = CdsEventsSectionCfg()
+
+
+class MdsAuthCfg(_Strict):
+    """`oauth2`/`bearer`: how we call an operator's Provider API. `jwt`: how an operator authenticates when
+    pushing into our Agency API (phase B) — the bearer's claims carry `provider_id`."""
+    kind: Literal["none", "bearer", "oauth2", "jwt"] = "none"
+    tokenUrl: str | None = None
+    jwksUrl: str | None = None
+    issuer: str | None = Field(None, max_length=200)
+    audience: str | None = Field(None, max_length=200)
+    providerIdClaim: str = Field("provider_id", pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,60}$")
+
+    _v = field_validator("tokenUrl", "jwksUrl")(_https)
+
+
+class MdsProviderCfg(_Strict):
+    id: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    name: str = Field(min_length=1, max_length=80)
+    mode: Literal["micromobility", "passenger_services", "delivery_robots", "car_share", "transit"] = \
+        "micromobility"
+    baseUrl: str
+    auth: MdsAuthCfg = MdsAuthCfg()
+    ingest: list[Literal["vehicles", "status_changes", "trips", "events"]] = ["vehicles"]
+    pollMinutes: int = Field(60, ge=5, le=1440)
+    credentials: dict[str, str] = {}
+    enabled: bool = True
+
+    _v = field_validator("baseUrl")(_https)
+
+
+class MdsCfg(_Strict):
+    enabled: bool = False
+    version: str = Field("2.1.0", pattern=r"^2\.\d+\.\d+$")
+    publishPolicy: bool = False
+    authorityUrl: str | None = None
+    refreshMinutes: int = Field(60, ge=5, le=1440)
+    providers: list[MdsProviderCfg] = Field([], max_length=20)
+    retentionDays: int = Field(90, ge=7, le=730)
+
+    _v = field_validator("authorityUrl")(_https)
+
+
+class ParkRideCfg(_Strict):
+    enabled: bool = False
+    maxDriveKm: float = Field(25.0, gt=0, le=200)
+    maxWalkMeters: int = Field(600, ge=50, le=3000)
+    defaultDwellHours: float = Field(8.0, gt=0, le=48)
+
+
+class OpenMobilityCfg(_Strict):
+    cds: CdsCfg = CdsCfg()
+    mds: MdsCfg = MdsCfg()
+    parkRide: ParkRideCfg = ParkRideCfg()
+
+
 # ---- landing (v1.3): every URL https (or null); CTA urls may also be "#anchor" / "/path"; sizes bounded
 def _https_or_local(v: str | None) -> str | None:
     if v is None or v.startswith("#") or v.startswith("/"):
@@ -395,6 +487,7 @@ class ConfigPatch(BaseModel):
     services: list[dict[str, Any]] | None = None
     branding: dict[str, Any] | None = None
     mobility: dict[str, Any] | None = None
+    openMobility: dict[str, Any] | None = None
     landing: dict[str, Any] | None = None
     note: str | None = Field(None, max_length=300)
     updatedBy: str | None = Field(None, max_length=120)
@@ -420,6 +513,7 @@ def yaml_sections(base: City) -> dict:
     return {"fares": pub["fares"], "config": pub["config"], "links": pub["links"], "services": pub["services"],
             "branding": {"primaryColor": pub["branding"]["primaryColor"]},
             "mobility": base.mobility_public(admin=True),      # credentials included (masked by describe())
+            "openMobility": base.open_mobility_public(admin=True),
             "landing": base.landing.public()}
 
 
@@ -442,6 +536,7 @@ def validate_sections(sections: dict) -> dict:
                               for i, s in enumerate(sections.get("services") or [])],
                  "branding": _validate("branding", BrandingCfg, sections.get("branding") or {}),
                  "mobility": _validate("mobility", MobilityCfg, sections.get("mobility") or {}),
+                 "openMobility": _validate("openMobility", OpenMobilityCfg, sections.get("openMobility") or {}),
                  "landing": _validate("landing", LandingCfg, sections.get("landing") or {})}
     ids = [s["id"] for s in out["services"]]
     if len(ids) != len(set(ids)):
@@ -450,7 +545,24 @@ def validate_sections(sections: dict) -> dict:
     if len(nids) != len(set(nids)):
         raise ApiError("mobility.bikeShare: duplicate network id", status=422)
     _validate_ondemand(out["mobility"])
+    _validate_open_mobility(out["openMobility"])
     return out
+
+
+def _validate_open_mobility(om: dict) -> None:
+    if om["cds"]["curbs"]["source"] == "url" and not om["cds"]["curbs"]["url"]:
+        raise ApiError("openMobility.cds.curbs.url: required when source is 'url'", status=422)
+    eids = [p["id"] for p in om["cds"]["events"]["providers"]]
+    if len(eids) != len(set(eids)):
+        raise ApiError("openMobility.cds.events.providers: duplicate provider id", status=422)
+    pids = [p["id"] for p in om["mds"]["providers"]]
+    if len(pids) != len(set(pids)):
+        raise ApiError("openMobility.mds.providers: duplicate provider id", status=422)
+    for i, p in enumerate(om["mds"]["providers"]):
+        if p["auth"]["kind"] == "oauth2" and not p["auth"]["tokenUrl"]:
+            raise ApiError(f"openMobility.mds.providers.{i}.auth.tokenUrl: required for oauth2", status=422)
+        if p["auth"]["kind"] == "jwt" and not p["auth"]["jwksUrl"]:
+            raise ApiError(f"openMobility.mds.providers.{i}.auth.jwksUrl: required for jwt", status=422)
 
 
 def _validate_ondemand(mob: dict) -> None:
@@ -541,6 +653,37 @@ def build_city(base: City, sections: dict) -> City:
                                                                night_duration_factor=pol["nightDurationFactor"]))
     upd["features"] = base.features.model_copy(update={"bike_share": bool(nets),
                                                        "on_demand": any(p.enabled for p in providers)})
+    om = sections["openMobility"]
+    cds_cfg = om["cds"]
+    mds_cfg = om["mds"]
+    upd["open_mobility"] = OpenMobility(
+        park_ride=ParkRide(enabled=om["parkRide"]["enabled"], max_drive_km=om["parkRide"]["maxDriveKm"],
+                           max_walk_meters=om["parkRide"]["maxWalkMeters"],
+                           default_dwell_hours=om["parkRide"]["defaultDwellHours"]),
+        cds=Cds(enabled=cds_cfg["enabled"], publish=cds_cfg["publish"],
+                rate_currency=cds_cfg["rateCurrency"], rate_minor_units=cds_cfg["rateMinorUnits"],
+                curbs=CdsCurbsCfg(source=cds_cfg["curbs"]["source"], url=cds_cfg["curbs"]["url"],
+                                  refresh_minutes=cds_cfg["curbs"]["refreshMinutes"]),
+                events=CdsEventsCfg(accept=cds_cfg["events"]["accept"],
+                                    providers=[CdsEventsProvider(id=p["id"], name=p["name"],
+                                                                 token_hash=p.get("tokenHash"))
+                                               for p in cds_cfg["events"]["providers"]])),
+        mds=Mds(enabled=mds_cfg["enabled"], version=mds_cfg["version"],
+                publish_policy=mds_cfg["publishPolicy"], authority_url=mds_cfg["authorityUrl"],
+                refresh_minutes=mds_cfg["refreshMinutes"], retention_days=mds_cfg["retentionDays"],
+                providers=[MdsProvider(id=p["id"], name=p["name"], mode=p["mode"], base_url=p["baseUrl"],
+                                       auth=MdsAuth(kind=p["auth"]["kind"], token_url=p["auth"]["tokenUrl"],
+                                                    jwks_url=p["auth"]["jwksUrl"], issuer=p["auth"]["issuer"],
+                                                    audience=p["auth"]["audience"],
+                                                    provider_id_claim=p["auth"]["providerIdClaim"],
+                                                    client_id=(p.get("credentials") or {}).get("clientId"),
+                                                    client_secret=(p.get("credentials") or {}).get("clientSecret")),
+                                       ingest=p["ingest"], poll_minutes=p["pollMinutes"],
+                                       credentials={k: v for k, v in (p.get("credentials") or {}).items() if v},
+                                       enabled=p["enabled"])
+                           for p in mds_cfg["providers"]]))
+    upd["features"] = upd["features"].model_copy(
+        update={"open_mobility": cds_cfg["enabled"] or mds_cfg["enabled"]})
     upd["landing"] = Landing.model_validate(sections["landing"])
     return base.model_copy(update=upd)
 

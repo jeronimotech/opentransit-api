@@ -1,0 +1,97 @@
+{
+  "_comment": "MDS 2.1.0 Policy + Geography bundle, field names exactly as the spec (policy/README.md, geography/README.md). Two rules: a no-parking count rule over a plaza and a night-time speed limit over a corridor.",
+  "version": "2.1.0",
+  "last_updated": 1757116800000,
+  "policies": [
+    {
+      "policy_id": "8ad39dc3-005b-4348-9d61-c830c54c161b",
+      "name": "Plaza sin estacionamiento",
+      "mode_id": "micromobility",
+      "description": "No shared vehicle may be parked inside the plaza.",
+      "start_date": 1735689600000,
+      "published_date": 1735689600000,
+      "rules": [
+        {
+          "name": "No parking in the plaza",
+          "rule_id": "2df37a0b-fdb1-4a12-9a95-7d8a2d3fbcb1",
+          "rule_type": "count",
+          "rule_units": "devices",
+          "geographies": ["0c4a3b3e-4a41-4a0d-9b57-6f01f6f7f7aa"],
+          "states": { "available": [], "non_operational": [], "reserved": [] },
+          "vehicle_types": ["bicycle", "scooter"],
+          "maximum": 0,
+          "messages": {
+            "es-CO": "No dejes la bici aquí: es zona peatonal.",
+            "en-US": "Do not park here: pedestrian plaza."
+          }
+        }
+      ]
+    },
+    {
+      "policy_id": "a1b0c7e4-7f26-4f8e-8a1a-2d0f0b3a11c9",
+      "name": "Límite de velocidad nocturno",
+      "mode_id": "micromobility",
+      "description": "10 km/h along the corridor at night.",
+      "start_date": 1735689600000,
+      "published_date": 1735689600000,
+      "rules": [
+        {
+          "name": "Night speed limit",
+          "rule_id": "6d9f3b21-3f4e-4b6a-9a0c-58b1a2c3d4e5",
+          "rule_type": "speed",
+          "rule_units": "kph",
+          "geographies": ["b7d1c2e3-4f5a-6b7c-8d9e-0f1a2b3c4d5e"],
+          "states": { "on_trip": [] },
+          "maximum": 10,
+          "days": ["fri", "sat"],
+          "start_time": "22:00",
+          "end_time": "06:00"
+        }
+      ]
+    }
+  ],
+  "geographies": [
+    {
+      "geography_id": "0c4a3b3e-4a41-4a0d-9b57-6f01f6f7f7aa",
+      "name": "Plaza central",
+      "description": "Pedestrian plaza",
+      "geography_type": "no_parking_zone",
+      "published_date": 1735689600000,
+      "effective_date": 1735689600000,
+      "geography_json": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {},
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [[[-74.0500, 4.6760], [-74.0490, 4.6760], [-74.0490, 4.6770],
+                               [-74.0500, 4.6770], [-74.0500, 4.6760]]]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "geography_id": "b7d1c2e3-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
+      "name": "Corredor Calle 100",
+      "geography_type": "speed_zone",
+      "published_date": 1735689600000,
+      "geography_json": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "properties": {},
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [[[-74.0560, 4.6840], [-74.0500, 4.6840], [-74.0500, 4.6860],
+                               [-74.0560, 4.6860], [-74.0560, 4.6840]]]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

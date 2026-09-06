@@ -70,26 +70,21 @@ def _walk(node, fn) -> None:
             _walk(v, fn)
 
 
-def unmask_patch(patch_mobility: dict | None, city: City) -> dict | None:
-    """Credential rules for a PUT of `mobility.onDemand[]` (the list replaces the stored one, so secrets must be
-    carried over explicitly): for a provider the city already knows, an OMITTED `credentials` key keeps every
-    stored value; `credentials: null` clears them all; a key set to null clears that key; a MASKED value keeps
-    the stored one; any other value is stored as sent. New providers get exactly what they send."""
-    if not patch_mobility or not isinstance(patch_mobility.get("onDemand"), list):
-        return patch_mobility
-    out = copy.deepcopy(patch_mobility)
-    for prov in out["onDemand"]:
-        if not isinstance(prov, dict):
+def apply_credential_rules(items: list, stored_for) -> None:
+    """Shared credential semantics for any list of objects that carries `credentials` (on-demand providers,
+    MDS providers): an OMITTED key keeps every stored value, `null` clears them all, a key set to null clears
+    that key, and a MASKED value keeps the stored one. New entries get exactly what they send."""
+    for item in items:
+        if not isinstance(item, dict):
             continue
-        current = city.on_demand_provider(prov.get("id"))
-        stored = dict(current.credentials) if current else {}
-        if "credentials" not in prov:
+        stored = stored_for(item.get("id")) or {}
+        if "credentials" not in item:
             if stored:
-                prov["credentials"] = stored
+                item["credentials"] = dict(stored)
             continue
-        creds = prov["credentials"]
+        creds = item["credentials"]
         if creds is None:
-            prov["credentials"] = {}
+            item["credentials"] = {}
             continue
         if not isinstance(creds, dict):
             continue
@@ -101,6 +96,35 @@ def unmask_patch(patch_mobility: dict | None, city: City) -> dict | None:
                     creds[k] = stored[k]
                 else:
                     del creds[k]
+
+
+def unmask_open_mobility_patch(patch: dict | None, city: City) -> dict | None:
+    """Same rules for `openMobility.mds.providers[]`."""
+    if not patch or not isinstance(patch.get("mds"), dict):
+        return patch
+    providers = patch["mds"].get("providers")
+    if not isinstance(providers, list):
+        return patch
+    out = copy.deepcopy(patch)
+    known = {p.id: dict(p.credentials) for p in city.open_mobility.mds.providers}
+    apply_credential_rules(out["mds"]["providers"], known.get)
+    return out
+
+
+def unmask_patch(patch_mobility: dict | None, city: City) -> dict | None:
+    """Credential rules for a PUT of `mobility.onDemand[]` (the list replaces the stored one, so secrets must be
+    carried over explicitly): for a provider the city already knows, an OMITTED `credentials` key keeps every
+    stored value; `credentials: null` clears them all; a key set to null clears that key; a MASKED value keeps
+    the stored one; any other value is stored as sent. New providers get exactly what they send."""
+    if not patch_mobility or not isinstance(patch_mobility.get("onDemand"), list):
+        return patch_mobility
+    out = copy.deepcopy(patch_mobility)
+
+    def stored_for(pid):
+        cur = city.on_demand_provider(pid)
+        return dict(cur.credentials) if cur else {}
+
+    apply_credential_rules(out["onDemand"], stored_for)
     return out
 
 

@@ -520,6 +520,30 @@ class AnalyticsHealth(Out):
     queue_lag: int | None = None            # seconds between the newest consolidated and the newest received event
 
 
+class OpenMobilityCdsHealth(Out):
+    enabled: bool = False
+    publishing: bool = False
+    curb_zones: int = 0
+    curb_policies: int = 0
+    source: str = "local"
+    last_updated_at: str | None = None
+
+
+class OpenMobilityMdsHealth(Out):
+    enabled: bool = False
+    publishing_policy: bool = False
+    version: str = "2.1.0"
+    policies: int = 0
+    geographies: int = 0
+    providers: int = 0
+
+
+class OpenMobilityHealth(Out):
+    enabled: bool = False
+    cds: OpenMobilityCdsHealth = OpenMobilityCdsHealth()
+    mds: OpenMobilityMdsHealth = OpenMobilityMdsHealth()
+
+
 class CityHealth(Out):
     static: StaticHealth
     realtime: RealtimeHealth
@@ -527,6 +551,7 @@ class CityHealth(Out):
     rental: RentalHealth = RentalHealth()
     ondemand: OnDemandHealth = OnDemandHealth()
     analytics: AnalyticsHealth = AnalyticsHealth()
+    open_mobility: OpenMobilityHealth = OpenMobilityHealth()
 
 
 # ------------------------------------------------------------------ v1.2 shared vehicles (GBFS)

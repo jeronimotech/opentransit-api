@@ -218,3 +218,113 @@ CREATE TABLE IF NOT EXISTS agg_hours_daily (
 CREATE TABLE IF NOT EXISTS agg_platform_daily (
   city_id TEXT NOT NULL, day DATE NOT NULL, platform TEXT NOT NULL, app_version TEXT, n INT NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS agg_platform_daily_city ON agg_platform_daily (city_id, day);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- v1.6 · Open Mobility Foundation (phase A, OPEN data plane only).
+-- CDS 1.1.0 curb zones/policies and MDS 2.1.0 policies/geographies are public regulation: they describe
+-- the kerb and the rules, never a person or an operator's trips. The restricted plane (MDS Provider
+-- trips/telemetry, CDS Events) is phase B and gets its own partitioned tables.
+-- Documents are stored verbatim as JSONB so the publishing endpoints stay byte-faithful to the specs.
+-- ═══════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS curb_zone (
+  city_id      TEXT NOT NULL,
+  curb_zone_id TEXT NOT NULL,
+  data         JSONB NOT NULL,
+  min_lon      DOUBLE PRECISION, min_lat DOUBLE PRECISION,
+  max_lon      DOUBLE PRECISION, max_lat DOUBLE PRECISION,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (city_id, curb_zone_id));
+CREATE INDEX IF NOT EXISTS curb_zone_bbox ON curb_zone (city_id, min_lon, min_lat, max_lon, max_lat);
+
+CREATE TABLE IF NOT EXISTS curb_policy (
+  city_id        TEXT NOT NULL,
+  curb_policy_id TEXT NOT NULL,
+  data           JSONB NOT NULL,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (city_id, curb_policy_id));
+
+CREATE TABLE IF NOT EXISTS mds_policy (
+  city_id    TEXT NOT NULL,
+  policy_id  TEXT NOT NULL,
+  data       JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (city_id, policy_id));
+
+CREATE TABLE IF NOT EXISTS mds_geography (
+  city_id      TEXT NOT NULL,
+  geography_id TEXT NOT NULL,
+  data         JSONB NOT NULL,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (city_id, geography_id));
+
+-- ── RESTRICTED plane (phase B; created now so the schema never has to be rewritten) ──────────────────
+-- Written by BOTH MDS directions and never exposed publicly:
+--   * Agency API server  — operators PUSH to us (JWT bearer whose claims carry `provider_id`)
+--   * Provider API client — we POLL operators (OAuth2 client credentials, per-feed cursors)
+-- Same tables either way, so metrics do not care where a record came from. Retention:
+-- `openMobility.mds.retentionDays` (default 90), enforced by dropping day partitions.
+CREATE TABLE IF NOT EXISTS mds_vehicle (
+  city_id     TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  device_id   TEXT NOT NULL,
+  vehicle_id  TEXT,
+  mode        TEXT,
+  vehicle_type TEXT,
+  data        JSONB NOT NULL,
+  last_event_at TIMESTAMPTZ,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  source      TEXT NOT NULL DEFAULT 'agency',   -- 'agency' (pushed) | 'provider' (polled)
+  PRIMARY KEY (city_id, provider_id, device_id));
+
+CREATE TABLE IF NOT EXISTS mds_status_change (
+  city_id     TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  device_id   TEXT NOT NULL,
+  event_at    TIMESTAMPTZ NOT NULL,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  event_types TEXT[],
+  vehicle_state TEXT,
+  gh7         TEXT,                              -- coarsened, like analytics: never a raw point
+  data        JSONB NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'agency'
+) PARTITION BY RANGE (received_at);
+CREATE INDEX IF NOT EXISTS mds_status_change_city ON mds_status_change (city_id, event_at);
+
+CREATE TABLE IF NOT EXISTS mds_trip (
+  city_id     TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  trip_id     TEXT NOT NULL,
+  device_id   TEXT,
+  start_at    TIMESTAMPTZ,
+  end_at      TIMESTAMPTZ,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  distance_m  DOUBLE PRECISION,
+  duration_s  INTEGER,
+  start_gh7   TEXT,
+  end_gh7     TEXT,
+  data        JSONB NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'agency'
+) PARTITION BY RANGE (received_at);
+CREATE INDEX IF NOT EXISTS mds_trip_city ON mds_trip (city_id, start_at);
+
+CREATE TABLE IF NOT EXISTS cds_event (
+  city_id     TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  event_id    TEXT NOT NULL,
+  curb_zone_id TEXT,
+  event_at    TIMESTAMPTZ,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  event_type  TEXT,
+  data        JSONB NOT NULL
+) PARTITION BY RANGE (received_at);
+CREATE INDEX IF NOT EXISTS cds_event_city ON cds_event (city_id, event_at);
+
+CREATE TABLE IF NOT EXISTS mds_provider_state (
+  city_id     TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  feed        TEXT NOT NULL,                     -- vehicles | status_changes | trips | events
+  cursor      TEXT,
+  last_poll_at TIMESTAMPTZ,
+  last_error  TEXT,
+  records     BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (city_id, provider_id, feed));
