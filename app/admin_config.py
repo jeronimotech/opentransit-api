@@ -18,6 +18,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from .cities import (
+    AnalyticsConfig,
     AppConfig,
     BikeShareNetwork,
     City,
@@ -82,12 +83,19 @@ class MaintenanceCfg(_Strict):
     message: str | None = Field(None, max_length=500)
 
 
+class AnalyticsCfg(_Strict):
+    enabled: bool = True
+    retentionDays: int = Field(90, ge=7, le=730)
+    kThreshold: int = Field(5, ge=2, le=100)
+
+
 class ConfigCfg(_Strict):
     vehiclePollSeconds: int = Field(15, ge=5, le=120)
     departuresRefreshSeconds: int = Field(20, ge=5, le=120)
     features: dict[str, bool] = {}
     minAppVersion: MinAppVersionCfg = MinAppVersionCfg()
     maintenance: MaintenanceCfg = MaintenanceCfg()
+    analytics: AnalyticsCfg = AnalyticsCfg()
 
 
 class LinksCfg(_Strict):
@@ -483,7 +491,10 @@ def build_city(base: City, sections: dict) -> City:
     upd["config"] = AppConfig(vehicle_poll_seconds=c["vehiclePollSeconds"],
                               departures_refresh_seconds=c["departuresRefreshSeconds"], features=c["features"],
                               min_app_version=MinAppVersion(**c["minAppVersion"]),
-                              maintenance=Maintenance(**c["maintenance"]))
+                              maintenance=Maintenance(**c["maintenance"]),
+                              analytics=AnalyticsConfig(enabled=c["analytics"]["enabled"],
+                                                        retention_days=c["analytics"]["retentionDays"],
+                                                        k_threshold=c["analytics"]["kThreshold"]))
     upd["links"] = Links(**sections["links"])
     upd["services"] = [ServiceTile(**s) for s in sections["services"]]
     upd["branding"] = base.branding.model_copy(update={"primary_color": sections["branding"]["primaryColor"]})

@@ -512,12 +512,20 @@ class OnDemandHealth(Out):
     router_car: bool | None = None           # None until the first probe
 
 
+class AnalyticsHealth(Out):
+    enabled: bool = True
+    events_today: int = 0
+    last_rollup_at: str | None = None
+    queue_lag: int | None = None            # seconds of events not yet rolled up
+
+
 class CityHealth(Out):
     static: StaticHealth
     realtime: RealtimeHealth
     router: RouterHealth
     rental: RentalHealth = RentalHealth()
     ondemand: OnDemandHealth = OnDemandHealth()
+    analytics: AnalyticsHealth = AnalyticsHealth()
 
 
 # ------------------------------------------------------------------ v1.2 shared vehicles (GBFS)

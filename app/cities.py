@@ -97,6 +97,13 @@ class Maintenance(BaseModel):
     message: str | None = None
 
 
+class AnalyticsConfig(BaseModel):
+    """First-party, privacy-preserving analytics (v1.5): can be switched off per city; k-anonymity on reads."""
+    enabled: bool = True
+    retention_days: int = 90
+    k_threshold: int = 5
+
+
 class AppConfig(BaseModel):
     """Remote-configurable client behaviour (Maas pattern): polling, feature flags, forced update."""
     vehicle_poll_seconds: int = 15
@@ -105,6 +112,7 @@ class AppConfig(BaseModel):
                                  "bike": True}
     min_app_version: MinAppVersion = MinAppVersion()
     maintenance: Maintenance = Maintenance()
+    analytics: AnalyticsConfig = AnalyticsConfig()
 
 
 class Links(BaseModel):
@@ -509,7 +517,10 @@ class City(BaseModel):
                        "departuresRefreshSeconds": self.config.departures_refresh_seconds,
                        "features": self.config.features,
                        "minAppVersion": self.config.min_app_version.model_dump(),
-                       "maintenance": self.config.maintenance.model_dump()},
+                       "maintenance": self.config.maintenance.model_dump(),
+                       "analytics": {"enabled": self.config.analytics.enabled,
+                                     "retentionDays": self.config.analytics.retention_days,
+                                     "kThreshold": self.config.analytics.k_threshold}},
             "links": self.links.model_dump(),
             "services": [s.model_dump() for s in self.services],
             "mobility": self.mobility_public(),

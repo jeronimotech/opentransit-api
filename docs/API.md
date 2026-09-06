@@ -1,4 +1,4 @@
-# opentransit-api — API contract (v1.3)
+# opentransit-api — API contract (v1.5)
 
 > Source of truth for the web and mobile apps. Deviations from the original shared contract are listed at the end.
 > Interactive docs: `GET /docs` (OpenAPI) on the running service.
@@ -402,6 +402,61 @@ knows, an omitted `credentials` key keeps every stored value; `credentials: null
 `null` clears that key; a masked value (`••••1a2b`) keeps the stored one; anything else is stored as sent. A new
 provider gets exactly what it sends.
 
+## v1.5 additions (implemented 2026-09-06) — first-party analytics (usage + mobility), privacy by design
+
+Purpose: aggregated mobility intelligence per city — searches, origins/destinations, routes, modes, hours,
+providers — without accounts, trackers or personal data. Everything is first-party (this API + Postgres),
+admin-visible, exportable, and can be switched off per city or by the user.
+
+### Privacy guarantees (enforced server-side, covered by tests)
+- No accounts, no third-party SDKs, no advertising ids. IPs are used only for in-memory rate limiting and are never
+  persisted. Free text is never accepted: only *selected* search results are recorded (type, stop id, label of a
+  stop/POI); addresses are stored without label or id.
+- Coordinates are coarsened by the client (3 decimals) and replaced by a **geohash-7 cell (~150 m)** before any row
+  is written; raw lat/lon never reach the database. Timestamps are bucketed to 5 minutes.
+- `sessionId`/`cohortId` are stored as SHA-256 with a server-side salt that **rotates every UTC day**
+  (`analytics_salt`, never logged). Nothing links sessions across days or cohort rotations (clients rotate the
+  cohort every 30 days).
+- Every read and export applies a **k-anonymity threshold** (`config.analytics.kThreshold`, default 5): top lists,
+  cells, OD pairs, searches and providers below k are never returned. Period totals are sums, never per-user.
+- Raw events are kept `config.analytics.retentionDays` (default 90) in daily partitions and removed with
+  `DROP TABLE`; aggregates are kept.
+
+### Ingestion (public)
+`POST /v1/cities/{city}/events` — body `{ "sessionId", "cohortId", "platform": "ios|android|web", "appVersion",
+"locale", "sentAt", "events": [ { "type", "at", "props" } ] }`, ≤ 50 events, ≤ 32 KB (gzip accepted,
+`Content-Encoding: gzip`). Reply `202 { "accepted": n, "rejected": [indexes] }` — invalid events are skipped, never
+the whole batch. Rate limit 60 batches/min per client (`429 RATE_LIMITED`). When analytics is disabled for the city:
+`202 { "accepted": 0 }`. Event types and props: `app_open`, `screen_view`, `search_select`, `plan_request`,
+`plan_result`, `itinerary_select`, `go_start`, `go_end`, `stop_view`, `board_view`, `route_view`, `locate_query`,
+`handoff`, `rental_station_view`, `favorite_add`, `favorite_remove`, `alert_view`, `layer_toggle`, `mode_toggle`,
+`error` (see `app/analytics.py` for the exact schema; unknown props are dropped, events with an implausible `at`
+(> 7 days from receipt) are rejected).
+
+### Admin analytics (`X-Admin-Token`, all aggregated, k applied; `from`/`to` = `YYYY-MM-DD`, default last 30 days)
+- `GET /v1/admin/cities/{city}/analytics/summary` → `totals` (sessions, appOpens, planRequests, itinerarySelects,
+  goStarts, goCompletions, handoffs, activeDays), `previousTotals`, `delta`, `topModes`, `topRoutes`, `topStops`,
+  `platforms`, `versions`.
+- `GET …/analytics/od?limit=500&min=` → `cells` (GeoJSON FeatureCollection of geohash-7 polygons with
+  `origins`/`destinations`/`searches` counts and `center`) + `pairs` (`fromGh7`, `toGh7`, `fromCenter`, `toCenter`, `n`).
+- `GET …/analytics/places?kind=origin|destination|search` → top cells with centers.
+- `GET …/analytics/routes` (+ `shortName`/`longName` from the active feed), `/stops` (+ `name`), `/modes`,
+  `/searches`, `/providers`, `/funnel` (`days[]` + `totals`), `/hours` (7 × 24 grid of plan requests, local time).
+- `GET …/analytics/export.csv?dataset=od|routes|stops|modes|searches|providers|funnel|hours` → CSV attachment.
+- `POST …/analytics/rollup` → run the rollup now (it also runs every `ANALYTICS_ROLLUP_SECONDS`, default 600).
+- `config.analytics { enabled, retentionDays (7–730), kThreshold (2–100) }` is admin-editable and exposed publicly
+  under `/v1/cities/{city}.config.analytics` so clients can show the opt-out explanation.
+- `health.analytics { enabled, eventsToday, lastRollupAt, queueLag }`.
+
+### Storage
+`analytics_event` (daily partitions on `received_at`; columns `at_bucket`, `type`, `session_hash`, `cohort_hash`,
+`platform`, `app_version`, `locale`, `props`, `gh7`, `from_gh7`, `to_gh7`), `analytics_salt`,
+`analytics_rollup_state` (watermark per city), aggregates `agg_od_hourly`, `agg_place_hourly`, `agg_route_daily`,
+`agg_stop_daily`, `agg_mode_daily`, `agg_search_daily`, `agg_provider_daily`, `agg_funnel_daily`,
+`agg_hours_daily`, `agg_platform_daily`. The rollup recomputes every touched local day/hour from the raw rows
+(delete + insert), so re-running it is idempotent and late events are absorbed. Days and hours are in the city
+time zone.
+
 ## Implementation notes & deviations (what this repo actually does)
 
 - **v1.2 rental (deviations from CONTRACT-bikeshare.md):** `stops/nearby` returns rental stations in a separate `rentalStations` array (typed) instead of mixing them into `stops`; `priceEstimate` is one pass per network per itinerary; `Itinerary.fare` is non-null for rental-only trips even without city fares; OTP 2.9 counts (`availableVehicles.total`) are flattened; a rental leg from a network the city does not configure is still returned with `networkId` = OTP's id and no colour/price.
@@ -429,3 +484,11 @@ provider gets exactly what it sends.
 | `Alert.severity` | may be null | never null; `severitySource` tells feed vs inferred. |
 | `Stop.accessibility.source: "osm"` | OSM `wheelchair=*` | not produced yet (only `gtfs`/`none`); OSM accessibility lives in the POI layer (`properties.wheelchair`). |
 | `GeocodeResult.distanceMeters` | – | added when `lat/lon` are given. |
+
+### v1.5 deviations from CONTRACT-analytics.md
+- `agg_hours` is stored per day (`agg_hours_daily(city, day, hour, plan_requests)`) so it can be filtered by period;
+  the endpoint still returns the weekday × hour grid.
+- `agg_platform_daily` was added (platform/version split for the summary).
+- Mode sets record what was *requested* (`plan_request.modes`) and what was *used* (`itinerary_select.modes`)
+  separately; both can differ (e.g. `TRANSIT+WALK` requested, `BUS+WALK` used).
+- Rate limiting is per client address in memory (per API instance); nothing about the address is stored.

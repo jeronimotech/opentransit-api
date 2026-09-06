@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from ..db import pool
 from ..models import CityHealth
@@ -9,7 +9,7 @@ router = APIRouter(tags=["platform"])
 
 
 @router.get("/v1/cities/{city}/health", response_model=CityHealth)
-async def city_health(rt: CityRuntime = Depends(city_runtime)):
+async def city_health(request: Request, rt: CityRuntime = Depends(city_runtime)):
     async with pool().acquire() as c:
         fv = await c.fetchrow("SELECT id, fetched_at, n_routes, n_stops, n_trips, feed_info FROM feed_version "
                               "WHERE city=$1 AND is_active LIMIT 1", rt.city.id)
@@ -33,7 +33,18 @@ async def city_health(rt: CityRuntime = Depends(city_runtime)):
         "rental": {"networks": [g.health() for g in rt.gbfs.values()]},
         "ondemand": {"providers": len(rt.city.on_demand_providers()), "tariffs": len(rt.city.mobility.taxi_tariffs),
                      "routerCar": (await rt.car_router().probe(rt.city)) if rt.city.on_demand_providers() else None},
+        "analytics": {"enabled": rt.city.config.analytics.enabled, **(await _analytics_health(request, rt))},
     }
+
+
+async def _analytics_health(request: Request, rt: CityRuntime) -> dict:
+    store = getattr(request.app.state, "analytics_store", None)
+    if store is None:
+        return {}
+    try:
+        return await store.health(rt.city.id)
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def _built_at(info: dict | None) -> str | None:

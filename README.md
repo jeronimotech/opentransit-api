@@ -251,3 +251,21 @@ native OTP) · `docs/` (contract, per-city notes) · `tests/`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [MIT](LICENSE); see [NOTICE.md](NOTICE.md) for
 upstream credits (OpenTripPlanner, OpenStreetMap, Photon, TRANSMILENIO S.A., SIRCI Live).
+
+## Analytics & privacy (v1.5)
+
+The API collects **first-party, anonymous, aggregated** usage and mobility analytics per city so operators can see
+where people want to go, which routes and stops matter, which modes and providers are used, and when. Rules,
+all enforced server-side and covered by tests (`tests/test_analytics.py`):
+
+- no accounts, no third-party SDKs, no advertising ids, no IPs stored (rate limiting only, in memory);
+- coordinates become **geohash-7 cells (~150 m)** before any row is written, times are 5-minute buckets;
+- session/cohort ids are salted SHA-256 hashes with a **daily rotating salt**; free text is never accepted;
+- every read/export applies a **k-anonymity threshold** (`config.analytics.kThreshold`, default 5);
+- raw events live `retentionDays` (default 90, daily partitions dropped), aggregates are kept;
+- users can opt out in the apps; operators can disable it per city (`config.analytics.enabled`).
+
+Endpoints: `POST /v1/cities/{city}/events` (public batch ingestion) and the admin family
+`GET /v1/admin/cities/{city}/analytics/{summary,od,places,routes,stops,modes,searches,providers,funnel,hours,export.csv}`
+(see `docs/API.md`). Jobs: rollup every `ANALYTICS_ROLLUP_SECONDS` (600), partitions + retention every 6 h;
+disable with `ENABLE_ANALYTICS_JOBS=false` on read replicas.

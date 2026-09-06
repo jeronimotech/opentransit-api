@@ -8,6 +8,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from . import __version__
 from .admin_config import PgConfigStore, load_overrides
+from .analytics import Hasher, PgAnalyticsStore, RateLimiter
 from .cities import load_registry
 from .config import settings
 from .db import close_pool, init_pool
@@ -20,6 +21,7 @@ from .otp import OtpClient
 from .routers import (
     admin,
     alerts,
+    analytics,
     board,
     geocode,
     health,
@@ -79,11 +81,46 @@ async def _static_loop(rt: CityRuntime, stop: asyncio.Event) -> None:
         await _bootstrap_static(rt, True)
 
 
+async def _analytics_loop(app: FastAPI, stop: asyncio.Event) -> None:
+    """Every ANALYTICS_ROLLUP_SECONDS: rollup each city; once a day: partitions ahead + retention drop."""
+    cfg = settings()
+    store: PgAnalyticsStore = app.state.analytics_store
+    last_maint = 0.0
+    while not stop.is_set():
+        try:
+            import time
+            if time.time() - last_maint > 6 * 3600:
+                await store.ensure_partitions()
+                for rt in app.state.cities.values():
+                    dropped = await store.drop_expired(rt.city.config.analytics.retention_days)
+                    if dropped:
+                        log.info("[%s] analytics retention: dropped %s", rt.city.id, dropped)
+                last_maint = time.time()
+            for rt in app.state.cities.values():
+                if rt.city.config.analytics.enabled:
+                    r = await store.rollup(rt.city)
+                    if r["events"]:
+                        log.info("[%s] analytics rollup: %d events, %d days", rt.city.id, r["events"], r["days"])
+        except Exception:  # noqa: BLE001
+            log.exception("analytics job failed (will retry)")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=cfg.ANALYTICS_ROLLUP_SECONDS)
+        except TimeoutError:
+            pass
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = settings()
     setup_logging(cfg.LOG_LEVEL, cfg.LOG_JSON)
     await init_pool()
+    app.state.analytics_store = PgAnalyticsStore()
+    app.state.analytics_hasher = Hasher(app.state.analytics_store.salt_for)
+    app.state.analytics_limiter = RateLimiter(60, 60)
+    try:
+        await app.state.analytics_store.ensure_partitions()
+    except Exception:  # noqa: BLE001
+        log.exception("could not prepare analytics partitions (ingestion will fail until fixed)")
     registry = load_registry(cfg.CITIES_DIR)
     app.state.cities = {cid: CityRuntime(city=c, rt=RTCache(c), otp=OtpClient(c)) for cid, c in registry.items()}
     app.state.config_store = PgConfigStore()
@@ -104,6 +141,8 @@ async def lifespan(app: FastAPI):
         if cfg.ENABLE_RT_POLLERS and (f.rt_positions_url or f.rt_tripupdates_url or f.rt_alerts_url):
             tasks.append(asyncio.create_task(poller_loop(rt.rt, stop), name=f"rt:{rt.city.id}"))
         asyncio.create_task(rt.otp.server_info())
+    if cfg.ENABLE_ANALYTICS_JOBS:
+        tasks.append(asyncio.create_task(_analytics_loop(app, stop), name="analytics"))
     log.info("opentransit-api %s up · %d cities · %d background tasks", __version__, len(registry), len(tasks))
     try:
         yield
@@ -126,14 +165,14 @@ def create_app() -> FastAPI:
         version=__version__, lifespan=lifespan,
         openapi_tags=[{"name": "planning"}, {"name": "search"}, {"name": "stops"}, {"name": "routes"},
                       {"name": "realtime"}, {"name": "rental"}, {"name": "ondemand"}, {"name": "platform"},
-                      {"name": "admin"}],
+                      {"name": "analytics"}, {"name": "admin"}],
     )
     origins = [o.strip() for o in settings().CORS_ORIGINS.split(",") if o.strip()]
     app.add_middleware(CORSMiddleware, allow_origins=origins or ["*"], allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
     for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, ondemand,
-              landing, admin):
+              landing, analytics, admin):
         app.include_router(r.router)
 
     @app.get("/", include_in_schema=False)

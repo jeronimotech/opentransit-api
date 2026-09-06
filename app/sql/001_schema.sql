@@ -151,3 +151,70 @@ CREATE TABLE IF NOT EXISTS city_config_history (
   note       TEXT
 );
 CREATE INDEX IF NOT EXISTS city_config_history_city ON city_config_history (city_id, revision DESC);
+
+-- ═══════════════ v1.5 first-party analytics (privacy by design) ═══════════════
+-- Raw events: no coordinates (geohash-7 cells only), 5-minute buckets, salted hashes, no IPs.
+-- Partitioned by day of receipt so retention is a DROP TABLE, never a DELETE.
+CREATE TABLE IF NOT EXISTS analytics_event (
+  id           BIGSERIAL,
+  city_id      TEXT NOT NULL,
+  at_bucket    TIMESTAMPTZ NOT NULL,
+  received_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  type         TEXT NOT NULL,
+  session_hash TEXT NOT NULL,
+  cohort_hash  TEXT NOT NULL,
+  platform     TEXT NOT NULL,
+  app_version  TEXT,
+  locale       TEXT,
+  props        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  gh7          TEXT,
+  from_gh7     TEXT,
+  to_gh7       TEXT
+) PARTITION BY RANGE (received_at);
+CREATE INDEX IF NOT EXISTS analytics_event_city_recv ON analytics_event (city_id, received_at);
+CREATE INDEX IF NOT EXISTS analytics_event_city_at   ON analytics_event (city_id, at_bucket);
+
+CREATE TABLE IF NOT EXISTS analytics_salt (day DATE PRIMARY KEY, salt TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS analytics_rollup_state (
+  city_id        TEXT PRIMARY KEY,
+  watermark      TIMESTAMPTZ NOT NULL,
+  last_rollup_at TIMESTAMPTZ
+);
+
+-- Aggregates (kept indefinitely; k-anonymity is applied on every read/export, never here).
+CREATE TABLE IF NOT EXISTS agg_od_hourly (
+  city_id TEXT NOT NULL, hour TIMESTAMPTZ NOT NULL, from_gh7 TEXT NOT NULL, to_gh7 TEXT NOT NULL, n INT NOT NULL,
+  PRIMARY KEY (city_id, hour, from_gh7, to_gh7));
+CREATE TABLE IF NOT EXISTS agg_place_hourly (
+  city_id TEXT NOT NULL, hour TIMESTAMPTZ NOT NULL, gh7 TEXT NOT NULL, kind TEXT NOT NULL, n INT NOT NULL,
+  PRIMARY KEY (city_id, hour, gh7, kind));
+CREATE TABLE IF NOT EXISTS agg_route_daily (
+  city_id TEXT NOT NULL, day DATE NOT NULL, route_id TEXT NOT NULL,
+  views INT NOT NULL DEFAULT 0, selects INT NOT NULL DEFAULT 0, locates INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (city_id, day, route_id));
+CREATE TABLE IF NOT EXISTS agg_stop_daily (
+  city_id TEXT NOT NULL, day DATE NOT NULL, stop_id TEXT NOT NULL,
+  views INT NOT NULL DEFAULT 0, boards INT NOT NULL DEFAULT 0, locates INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (city_id, day, stop_id));
+CREATE TABLE IF NOT EXISTS agg_mode_daily (
+  city_id TEXT NOT NULL, day DATE NOT NULL, mode_set TEXT NOT NULL,
+  requests INT NOT NULL DEFAULT 0, selects INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (city_id, day, mode_set));
+CREATE TABLE IF NOT EXISTS agg_search_daily (
+  city_id TEXT NOT NULL, day DATE NOT NULL, result_type TEXT, result_id TEXT, label TEXT, n INT NOT NULL);
+CREATE INDEX IF NOT EXISTS agg_search_daily_city ON agg_search_daily (city_id, day);
+CREATE TABLE IF NOT EXISTS agg_provider_daily (
+  city_id TEXT NOT NULL, day DATE NOT NULL, provider_id TEXT NOT NULL,
+  handoffs INT NOT NULL DEFAULT 0, had_estimate INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (city_id, day, provider_id));
+CREATE TABLE IF NOT EXISTS agg_funnel_daily (
+  city_id TEXT NOT NULL, day DATE NOT NULL, app_opens INT NOT NULL DEFAULT 0, sessions INT NOT NULL DEFAULT 0,
+  plan_requests INT NOT NULL DEFAULT 0, itinerary_selects INT NOT NULL DEFAULT 0,
+  go_starts INT NOT NULL DEFAULT 0, go_completions INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (city_id, day));
+CREATE TABLE IF NOT EXISTS agg_hours_daily (
+  city_id TEXT NOT NULL, day DATE NOT NULL, hour SMALLINT NOT NULL, plan_requests INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (city_id, day, hour));
+CREATE TABLE IF NOT EXISTS agg_platform_daily (
+  city_id TEXT NOT NULL, day DATE NOT NULL, platform TEXT NOT NULL, app_version TEXT, n INT NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS agg_platform_daily_city ON agg_platform_daily (city_id, day);

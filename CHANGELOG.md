@@ -6,6 +6,20 @@ releases start.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-06 — first-party analytics (usage + mobility), privacy by design
+### Added
+- `POST /v1/cities/{city}/events`: anonymous batch ingestion (≤ 50 events, gzip, schema-validated per type,
+  unknown props dropped, free text never accepted, rate-limited in memory, `202 {accepted, rejected}`).
+- Coordinates replaced by geohash-7 cells before storage; 5-minute time buckets; daily-rotating salted hashes for
+  session/cohort ids; daily partitions with retention by `DROP TABLE`.
+- Idempotent rollup (every 10 min) into hourly OD/place aggregates and daily route/stop/mode/search/provider/
+  funnel/hours/platform aggregates, in the city time zone.
+- Admin analytics: `summary` (with previous-period deltas), `od` (GeoJSON cells + pairs), `places`, `routes`,
+  `stops`, `modes`, `searches`, `providers`, `funnel`, `hours`, `export.csv`, `rollup`; k-anonymity applied on
+  every read and export.
+- `config.analytics { enabled, retentionDays, kThreshold }` (admin-editable, public), `health.analytics`.
+- `app/geohash.py` (dependency-free geohash), `ENABLE_ANALYTICS_JOBS`, `ANALYTICS_ROLLUP_SECONDS`.
+
 ## [1.4.0] - 2026-09-05 — on-demand mobility (taxi / ride-hailing), provider-agnostic
 ### Added
 - `mobility.taxi_tariffs[]`, `mobility.on_demand[]` and `mobility.on_demand_policy` per city (admin-editable;

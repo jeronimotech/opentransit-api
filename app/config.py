@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     VEHICLE_HISTORY_POINTS: int = 60     # ~15 min at 15 s per vehicle, kept in memory
     SIMPLIFY_TOLERANCE: float = 0.00018  # ~20 m Douglas-Peucker for network shapes
 
+    # v1.5 analytics jobs (rollup + partitions + retention)
+    ENABLE_ANALYTICS_JOBS: bool = True
+    ANALYTICS_ROLLUP_SECONDS: int = 600
+
     OTP_TIMEOUT_S: float = 25.0
     PHOTON_TIMEOUT_S: float = 4.0
 

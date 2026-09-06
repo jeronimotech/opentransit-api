@@ -71,6 +71,8 @@ config:
   features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }
   min_app_version: { ios: "1.0.0", android: "1.0.0" }
   maintenance: { active: false, message: null }
+  # v1.5 first-party analytics: anonymous, aggregated, k-anonymity on every read/export (admin-editable)
+  analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
 
 # Official public pages (verified 2026-09-04). Never private/credentialed endpoints.
 links:
