@@ -13,6 +13,7 @@ from .cities import load_registry
 from .config import settings
 from .db import close_pool, init_pool
 from .errors import install_error_handlers
+from .forecast import ForecastCache
 from .gbfs import GbfsNetwork
 from .gtfs_static import ingest, load_route_index, load_service_index
 from .logging_setup import setup_logging
@@ -34,11 +35,15 @@ from .routers import (
     pois,
     rental,
     routes,
+    share,
     stops,
     vehicles,
+    watch,
 )
+from .routers.watch import WatchCache
 from .rt import RTCache, poller_loop
 from .runtime import CityRuntime
+from .share import PgShareStore
 
 log = logging.getLogger("ot.main")
 
@@ -98,6 +103,9 @@ async def _analytics_loop(app: FastAPI, stop: asyncio.Event) -> None:
                     if dropped:
                         log.info("[%s] analytics retention: dropped %s", rt.city.id, dropped)
                 last_maint = time.time()
+            dropped_shares = await app.state.share_store.drop_expired()
+            if dropped_shares:
+                log.info("share links: dropped %d expired", dropped_shares)
             for rt in app.state.cities.values():
                 if rt.city.config.analytics.enabled:
                     r = await store.rollup(rt.city)
@@ -151,6 +159,10 @@ async def lifespan(app: FastAPI):
     app.state.analytics_store = PgAnalyticsStore()
     app.state.analytics_hasher = Hasher(app.state.analytics_store.salt_for)
     app.state.analytics_limiter = RateLimiter(60, 60)
+    app.state.share_store = PgShareStore()
+    app.state.share_limiter = RateLimiter(30, 60)      # creating shares is rarer than sending events
+    app.state.forecast_cache = ForecastCache()
+    app.state.watch_cache = WatchCache()
     try:
         await app.state.analytics_store.ensure_partitions()
     except Exception:  # noqa: BLE001
@@ -210,7 +222,7 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
     for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, ondemand,
-              landing, analytics, openmobility, admin):
+              landing, analytics, openmobility, share, watch, admin):
         app.include_router(r.router)
 
     @app.get("/", include_in_schema=False)

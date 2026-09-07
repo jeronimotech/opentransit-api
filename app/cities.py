@@ -105,6 +105,27 @@ class AnalyticsConfig(BaseModel):
     k_threshold: int = 5
 
 
+class ShareConfig(BaseModel):
+    """Shareable ETA links (v1.7). Anonymous, short-lived, revocable; rows dropped at expiry."""
+    enabled: bool = True
+    ttl_minutes: int = 180
+    max_ttl_minutes: int = 720
+
+
+class ApnsConfig(BaseModel):
+    """Credentials for Live Activity pushes. Empty by default: the app updates its own activity locally."""
+    key_id: str | None = None
+    team_id: str | None = None
+    bundle_id: str | None = None
+    key_path: str | None = None
+
+
+class PushConfig(BaseModel):
+    """Optional server-driven Live Activity updates (v1.7 A4). Disabled means the client drives them."""
+    enabled: bool = False
+    apns: ApnsConfig = ApnsConfig()
+
+
 class AppConfig(BaseModel):
     """Remote-configurable client behaviour (Maas pattern): polling, feature flags, forced update."""
     vehicle_poll_seconds: int = 15
@@ -114,6 +135,8 @@ class AppConfig(BaseModel):
     min_app_version: MinAppVersion = MinAppVersion()
     maintenance: Maintenance = Maintenance()
     analytics: AnalyticsConfig = AnalyticsConfig()
+    share: ShareConfig = ShareConfig()
+    push: PushConfig = PushConfig()
 
 
 class Links(BaseModel):
@@ -646,7 +669,11 @@ class City(BaseModel):
                        "maintenance": self.config.maintenance.model_dump(),
                        "analytics": {"enabled": self.config.analytics.enabled,
                                      "retentionDays": self.config.analytics.retention_days,
-                                     "kThreshold": self.config.analytics.k_threshold}},
+                                     "kThreshold": self.config.analytics.k_threshold},
+                       "share": {"enabled": self.config.share.enabled,
+                                 "ttlMinutes": self.config.share.ttl_minutes},
+                       # credentials never leave the server; clients only need to know who drives the activity
+                       "push": {"enabled": self.config.push.enabled}},
             "links": self.links.model_dump(),
             "services": [s.model_dump() for s in self.services],
             "mobility": self.mobility_public(),

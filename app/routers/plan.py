@@ -5,9 +5,18 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query, Request
 
 from ..errors import ApiError
+from ..forecast import (
+    MAX_FANOUT,
+    ForecastCache,
+    annotate_gaps,
+    build_notes,
+    build_options,
+    mark_recommended,
+    sample_times,
+)
 from ..gbfs import GbfsNetwork as GbfsNetworkForms
 from ..geocode import reverse
-from ..models import PlanResponse
+from ..models import ForecastResponse, PlanResponse
 from ..normalize import apply_endpoint_names, enrich_rental, plan_from_otp
 from ..ondemand import attach_to_plan, haversine_m, is_ondemand_leg
 from ..otp import PLAN_QUERY
@@ -354,3 +363,74 @@ async def _cheap_reverse(city, lat: float, lon: float, *, skip: bool, budget_s: 
         return r.get("name")
     except (TimeoutError, Exception):  # noqa: BLE001
         return None
+
+
+@router.get("/v1/cities/{city}/plan/forecast", response_model=ForecastResponse,
+            response_model_by_alias=True)
+async def plan_forecast(
+    request: Request,
+    rt: CityRuntime = Depends(city_runtime),
+    fromLat: float = Query(..., ge=-90, le=90), fromLon: float = Query(..., ge=-180, le=180),
+    toLat: float = Query(..., ge=-90, le=90), toLon: float = Query(..., ge=-180, le=180),
+    time: str | None = Query(None, description="ISO-8601 start of the window; default now"),
+    modes: str | None = Query(None),
+    windowMinutes: int = Query(90, ge=15, le=360),
+    maxOptions: int = Query(8, ge=2, le=12),
+    arriveBy: bool = False,
+    wheelchair: bool = False,
+    locale: str = Query("es", pattern="^(es|en)$"),
+    fromName: str | None = Query(None, max_length=120),
+    toName: str | None = Query(None, max_length=120),
+):
+    """"¿Cuándo salir?": one row per distinct departure across the window, with gaps and service notes.
+
+    Bounded fan-out (`forecast.MAX_FANOUT` upstream plans) and a 60 s cache on the rounded query keep this
+    from multiplying router load when a user scrubs the sheet."""
+    city = rt.city
+    tz = ZoneInfo(city.timezone)
+    if time:
+        try:
+            start = dt.datetime.fromisoformat(time.replace("Z", "+00:00"))
+        except ValueError as e:
+            raise ApiError(f"time: {e}") from e
+        start = start.replace(tzinfo=tz) if start.tzinfo is None else start.astimezone(tz)
+    else:
+        start = dt.datetime.now(tz)
+    cache: ForecastCache = request.app.state.forecast_cache
+    ckey = ForecastCache.key(city.id, from_lat=fromLat, from_lon=fromLon, to_lat=toLat, to_lon=toLon,
+                             when=start, window=windowMinutes, modes=modes, arrive_by=arriveBy,
+                             max_options=maxOptions, locale=locale)
+    cached = cache.get(ckey)
+    if cached is not None:
+        return cached
+
+    transit, street = parse_modes(modes, city.transit_modes())
+    street = [m for m in street if m not in RENTAL_MODES] or ["WALK"]
+    when_list = sample_times(start, windowMinutes, MAX_FANOUT)
+    common = dict(from_lat=fromLat, from_lon=fromLon, to_lat=toLat, to_lon=toLon, arrive_by=arriveBy,
+                  transit=transit, street=street, wheelchair=wheelchair, locale=locale,
+                  num=2, walk_reluctance=2.0)
+    datas = await asyncio.gather(
+        *(rt.otp.graphql(PLAN_QUERY, build_variables(**common, when=w), locale=locale) for w in when_list),
+        return_exceptions=True)
+    origin = {"name": fromName, "lat": fromLat, "lon": fromLon}
+    dest = {"name": toName, "lat": toLat, "lon": toLon}
+    plans: list[list[dict]] = []
+    for d in datas:
+        if isinstance(d, Exception):
+            continue                      # one slow probe must not sink the whole window
+        plans.append(plan_from_otp(city, d, origin, dest, rt.otp.version, locale,
+                                   rt.rental_prices())["itineraries"])
+    options = build_options(plans, max_options=maxOptions, arrive_by=arriveBy)
+    annotate_gaps(options)
+    mark_recommended(options)
+    first_route = next((r for o in options for r in o["routeIds"]), None)
+    notes = build_notes(options, window_end=start + dt.timedelta(minutes=windowMinutes),
+                        service_window=rt.service_window(first_route), locale=locale)
+    body = ForecastResponse(**{
+        "from": origin, "to": dest,
+        "generatedAt": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+        "windowMinutes": windowMinutes, "options": options, "notes": notes,
+    }).model_dump(by_alias=True)
+    cache.put(ckey, body)
+    return body

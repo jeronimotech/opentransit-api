@@ -328,3 +328,21 @@ CREATE TABLE IF NOT EXISTS mds_provider_state (
   last_error  TEXT,
   records     BIGINT NOT NULL DEFAULT 0,
   PRIMARY KEY (city_id, provider_id, feed));
+
+-- ─────────────── v1.7 shareable ETA links ───────────────
+-- Deliberately unlinked to analytics: no session/cohort column exists here, and positions inside
+-- `progress` are coarsened to 3 decimals by the API before the row is written. Rows die at `expires_at`.
+CREATE TABLE IF NOT EXISTS share_eta (
+  city_id    TEXT        NOT NULL,
+  token      TEXT        NOT NULL,
+  key_hash   TEXT        NOT NULL,          -- sha256 of the write key; the key itself is never stored
+  itinerary  JSONB       NOT NULL,
+  label      TEXT,
+  started_at TEXT,
+  progress   JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (city_id, token)
+);
+CREATE INDEX IF NOT EXISTS share_eta_expiry ON share_eta (expires_at);

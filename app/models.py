@@ -697,3 +697,96 @@ class OnDemandHandoffResponse(Out):
     kind: Literal["none", "url", "template"]
     provider: OnDemandProviderOut
     missing_credentials: list[str] = []
+
+
+# ------------------------------------------------------------------ v1.7 forecast / share / watch
+class ForecastOption(Out):
+    depart_at: str
+    arrive_at: str
+    duration_seconds: int | None = None
+    transfers: int | None = None
+    walk_meters: int = 0
+    modes_used: list[str] = []
+    route_ids: list[str] = []
+    fare: Fare | None = None
+    realtime: bool = False
+    recommended: bool = False
+    gap_after_seconds: int | None = None      # wait until the next departure; None on the last row
+
+
+class ForecastNote(Out):
+    kind: Literal["long_gap", "last_service", "service_ends"]
+    text: str
+    after_depart_at: str | None = None
+    at_depart_at: str | None = None
+    at: str | None = None
+    gap_seconds: int | None = None
+
+
+class ForecastResponse(Out):
+    from_: Place = Field(alias="from")
+    to: Place
+    generated_at: str
+    window_minutes: int
+    options: list[ForecastOption]
+    notes: list[ForecastNote] = []
+
+
+class ShareProgress(Out):
+    leg_index: int
+    state: Literal["on_time", "delayed", "arrived", "cancelled"] = "on_time"
+    at_stop_id: str | None = None
+    eta_at: str | None = None
+    lat: float | None = None                  # coarsened to 3 decimals before storage
+    lon: float | None = None
+
+
+class ShareCreateResponse(Out):
+    token: str
+    url: str
+    write_key: str                            # returned once; only the holder may patch or revoke
+    expires_at: str
+
+
+class ShareReadResponse(Out):
+    label: str | None = None
+    itinerary: dict
+    progress: ShareProgress | None = None
+    started_at: str | None = None
+    updated_at: str | None = None
+    expires_at: str
+    city: dict
+
+
+class WatchNext(Out):
+    minutes: int
+    realtime: bool = False
+
+
+class WatchRoute(Out):
+    route_id: str
+    short_name: str | None = None
+    color: str | None = None
+    next: list[WatchNext] = []
+
+
+class WatchItem(Out):
+    kind: Literal["stop", "route_at_stop"]
+    stop_id: str
+    stop_name: str
+    component: str | None = None
+    distance_meters: int | None = None
+    routes: list[WatchRoute] = []
+
+
+class WatchSummaryResponse(Out):
+    generated_at: str
+    freshness: Freshness
+    items: list[WatchItem] = []
+    alerts: int = 0
+
+
+class LiveActivityAck(Out):
+    accepted: bool
+    server_push: bool                         # false => the app drives its own Live Activity
+    reason: str | None = None

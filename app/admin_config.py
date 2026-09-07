@@ -98,6 +98,17 @@ class AnalyticsCfg(_Strict):
     kThreshold: int = Field(5, ge=2, le=100)
 
 
+class ShareCfg(_Strict):
+    enabled: bool = True
+    ttlMinutes: int = Field(180, ge=5, le=720)
+    maxTtlMinutes: int = Field(720, ge=5, le=1440)
+
+
+class PushCfg(_Strict):
+    """Only the switch is editable here; APNs credentials come from the environment, never from the panel."""
+    enabled: bool = False
+
+
 class ConfigCfg(_Strict):
     vehiclePollSeconds: int = Field(15, ge=5, le=120)
     departuresRefreshSeconds: int = Field(20, ge=5, le=120)
@@ -105,6 +116,8 @@ class ConfigCfg(_Strict):
     minAppVersion: MinAppVersionCfg = MinAppVersionCfg()
     maintenance: MaintenanceCfg = MaintenanceCfg()
     analytics: AnalyticsCfg = AnalyticsCfg()
+    share: ShareCfg = ShareCfg()
+    push: PushCfg = PushCfg()
 
 
 class LinksCfg(_Strict):
