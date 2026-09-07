@@ -104,6 +104,37 @@ async def test_share_lifecycle_create_patch_read_revoke(bogota: City):
 
 
 @pytest.mark.anyio
+async def test_share_read_carries_enough_city_to_frame_the_map(bogota: City):
+    """The public page must be able to paint the map without guessing from the itinerary."""
+    app, _ = _app(bogota)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        token = (await c.post("/v1/cities/bogota/share/eta", json={"itinerary": ITINERARY})).json()["token"]
+        city = (await c.get(f"/v1/cities/bogota/share/eta/{token}")).json()["city"]
+    assert set(city) == {"id", "name", "timezone", "center", "defaultZoom", "branding", "attribution"}
+    assert city["center"] == {"lat": bogota.center.lat, "lon": bogota.center.lon}
+    assert isinstance(city["defaultZoom"], int | float) and city["defaultZoom"] == bogota.default_zoom
+
+
+@pytest.mark.anyio
+async def test_share_read_never_exposes_the_restricted_plane(bogota: City):
+    """A public link must not become a side door to feeds, credentials or the write key."""
+    app, _ = _app(bogota)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        created = (await c.post("/v1/cities/bogota/share/eta", json={"itinerary": ITINERARY})).json()
+        body = (await c.get(f"/v1/cities/bogota/share/eta/{created['token']}")).json()
+    # the attribution line legitimately names the data sources ("… (GTFS) · Mapa: © OpenMapTiles …"),
+    # so scan everything except that one public string
+    scanned = dict(body)
+    scanned["city"] = {k: v for k, v in body["city"].items() if k != "attribution"}
+    raw = json.dumps(scanned).lower()
+    for forbidden in ("feeds", "gtfs", "rtpositionsurl", "credential", "clientid", "clientsecret",
+                      "admintoken", "writekey", "keyhash", "apns", "openmobility", "mds", "providers",
+                      "http://", "https://"):
+        assert forbidden not in raw, forbidden
+    assert created["writeKey"] not in json.dumps(body)
+
+
+@pytest.mark.anyio
 async def test_a_reader_cannot_move_somebody_elses_dot(bogota: City):
     app, _ = _app(bogota)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:

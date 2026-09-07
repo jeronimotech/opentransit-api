@@ -95,7 +95,10 @@ async def read_share(token: str, request: Request, rt: CityRuntime = Depends(cit
         label=row.get("label"), itinerary=row["itinerary"], progress=row.get("progress"),
         started_at=row.get("started_at"), updated_at=_iso(row.get("updated_at")),
         expires_at=_iso(row["expires_at"]),
+        # center/defaultZoom so the public page can frame the map on its first paint instead of
+        # guessing from the itinerary's first point
         city={"id": city["id"], "name": city["name"], "timezone": city["timezone"],
+              "center": city["center"], "defaultZoom": city["defaultZoom"],
               "branding": city["branding"], "attribution": city.get("attribution")},
     ).model_dump(by_alias=True)
     return JSONResponse(body, headers=NO_STORE)

@@ -612,7 +612,10 @@ Publish a trip in progress under an unguessable, expiring link. Gated by `config
   `{ "progress": { "legIndex", "state": "on_time"|"delayed"|"arrived"|"cancelled", "atStopId"?, "etaAt"?, "lat"?, "lon"? } }`.
   **Coordinates are coarsened to 3 decimals (~110 m) before storage** and unknown fields are dropped.
 * `GET .../{token}` → public read `{ label, itinerary, progress, startedAt, updatedAt, expiresAt, city }`,
-  `Cache-Control: no-store`. `DELETE` with the write key revokes (204).
+  `Cache-Control: no-store`. `DELETE` with the write key revokes (204). The `city` block carries
+  `{ id, name, timezone, center: {lat, lon}, defaultZoom, branding, attribution }` — enough for the public
+  page to frame its map on the first paint, and nothing from the restricted plane (no feeds, credentials or
+  key material; covered by a test).
 * **Privacy**: the row carries no session or cohort id, no analytics event references the token, and rows are
   deleted at `expires_at` by the maintenance loop. `404 SHARE_NOT_FOUND` covers expired and revoked alike.
 
