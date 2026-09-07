@@ -317,8 +317,16 @@ def system_prompt(ctx: ToolContext) -> str:
                      "(úsala cuando diga «aquí», «cerca» o «desde donde estoy»).")
     if user.get("favorites"):
         lines.append("Favoritos del usuario: " + json.dumps(user["favorites"], ensure_ascii=False)[:400])
-    if english:
-        lines.append("\nThe user's app is in English: answer in English.")
+    # The question's language wins over the app's. Somebody with an English phone
+    # still asks "¿a qué hora pasa el bus?" and expects an answer in Spanish;
+    # keying off the locale alone answered every Spanish question in English.
+    app_lang = "English" if english else "Spanish"
+    lines.append(
+        f"\nIdioma: responde SIEMPRE en el mismo idioma en que el usuario escribió su última pregunta, "
+        f"aunque el resto de la conversación esté en otro. Si la pregunta es demasiado corta o ambigua para "
+        f"saberlo (por ejemplo, solo el nombre de un lugar), responde en {app_lang}, que es el idioma de la "
+        f"aplicación."
+    )
     extra = city.config.assistant.system_extra
     if extra:
         lines.append("\n" + extra)

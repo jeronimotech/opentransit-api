@@ -306,3 +306,18 @@ def test_every_tool_schema_is_strict():
 def test_anthropic_tool_definitions_carry_strict_at_the_top_level():
     wire = AnthropicProvider._tools(TOOLS)
     assert all(t["strict"] is True and "input_schema" in t for t in wire)
+
+
+def test_the_prompt_follows_the_question_language_not_the_app_locale(bogota: City):
+    """An English phone must still get a Spanish answer to a Spanish question."""
+    from app.assistant.tools import ToolContext, system_prompt
+
+    class _Rt:
+        city = bogota
+
+    for locale, fallback in (("en", "English"), ("es", "Spanish")):
+        p = system_prompt(ToolContext(rt=_Rt(), request=None, locale=locale))
+        assert "mismo idioma en que el usuario escribió su última pregunta" in p
+        assert f"responde en {fallback}" in p
+        # The old rule flatly ordered English whenever the app was in English.
+        assert "The user's app is in English: answer in English." not in p
