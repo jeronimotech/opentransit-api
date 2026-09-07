@@ -20,3 +20,42 @@ def test_without_position_stations_first():
     rs = [_r("Calle 26 - Portal", 4.6534, -74.0836), _r("Portal Norte", 4.7546, -74.0459, "station")]
     out = rank_results(rs, "portal")
     assert out[0]["name"] == "Portal Norte" and out[0]["distanceMeters"] is None
+
+
+def test_exact_name_beats_a_station_that_only_shares_a_prefix():
+    """Typing a stop's exact name must find that stop, not a shorter station."""
+    from app.geocode import rank_results
+    out = rank_results(
+        [
+            {"name": "Parque", "type": "station", "source": "gtfs", "lat": 4.56, "lon": -74.13, "_nRoutes": 9},
+            {"name": "Parque de la 93", "type": "stop", "source": "gtfs", "lat": 4.67, "lon": -74.05, "_nRoutes": 3},
+        ],
+        "Parque de la 93",
+    )
+    assert out[0]["name"] == "Parque de la 93"
+
+
+def test_station_still_wins_when_neither_is_exact():
+    from app.geocode import rank_results
+    out = rank_results(
+        [
+            {"name": "Portal Norte 2-2", "type": "stop", "source": "gtfs", "lat": 4.75, "lon": -74.04, "_nRoutes": 4},
+            {"name": "Portal Norte - Unicervantes", "type": "station", "source": "gtfs",
+             "lat": 4.75, "lon": -74.04, "_nRoutes": 42},
+        ],
+        "Portal",
+    )
+    assert out[0]["type"] == "station"
+
+
+def test_a_one_word_query_still_prefers_the_station():
+    """"portal" is a category search, not a name: the station stays first."""
+    from app.geocode import rank_results
+    out = rank_results(
+        [
+            {"name": "Portal", "type": "stop", "source": "gtfs", "lat": 4.6, "lon": -74.1, "_nRoutes": 1},
+            {"name": "Portal Norte", "type": "station", "source": "gtfs", "lat": 4.75, "lon": -74.04, "_nRoutes": 42},
+        ],
+        "portal",
+    )
+    assert out[0]["name"] == "Portal Norte"

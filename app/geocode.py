@@ -21,6 +21,7 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
     other GTFS matches (exact/prefix/word, busier first), then Photon. Without one: stations first."""
     qn = normalize_name(q)
     have_pos = lat is not None and lon is not None
+    named_query = " " in qn.strip()
 
     def dist(r: dict) -> float | None:
         if not have_pos or r.get("lat") is None:
@@ -35,8 +36,14 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
         d = dist(r)
         near = r["source"] == "gtfs" and d is not None and d <= NEARBY_M
         r["distanceMeters"] = int(round(d)) if d is not None else None
+        # A one-word query is a category search ("portal", "calle") where the
+        # station is the useful answer. A multi-word query is a name search, and
+        # there an exact match IS the answer: "Parque de la 93" used to return
+        # the station "Parque" first, and the assistant planned from the wrong
+        # place because of it.
         return (
-            0 if near else 1 if r["type"] == "station" else 2 if r["source"] == "gtfs" else 3,
+            0 if near else 1 if (exact and named_query) else 2 if r["type"] == "station"
+            else 3 if r["source"] == "gtfs" else 4,
             d if near else 0,
             0 if exact else 1 if prefix else 2 if word else 3,
             -(r.get("_nRoutes") or 0),
