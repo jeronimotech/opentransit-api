@@ -222,7 +222,9 @@ async def test_spend_is_metered_from_the_reported_usage(bogota: City, monkeypatc
 
 
 async def test_health_reports_spend_without_the_key(bogota: City):
-    app, _ = _app(bogota, FakeProvider([]))
+    # Pin the model here: asserting the city file's shipped default would make
+    # this test fail every time an operator changes the recommended provider.
+    app, _ = _app(bogota, FakeProvider([]), model="claude-opus-5")
     app.state.assistant_budget.charge("bogota", 0.25)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://t") as c:
@@ -261,7 +263,9 @@ async def test_admin_get_masks_the_key_and_an_omitted_key_keeps_it(bogota: City)
 
 def test_the_public_city_payload_never_carries_the_key(bogota: City):
     city = effective_city(bogota, {"config": {"assistant": {"enabled": True, "apiKey": "sk-secret"}}})
-    assert city.public()["config"]["assistant"] == {"enabled": True, "provider": "anthropic"}
+    public = city.public()["config"]["assistant"]
+    assert set(public) == {"enabled", "provider"}          # the shape is the contract
+    assert public["enabled"] is True and public["provider"] == city.config.assistant.provider
     assert "sk-secret" not in json.dumps(city.public())
 
 
