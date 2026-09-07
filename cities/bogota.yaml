@@ -76,8 +76,12 @@ config:
   # v2.0 conversational assistant. Off until a key is configured; the key never leaves the server and the
   # model may only answer from our own tools, so it cannot invent a departure time.
   assistant:
+    # Off by default: a fresh clone has no key, and an enabled-but-keyless
+    # assistant only shows a chat button that errors on every question.
+    # Set ASSISTANT_API_KEY and flip this in the admin panel (the override
+    # lives in the database, not here).
     enabled: false
-    provider: anthropic          # anthropic | openai | deepseek | gemini
+    provider: deepseek           # anthropic | openai | deepseek | gemini
     model: null                  # null -> the provider's documented default (see docs/API.md)
     api_key: ${ASSISTANT_API_KEY:-}
     base_url: null
