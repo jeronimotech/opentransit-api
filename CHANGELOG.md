@@ -6,6 +6,14 @@ releases start.
 
 ## [Unreleased]
 
+### Added
+- Vehicle `bearing` is now **derived server-side** from consecutive positions when the feed omits it, with a
+  new `bearingSource` (`feed` | `derived` | `null`) so clients can be honest about where it came from and
+  automatically prefer the feed if an agency starts publishing it. Bogotá's GTFS-RT publishes no bearing on
+  any vehicle, so direction arrows and marker tips had never been drawn there. Jitter under 10 m is ignored,
+  pairs more than 180 s apart are refused, the value is smoothed across two frames, and it is never
+  defaulted to 0. Exposed in `/vehicles`, the SSE stream (deltas included) and `/vehicles/{id}`.
+
 ## [1.7.0] - 2026-09-06 — "cuándo salir", shared ETA, wearables, Live Activities
 ### Added
 - `GET /plan/forecast`: departure options across a window with gaps, service notes and a recommendation.

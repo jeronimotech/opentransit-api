@@ -17,6 +17,7 @@ from google.transit import gtfs_realtime_pb2 as gtfsrt
 from .cities import City
 from .config import settings
 from .features import infer_severity
+from .geo import circular_mean, haversine_m, initial_bearing
 
 log = logging.getLogger("ot.rt")
 
@@ -129,6 +130,29 @@ def parse_positions(msg: gtfsrt.FeedMessage, known_trips: set[str] | None) -> tu
     return ents, ages, unresolved
 
 
+# Bogotá's GTFS-RT publishes no bearing at all (0 of ~6.4k vehicles), so it is derived from consecutive
+# positions. Two thresholds keep that honest: a pair closer than MIN_MOVE_M is GPS jitter from a parked bus,
+# and a pair further apart than MAX_PAIR_GAP_S may straddle a turn, so no bearing is better than a wrong one.
+MIN_MOVE_M = 10.0
+MAX_PAIR_GAP_S = 180
+
+
+def derive_bearing(history, *, min_move_m: float = MIN_MOVE_M,
+                   max_gap_s: int = MAX_PAIR_GAP_S) -> float | None:
+    """Bearing from the two most recent *distinct* positions, or None when the trail cannot support one."""
+    if not history or len(history) < 2:
+        return None
+    points = list(history)
+    lon2, lat2, ts2 = points[-1]
+    for lon1, lat1, ts1 in reversed(points[:-1]):
+        if haversine_m(lat1, lon1, lat2, lon2) < min_move_m:
+            continue                       # still inside the noise radius: keep looking further back
+        if ts2 - ts1 > max_gap_s:
+            return None                    # too long a gap to trust the straight line between them
+        return initial_bearing(lat1, lon1, lat2, lon2)
+    return None
+
+
 class RTCache:
     """Per-city realtime state. The only thing endpoints read."""
 
@@ -153,6 +177,7 @@ class RTCache:
         self.delta: dict | None = None
         self.seq: int = 0
         self.history: dict[str, collections.deque] = {}
+        self._last_derived: dict[str, float] = {}   # raw derived bearing, for smoothing
         self._subs: set[asyncio.Queue] = set()
 
     # ---- static helpers ----
@@ -197,7 +222,8 @@ class RTCache:
             "routeId": self.city.scoped(rid), "routeShortName": r["short_name"] if r else None,
             "tripId": self.city.scoped(e.get("tripId")), "tripResolved": e["tripResolved"],
             "component": r["component"] if r else None,
-            "lat": e["lat"], "lon": e["lon"], "bearing": e.get("bearing"), "timestamp": iso(e.get("ts")),
+            "lat": e["lat"], "lon": e["lon"], "bearing": e.get("bearing"),
+            "bearingSource": e.get("bearingSource"), "timestamp": iso(e.get("ts")),
             "stopId": self.city.scoped(e.get("stopId")), "stopSequence": e.get("stopSequence"),
             "occupancy": e.get("occupancy"),
         }
@@ -217,7 +243,8 @@ class RTCache:
 
     def _compute_delta(self, prev: dict[str, dict], ents: list[dict]) -> dict:
         upd = [e for e in ents if (p := prev.get(e["id"])) is None
-               or p["lat"] != e["lat"] or p["lon"] != e["lon"] or p.get("tripId") != e.get("tripId")]
+               or p["lat"] != e["lat"] or p["lon"] != e["lon"] or p.get("tripId") != e.get("tripId")
+               or p.get("bearing") != e.get("bearing")]
         live = {e["id"] for e in ents}
         return {"upd": upd, "del": [k for k in prev if k not in live]}
 
@@ -233,6 +260,27 @@ class RTCache:
             live = {e["id"] for e in ents}
             for k in [k for k in self.history if k not in live]:
                 del self.history[k]
+                self._last_derived.pop(k, None)
+
+    def _apply_bearings(self, ents: list[dict]) -> None:
+        """Fill `bearing`/`bearingSource`, preferring whatever the feed publishes.
+
+        Called after `_record_history` so the newest position is already in the trail. The published value is
+        the circular mean of the last two derived bearings, which stops the icon twitching between frames
+        without noticeably lagging a real turn."""
+        for e in ents:
+            if e.get("bearing") is not None:
+                e["bearingSource"] = "feed"
+                continue
+            raw = derive_bearing(self.history.get(e["id"]))
+            if raw is None:
+                # never default to 0: that would point every bus in the city due north
+                e["bearing"], e["bearingSource"] = None, None
+                continue
+            prev = self._last_derived.get(e["id"])
+            e["bearing"] = round(circular_mean([prev, raw]) if prev is not None else raw, 1)
+            e["bearingSource"] = "derived"
+            self._last_derived[e["id"]] = raw
 
     def apply(self, pos: gtfsrt.FeedMessage | None, tu: gtfsrt.FeedMessage | None,
               al: gtfsrt.FeedMessage | None) -> None:
@@ -252,6 +300,7 @@ class RTCache:
         self.updated_at = time.time()
         self.seq += 1
         self._record_history(ents)
+        self._apply_bearings(ents)
         self._publish()
 
     # ---- pub/sub for SSE ----

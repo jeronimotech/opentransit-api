@@ -663,3 +663,32 @@ public (credentials never are). Both are admin-editable; APNs credentials come f
   clients that cannot set headers.
 * Watch `component` is currently `null` (the compact payload does not join the stop table); clients colour by
   route instead.
+
+
+---
+
+## v1.7.1 — vehicle bearing (derived server-side when the feed omits it)
+
+`Vehicle` (in `/vehicles`, the SSE stream including its deltas, and `/vehicles/{id}`) gains:
+
+```jsonc
+"bearing": 137.4 | null,          // compass degrees, 0 = north
+"bearingSource": "feed" | "derived" | null
+```
+
+* `feed` — the GTFS-RT `VehiclePosition.bearing` as published, always preferred when present.
+* `derived` — computed by the API from the two most recent **distinct** positions in the vehicle's in-memory
+  trail. **This is what Bogotá returns**: its feed publishes no bearing on any vehicle, so without this the
+  direction arrows and marker tips could never be drawn.
+* `null` — not enough trail to say. Both fields are null together; a bearing is **never defaulted to 0**,
+  which would point every bus due north.
+
+Rules that keep the derived value honest:
+* a position pair closer than **10 m** is treated as GPS jitter from a stationary bus and skipped, walking
+  further back through the trail for a usable pair;
+* a pair more than **180 s** apart is refused outright — the vehicle may have turned in between, and no
+  bearing beats a wrong one;
+* the published value is the **circular mean of the last two derived bearings**, so the icon does not twitch
+  between frames (averaging 350° and 10° yields 0°, not 180°);
+* a bearing change alone marks a vehicle as updated in the SSE delta, so clients that diff on position still
+  receive it.

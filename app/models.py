@@ -412,7 +412,8 @@ class Vehicle(Out):
     component: str | None = None
     lat: float
     lon: float
-    bearing: float | None = None
+    bearing: float | None = None                 # null when unknown: never defaulted to 0 (= due north)
+    bearing_source: Literal["feed", "derived"] | None = None
     timestamp: str | None = None
     stop_id: str | None = None
     stop_sequence: int | None = None

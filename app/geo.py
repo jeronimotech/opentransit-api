@@ -1,4 +1,4 @@
-"""Small geometry helpers: haversine, Douglas-Peucker, Google polyline codec."""
+"""Small geometry helpers: haversine, bearings, Douglas-Peucker, Google polyline codec."""
 import math
 
 
@@ -9,6 +9,26 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dl = math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * r * math.asin(math.sqrt(a))
+
+
+def initial_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Compass bearing (0–360, 0 = north) of the great-circle course from point 1 to point 2."""
+    f1, f2 = math.radians(lat1), math.radians(lat2)
+    dl = math.radians(lon2 - lon1)
+    y = math.sin(dl) * math.cos(f2)
+    x = math.cos(f1) * math.sin(f2) - math.sin(f1) * math.cos(f2) * math.cos(dl)
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
+def circular_mean(bearings: list[float]) -> float:
+    """Mean of angles. Averaging 350° and 10° must give 0°, not 180°, so it goes through vectors."""
+    if not bearings:
+        raise ValueError("no bearings")
+    x = sum(math.cos(math.radians(b)) for b in bearings)
+    y = sum(math.sin(math.radians(b)) for b in bearings)
+    if abs(x) < 1e-12 and abs(y) < 1e-12:
+        return bearings[-1] % 360.0        # exactly opposite headings cancel: keep the newest
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
 
 
 def rdp(points: list[tuple[float, float]], eps: float) -> list[tuple[float, float]]:
