@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import time
 
 import pytest
 from fastapi import FastAPI
@@ -291,3 +292,117 @@ async def test_city_config_exposes_share_and_push_without_credentials(bogota: Ci
         cfg = (await c.get("/v1/cities/bogota")).json()["config"]
     assert cfg["share"] == {"enabled": True, "ttlMinutes": 180}
     assert cfg["push"] == {"enabled": False}                  # no keyId / keyPath ever reaches a client
+
+
+# ------------------------------------------------------------------ A3 watch summary: endpoint behaviour
+# Deterministic OTP stub: Bogotá's real feed returns nothing outside service hours, which is exactly when the
+# Wear OS defect was reported, so these cases are pinned with canned data instead of the live router.
+def _stoptime(route_id: str, short: str, minutes_from_now: float, base_ts: float | None = None) -> dict:
+    """Minutes are computed against wall-clock now, so the fixture must be anchored there too."""
+    when = dt.datetime.fromtimestamp((base_ts or time.time()) + minutes_from_now * 60, dt.UTC)
+    return {"scheduledDeparture": when.hour * 3600 + when.minute * 60 + when.second,
+            "serviceDay": int(dt.datetime(when.year, when.month, when.day, tzinfo=dt.UTC).timestamp()),
+            "realtime": False, "headsign": "Norte",
+            "trip": {"gtfsId": f"bogota:{short}-{int(minutes_from_now)}",
+                     "route": {"gtfsId": route_id, "shortName": short, "color": "D22020",
+                               "mode": "BUS", "agency": {"gtfsId": "bogota:1", "name": "TM"}}}}
+
+
+class StubOtp:
+    """Answers `stop(id)` from a canned table; anything unknown behaves like OTP's empty response."""
+    version = "2.9.0"
+
+    def __init__(self, table: dict[str, list[dict]], names: dict[str, str] | None = None) -> None:
+        self.table, self.names = table, names or {}
+        self.calls: list[str] = []
+
+    async def graphql(self, query, variables, locale="es"):
+        sid = variables.get("id")
+        self.calls.append(sid)
+        if sid not in self.table:
+            return {"stop": None, "station": None}
+        return {"stop": {"gtfsId": sid, "name": self.names.get(sid, sid),
+                         "stoptimesWithoutPatterns": self.table[sid]}}
+
+
+def _watch_app(city: City, otp: StubOtp) -> FastAPI:
+    from app.routers import watch as watch_router
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(watch_router.router)
+    app.state.cities = {"bogota": CityRuntime(city=city, rt=RTCache(city), otp=otp)}  # type: ignore[arg-type]
+    app.state.watch_cache = WatchCache()
+    return app
+
+
+@pytest.mark.anyio
+async def test_two_requested_stops_both_come_back(bogota: City):
+    """The Wear OS report: asking for two stops must yield two items, in the order asked."""
+    otp = StubOtp({"bogota:2000": [_stoptime("bogota:R1", "B10", 3), _stoptime("bogota:R1", "B10", 11)],
+                   "bogota:2300": [_stoptime("bogota:R2", "G12", 5)]},
+                  {"bogota:2000": "Portal Norte", "bogota:2300": "Calle 100"})
+    app = _watch_app(bogota, otp)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        body = (await c.get("/v1/cities/bogota/watch/summary?stops=bogota:2000,bogota:2300")).json()
+    assert [i["stopId"] for i in body["items"]] == ["bogota:2000", "bogota:2300"]
+    assert [i["stopName"] for i in body["items"]] == ["Portal Norte", "Calle 100"]
+    assert [r["shortName"] for r in body["items"][0]["routes"]] == ["B10"]
+
+
+@pytest.mark.anyio
+async def test_a_requested_stop_with_no_departures_still_appears(bogota: City):
+    """Outside service hours the watch must show "sin salidas ahora", not lose the favourite."""
+    otp = StubOtp({"bogota:2000": [_stoptime("bogota:R1", "B10", 4)],
+                   "bogota:2300": []},                       # last bus already gone
+                  {"bogota:2000": "Portal Norte", "bogota:2300": "Calle 100"})
+    app = _watch_app(bogota, otp)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        body = (await c.get("/v1/cities/bogota/watch/summary?stops=bogota:2000,bogota:2300")).json()
+    assert [i["stopId"] for i in body["items"]] == ["bogota:2000", "bogota:2300"]
+    assert body["items"][1]["routes"] == []                  # present, simply with nothing coming
+    assert body["items"][1]["stopName"] == "Calle 100"
+
+
+@pytest.mark.anyio
+async def test_limit_never_drops_a_requested_stop_and_per_route_trims_times(bogota: City):
+    otp = StubOtp({f"bogota:{n}": [_stoptime("bogota:R1", "B10", 2),
+                                   _stoptime("bogota:R1", "B10", 9),
+                                   _stoptime("bogota:R1", "B10", 17)] for n in (2000, 2300, 2400, 2500)},
+                  {f"bogota:{n}": f"Parada {n}" for n in (2000, 2300, 2400, 2500)})
+    app = _watch_app(bogota, otp)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        four = (await c.get("/v1/cities/bogota/watch/summary"
+                            "?stops=bogota:2000,bogota:2300,bogota:2400,bogota:2500&limit=2")).json()
+        one = (await c.get("/v1/cities/bogota/watch/summary?stops=bogota:2000&perRoute=1")).json()
+        three = (await c.get("/v1/cities/bogota/watch/summary?stops=bogota:2000&perRoute=3")).json()
+    # `limit` bounds the nearby fill, so four explicitly requested stops all survive limit=2
+    assert len(four["items"]) == 4
+    assert [n["minutes"] for n in one["items"][0]["routes"][0]["next"]] == [2]
+    assert [n["minutes"] for n in three["items"][0]["routes"][0]["next"]] == [2, 9, 17]
+
+
+@pytest.mark.anyio
+async def test_an_unknown_stop_does_not_break_the_response(bogota: City):
+    otp = StubOtp({"bogota:2000": [_stoptime("bogota:R1", "B10", 6)]}, {"bogota:2000": "Portal Norte"})
+    app = _watch_app(bogota, otp)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/v1/cities/bogota/watch/summary?stops=bogota:nope,bogota:2000")
+    assert r.status_code == 200
+    assert [i["stopId"] for i in r.json()["items"]] == ["bogota:2000"]
+
+
+@pytest.mark.anyio
+async def test_one_failing_stop_does_not_sink_the_payload(bogota: City):
+
+    class FlakyOtp(StubOtp):
+        async def graphql(self, query, variables, locale="es"):
+            if variables.get("id") == "bogota:2300":
+                raise RuntimeError("upstream hiccup")
+            return await super().graphql(query, variables, locale)
+
+    otp = FlakyOtp({"bogota:2000": [_stoptime("bogota:R1", "B10", 6)]}, {"bogota:2000": "Portal Norte"})
+    app = _watch_app(bogota, otp)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/v1/cities/bogota/watch/summary?stops=bogota:2300,bogota:2000")
+    assert r.status_code == 200
+    assert [i["stopId"] for i in r.json()["items"]] == ["bogota:2000"]

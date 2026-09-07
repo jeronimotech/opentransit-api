@@ -622,8 +622,15 @@ Publish a trip in progress under an unguessable, expiring link. Gated by `config
 ### `GET /v1/cities/{city}/watch/summary`
 One compact call that fills a watch face: no geometry, minutes instead of timestamps, names pre-truncated.
 
-Query: `stops` (comma-separated favourites, first priority), `routes` (filter), `lat`/`lon` (fills the
-remainder with the nearest stops), `limit` (1–6, default 3).
+Query: `stops` (comma-separated favourites), `routes` (filter), `lat`/`lon` (fills the remainder with the
+nearest stops), `limit` (1–6, default 3), `perRoute` (1–4, default 2).
+
+**Every requested stop is returned**, in the order asked, and a stop with nothing coming carries an empty
+`routes` list rather than disappearing — outside service hours the watch must show "sin salidas ahora", not
+believe the favourite was lost. `limit` therefore bounds only the *nearby fill*: asking for four stops with
+`limit=2` still returns four items (hard ceiling: 6). `perRoute` trims the **times per route**; a stop shows
+at most 3 routes. An unknown stop id is skipped (there is no name to render) and an upstream failure on one
+stop is logged and skipped, neither of which fails the request.
 
 ```jsonc
 { "generatedAt", "freshness": Freshness, "alerts": 304,
@@ -632,8 +639,8 @@ remainder with the nearest stops), `limit` (1–6, default 3).
                "routes": [ { "routeId", "shortName", "color",
                              "next": [ { "minutes": 3, "realtime": true } ] } ] } ] }
 ```
-At most 3 routes per stop and 2 times per route; ~1.4 KB for three stops. Cached 15 s
-(`Cache-Control: public, max-age=15`).
+~1.4 KB for three stops. Cached 15 s (`Cache-Control: public, max-age=15`), keyed on the requested stops,
+routes, `limit`, `perRoute` and the rounded location.
 
 ### Live Activity registration (config-gated)
 `POST /v1/cities/{city}/live-activity/register` `{ "activityToken", "tripId", "platform" }` and

@@ -8,6 +8,7 @@ so a complication refreshing every minute is nearly free.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import time
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -21,11 +22,13 @@ from ..runtime import CityRuntime, city_runtime
 from .stops import _otp_stop_or_station
 
 router = APIRouter(tags=["wearables"])
+log = logging.getLogger("ot.watch")
 
 CACHE_TTL_S = 15
 NAME_MAX = 24                 # what fits on a 45 mm watch face without eliding mid-word
-NEXT_PER_ROUTE = 2
+NEXT_PER_ROUTE = 2            # default times per route; overridable with ?perRoute=
 MAX_ROUTES_PER_STOP = 3
+MAX_STOPS = 6                 # payload ceiling, whatever the caller asks for
 
 
 def truncate(name: str | None, limit: int = NAME_MAX) -> str:
@@ -45,8 +48,9 @@ def _minutes(iso_time: str, now_ts: float) -> int:
     return max(0, int(round((t - now_ts) / 60)))
 
 
-def compact_rows(deps: list[dict], now_ts: float, *, routes_filter: set[str] | None) -> list[dict]:
-    """Departures -> at most three routes, each with its next couple of minutes values."""
+def compact_rows(deps: list[dict], now_ts: float, *, routes_filter: set[str] | None,
+                 per_route: int = NEXT_PER_ROUTE) -> list[dict]:
+    """Departures -> at most three routes, each with its next `per_route` minutes values."""
     by_route: dict[str, dict] = {}
     for d in deps:
         ref = d.get("route") or {}
@@ -55,7 +59,7 @@ def compact_rows(deps: list[dict], now_ts: float, *, routes_filter: set[str] | N
             continue
         row = by_route.setdefault(rid, {"routeId": rid, "shortName": ref.get("shortName"),
                                         "color": ref.get("color"), "next": []})
-        if len(row["next"]) >= NEXT_PER_ROUTE:
+        if len(row["next"]) >= per_route:
             continue
         t = d.get("realtimeTime") or d["scheduledTime"]
         row["next"].append({"minutes": _minutes(t, now_ts), "realtime": bool(d.get("realtime"))})
@@ -103,44 +107,57 @@ async def watch_summary(
     rt: CityRuntime = Depends(city_runtime),
     lat: float | None = Query(None, ge=-90, le=90),
     lon: float | None = Query(None, ge=-180, le=180),
-    stops: str | None = Query(None, description="comma-separated favourite stop ids"),
+    stops: str | None = Query(None, description="comma-separated favourite stop ids; all are returned"),
     routes: str | None = Query(None, description="comma-separated route ids to keep"),
-    limit: int = Query(3, ge=1, le=6),
+    limit: int = Query(3, ge=1, le=MAX_STOPS,
+                       description="how many items to aim for; only bounds the nearby fill, never drops "
+                                   "a requested stop"),
+    perRoute: int = Query(NEXT_PER_ROUTE, ge=1, le=4, description="departure times per route"),
 ):
-    """Favourite stops first, then the nearest ones, each with the next couple of departures."""
+    """Every requested stop, then the nearest ones up to `limit`, each with its next departures.
+
+    A requested stop always comes back, even outside service hours: it then carries an empty `routes` list
+    so the watch can say "sin salidas ahora" instead of believing the favourite disappeared."""
     city = rt.city
-    fav = [s.strip() for s in (stops or "").split(",") if s.strip()][:limit]
+    fav = [city.scoped(s.strip()) for s in (stops or "").split(",") if s.strip()][:MAX_STOPS]
     route_filter = {city.scoped(r.strip()) for r in (routes or "").split(",") if r.strip()} or None
     cache: WatchCache = request.app.state.watch_cache
-    ckey = (city.id, tuple(fav), tuple(sorted(route_filter or ())), limit,
+    ckey = (city.id, tuple(fav), tuple(sorted(route_filter or ())), limit, perRoute,
             None if lat is None else round(lat, 3), None if lon is None else round(lon, 3))
     cached = cache.get(ckey)
     if cached is not None:
         return JSONResponse(cached, headers={"Cache-Control": f"public, max-age={CACHE_TTL_S}"})
 
+    # requested stops first, in the order asked; nearby stops only fill what is left up to `limit`
     wanted: list[tuple[str, int | None]] = [(s, None) for s in fav]
     if len(wanted) < limit and lat is not None and lon is not None:
         have = {city.unscoped(s) for s, _ in wanted}
         for sid, metres in await _nearest_stop_ids(rt, lat, lon, limit * 2):
-            if sid not in have:
-                wanted.append((city.scoped(sid), metres))
+            if sid in have:
+                continue
+            wanted.append((city.scoped(sid), metres))
             if len(wanted) >= limit:
                 break
 
     now_ts = time.time()
     items: list[dict] = []
-    for scoped_id, metres in wanted[:limit]:
-        s = await _otp_stop_or_station(rt, city.scoped(scoped_id), DEPARTURES_QUERY,
-                                       STATION_DEPARTURES_QUERY, n=40, range=90 * 60)
+    for scoped_id, metres in wanted[:MAX_STOPS]:
+        requested = scoped_id in fav
+        try:
+            s = await _otp_stop_or_station(rt, scoped_id, DEPARTURES_QUERY, STATION_DEPARTURES_QUERY,
+                                           n=40, range=90 * 60)
+        except Exception:  # noqa: BLE001 - one unhappy stop must not sink the whole watch payload
+            log.warning("watch summary: could not read %s", scoped_id, exc_info=True)
+            s = None
         if not s:
-            continue
+            continue                       # unknown id: there is no name to render, so it is skipped
         deps = merge_departures([departure_from_otp(city, st)
                                  for st in (s.get("stoptimesWithoutPatterns") or []) if st])
-        rows = compact_rows(deps, now_ts, routes_filter=route_filter)
-        if not rows:
-            continue
+        rows = compact_rows(deps, now_ts, routes_filter=route_filter, per_route=perRoute)
+        if not rows and not requested:
+            continue                       # a nearby suggestion with nothing coming is just noise
         items.append({"kind": "route_at_stop" if route_filter else "stop",
-                      "stopId": city.scoped(scoped_id),
+                      "stopId": scoped_id,
                       "stopName": truncate(s.get("name")),
                       "component": None, "distanceMeters": metres, "routes": rows})
 

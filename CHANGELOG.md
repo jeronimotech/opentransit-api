@@ -17,6 +17,12 @@ releases start.
   Live Activity and no APNs key is needed.
 - City config gains `share` and `push` (both admin-editable; APNs credentials stay in the environment).
 
+### Fixed
+- `GET /watch/summary` dropped any requested stop that had no upcoming departures, so a watch asking for two
+  favourites could get one item back and appear to have lost the other. Requested stops are now always
+  returned (empty `routes` when nothing is coming), `limit` bounds only the nearby fill, `perRoute` controls
+  the times per route, and a failing or unknown stop no longer affects the rest of the payload.
+
 ## [1.6.0] - 2026-09-06 — Open Mobility Foundation (CDS 1.1.0 curbs, MDS 2.1.0 policy/geography), phase A
 ### Added
 - Per-city `openMobility` config (admin-editable): CDS curbs (local inventory or mirrored URL, publish toggle),
