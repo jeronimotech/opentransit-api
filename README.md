@@ -271,3 +271,23 @@ Endpoints: `POST /v1/cities/{city}/events` (public batch ingestion) and the admi
 `GET /v1/admin/cities/{city}/analytics/{summary,od,places,routes,stops,modes,searches,providers,funnel,hours,export.csv}`
 (see `docs/API.md`). Jobs: rollup every `ANALYTICS_ROLLUP_SECONDS` (600), partitions + retention every 6 h;
 disable with `ENABLE_ANALYTICS_JOBS=false` on read replicas.
+
+## Trip companions (v1.7)
+
+Three small endpoints that exist because a trip planner is used *before* and *during* a trip, not only at the
+moment of asking:
+
+- **`GET /plan/forecast`** — "¿cuándo salir?": departure options across a window (default 90 min) with the wait
+  until the next one, `long_gap` / `last_service` / `service_ends` notes and a recommended row. Cost is bounded
+  to 8 upstream plans per request and the window is cached 60 s, so scrubbing the sheet never slows `/plan`.
+- **Shared ETA** (`POST|GET|PATCH|DELETE /share/eta`) — publish a trip in progress under an unguessable,
+  expiring link so somebody can watch you arrive. The creator gets a **write key** (only its SHA-256 is
+  stored); positions are coarsened to ~110 m; rows are deleted at expiry; nothing links a share to analytics.
+  Disable per city with `config.share.enabled`.
+- **`GET /watch/summary`** — one compact call for a watch face or complication: favourite stops first, nearest
+  stops after, at most 3 routes × 2 times each, names pre-truncated, ~1.4 KB and a 15 s cache.
+
+**Live Activities need no APNs key** for the agreed scope: `config.push.enabled` is false by default, so
+`POST /live-activity/register|end` accept and no-op while the app updates its own activity locally (GO holds a
+foreground location session). Turning push on later is a config change plus credentials in the environment;
+the client calls do not change.

@@ -36,7 +36,8 @@ def truncate(name: str | None, limit: int = NAME_MAX) -> str:
     cut = text[:limit].rstrip()
     if " " in cut[limit // 2:]:
         cut = cut[:cut.rindex(" ")].rstrip()
-    return cut + "…"
+    # a dangling separator ("Portal Norte -…") reads like a glitch on a watch face
+    return cut.rstrip(" -–—,;:·/") + "…"
 
 
 def _minutes(iso_time: str, now_ts: float) -> int:

@@ -6,6 +6,17 @@ releases start.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-06 — "cuándo salir", shared ETA, wearables, Live Activities
+### Added
+- `GET /plan/forecast`: departure options across a window with gaps, service notes and a recommendation.
+  Bounded to 8 upstream plans per request and cached 60 s, so it never degrades `/plan`.
+- Shared ETA (`POST|GET|PATCH|DELETE /share/eta`): unguessable token, hashed write key, coarse positions,
+  TTL clamped per city, rows dropped at expiry. No analytics linkage.
+- `GET /watch/summary`: compact payload for a watch face (~1.4 KB for three stops, 15 s cache).
+- `POST /live-activity/register|end`: config-gated; with `config.push.enabled` false the app drives its own
+  Live Activity and no APNs key is needed.
+- City config gains `share` and `push` (both admin-editable; APNs credentials stay in the environment).
+
 ## [1.6.0] - 2026-09-06 — Open Mobility Foundation (CDS 1.1.0 curbs, MDS 2.1.0 policy/geography), phase A
 ### Added
 - Per-city `openMobility` config (admin-editable): CDS curbs (local inventory or mirrored URL, publish toggle),

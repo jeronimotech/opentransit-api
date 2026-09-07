@@ -571,3 +571,85 @@ curbPolicies, lastUpdatedAt}, mds: {enabled, publishingPolicy, version, policies
 | MDS rule → our `type` | heuristic | MDS 2.1 rules are generic (`count`/`speed`/`time`…). We map `count` + `maximum: 0` + `on_trip` state → `no_ride`, other `count` + `maximum: 0` → `no_parking`, `minimum > 0` → `preferred_parking`, `speed` → `speed_limit`, else `cap`/`other`. The untouched MDS rule is always echoed under `rule`. |
 | `designated_period` | only `holidays` is evaluated | The others ("snow emergency", "game days") are not data we hold; an unknown period never blocks a span. |
 | CDS `currency` envelope field | the city's `rateCurrency` | CDS requires `currency` in the envelope but has no per-rate currency; we fill it from the city config. |
+
+---
+
+## v1.7 additions (implemented 2026-09-06) — "cuándo salir", shared ETA, wearables, Live Activities
+
+### `GET /v1/cities/{city}/plan/forecast`
+Answers *when* to leave, not *how* to get there. Plans at intervals across a window and returns one row per
+genuinely distinct departure.
+
+Query: `fromLat`, `fromLon`, `toLat`, `toLon` (required), `time` (ISO-8601, default now), `modes`,
+`windowMinutes` (15–360, default 90), `maxOptions` (2–12, default 8), `arriveBy`, `wheelchair`, `locale`,
+`fromName`, `toName`.
+
+```jsonc
+{ "from": Place, "to": Place, "generatedAt": "...", "windowMinutes": 90,
+  "options": [ { "departAt", "arriveAt", "durationSeconds", "transfers", "walkMeters", "modesUsed",
+                 "routeIds": ["bogota:12873"], "fare": Fare|null, "realtime": bool,
+                 "recommended": bool, "gapAfterSeconds": 240|null } ],
+  "notes": [ { "kind": "long_gap"|"last_service"|"service_ends", "text": "…",
+               "afterDepartAt"?, "atDepartAt"?, "at"?, "gapSeconds"? } ] }
+```
+* **Cost is bounded**: at most 8 upstream plans per request regardless of the window, and the computed window
+  is cached for 60 s on a rounded key (coordinates to 4 decimals, the start minute, window, modes, locale).
+* Options are deduped by *vehicle* (mode, route, trip, boarding stop, time), so the same bus seen by several
+  probes appears once. `recommended` is the earliest arrival among the fastest quartile.
+* `gapAfterSeconds` is the wait until the next option (`null` on the last row); a gap ≥ 20 min raises a
+  `long_gap` note so the client can say "después no hay servicio hasta las 21:40".
+* Endpoint **labels are per-caller**: only the window is cached, so `fromName`/`toName` from one request are
+  never served to another.
+
+### Shared ETA — `POST|GET|PATCH|DELETE /v1/cities/{city}/share/eta[/{token}]`
+Publish a trip in progress under an unguessable, expiring link. Gated by `config.share.enabled`.
+
+* `POST` body `{ "itinerary": <normalised itinerary>, "label"?, "startedAt"?, "ttlMinutes"? }` →
+  `201 { "token", "url", "writeKey", "expiresAt" }`. The **write key is returned once** and is the only way to
+  update or revoke; the server keeps just its SHA-256. TTL defaults to `config.share.ttlMinutes` (180) and is
+  clamped to `maxTtlMinutes` (720). Rate limited per IP (30/min).
+* `PATCH .../{token}` with header `X-Share-Key` and body
+  `{ "progress": { "legIndex", "state": "on_time"|"delayed"|"arrived"|"cancelled", "atStopId"?, "etaAt"?, "lat"?, "lon"? } }`.
+  **Coordinates are coarsened to 3 decimals (~110 m) before storage** and unknown fields are dropped.
+* `GET .../{token}` → public read `{ label, itinerary, progress, startedAt, updatedAt, expiresAt, city }`,
+  `Cache-Control: no-store`. `DELETE` with the write key revokes (204).
+* **Privacy**: the row carries no session or cohort id, no analytics event references the token, and rows are
+  deleted at `expires_at` by the maintenance loop. `404 SHARE_NOT_FOUND` covers expired and revoked alike.
+
+### `GET /v1/cities/{city}/watch/summary`
+One compact call that fills a watch face: no geometry, minutes instead of timestamps, names pre-truncated.
+
+Query: `stops` (comma-separated favourites, first priority), `routes` (filter), `lat`/`lon` (fills the
+remainder with the nearest stops), `limit` (1–6, default 3).
+
+```jsonc
+{ "generatedAt", "freshness": Freshness, "alerts": 304,
+  "items": [ { "kind": "stop"|"route_at_stop", "stopId", "stopName": "Portal Norte…",
+               "component", "distanceMeters", 
+               "routes": [ { "routeId", "shortName", "color",
+                             "next": [ { "minutes": 3, "realtime": true } ] } ] } ] }
+```
+At most 3 routes per stop and 2 times per route; ~1.4 KB for three stops. Cached 15 s
+(`Cache-Control: public, max-age=15`).
+
+### Live Activity registration (config-gated)
+`POST /v1/cities/{city}/live-activity/register` `{ "activityToken", "tripId", "platform" }` and
+`POST .../live-activity/end` `{ "tripId" }` → `202 { "accepted", "serverPush", "reason" }`.
+
+With `config.push.enabled` false (**the default**) nothing is stored and nothing is pushed: the app updates its
+own Live Activity locally, which works because GO holds a foreground location session. **No APNs key is
+required for the agreed scope.** The endpoints still answer 202 so clients need no branching; when push is
+later enabled the same calls become the registration path for APNs `liveactivity` updates.
+
+### City config
+`config.share` → `{ "enabled": true, "ttlMinutes": 180 }` and `config.push` → `{ "enabled": false }` are
+public (credentials never are). Both are admin-editable; APNs credentials come from the environment only.
+
+### Deviations
+* The forecast samples evenly across the window rather than per-minute: 8 probes cover a 90-minute window at
+  ~11-minute spacing, which is enough to surface distinct vehicles without multiplying router load.
+* `service_ends` notes are only raised when the first option's route has a known service window.
+* The share write key is passed as `X-Share-Key`; a `writeKey` body field is also accepted on `PATCH` for
+  clients that cannot set headers.
+* Watch `component` is currently `null` (the compact payload does not join the stop table); clients colour by
+  route instead.

@@ -400,9 +400,13 @@ async def plan_forecast(
     ckey = ForecastCache.key(city.id, from_lat=fromLat, from_lon=fromLon, to_lat=toLat, to_lon=toLon,
                              when=start, window=windowMinutes, modes=modes, arrive_by=arriveBy,
                              max_options=maxOptions, locale=locale)
+    origin = {"name": fromName, "lat": fromLat, "lon": fromLon}
+    dest = {"name": toName, "lat": toLat, "lon": toLon}
     cached = cache.get(ckey)
     if cached is not None:
-        return cached
+        # The cache holds the computed window only: labels are per-caller, so one user's "Casa" must never
+        # be served to the next person asking for the same corridor.
+        return {**cached, "from": origin, "to": dest}
 
     transit, street = parse_modes(modes, city.transit_modes())
     street = [m for m in street if m not in RENTAL_MODES] or ["WALK"]
@@ -413,8 +417,6 @@ async def plan_forecast(
     datas = await asyncio.gather(
         *(rt.otp.graphql(PLAN_QUERY, build_variables(**common, when=w), locale=locale) for w in when_list),
         return_exceptions=True)
-    origin = {"name": fromName, "lat": fromLat, "lon": fromLon}
-    dest = {"name": toName, "lat": toLat, "lon": toLon}
     plans: list[list[dict]] = []
     for d in datas:
         if isinstance(d, Exception):
@@ -432,5 +434,5 @@ async def plan_forecast(
         "generatedAt": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
         "windowMinutes": windowMinutes, "options": options, "notes": notes,
     }).model_dump(by_alias=True)
-    cache.put(ckey, body)
+    cache.put(ckey, {k: v for k, v in body.items() if k not in ("from", "to")})
     return body

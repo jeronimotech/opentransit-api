@@ -157,3 +157,36 @@ async def test_endpoint_bounds_upstream_calls_and_caches(bogota):
         r2 = await c.get(f"/v1/cities/bogota/plan/forecast?{q}")
         assert r2.status_code == 200
         assert calls["n"] == MAX_FANOUT               # served from cache: no extra upstream work
+
+
+@pytest.mark.anyio
+async def test_cached_window_never_serves_another_callers_labels(bogota):
+    """The window is shared; the endpoint labels are not. One user's "Casa" must not leak to the next."""
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from app.errors import install_error_handlers
+    from app.routers import plan as plan_router
+    from app.rt import RTCache
+    from app.runtime import CityRuntime
+
+    class StubOtp:
+        version = "2.9.0"
+
+        async def graphql(self, query, variables, locale="es"):
+            return {"planConnection": {"edges": []}}
+
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(plan_router.router)
+    app.state.cities = {"bogota": CityRuntime(city=bogota, rt=RTCache(bogota), otp=StubOtp())}  # type: ignore[arg-type]
+    app.state.forecast_cache = ForecastCache()
+    q = ("fromLat=4.6845&fromLon=-74.0530&toLat=4.5978&toLon=-74.1616"
+         "&windowMinutes=60&time=2026-09-08T07:00:00-05:00")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        first = await c.get(f"/v1/cities/bogota/plan/forecast?{q}&fromName=Casa&toName=Oficina")
+        second = await c.get(f"/v1/cities/bogota/plan/forecast?{q}&fromName=Gimnasio")
+        third = await c.get(f"/v1/cities/bogota/plan/forecast?{q}")
+    assert first.json()["from"]["name"] == "Casa" and first.json()["to"]["name"] == "Oficina"
+    assert second.json()["from"]["name"] == "Gimnasio" and second.json()["to"]["name"] is None
+    assert third.json()["from"]["name"] is None

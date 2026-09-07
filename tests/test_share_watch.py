@@ -188,6 +188,10 @@ def test_watch_names_are_truncated_at_a_word_boundary():
     assert truncate("Calle 100") == "Calle 100"
     long = truncate("Portal Norte - Unicervantes Terminal")
     assert len(long) <= 25 and long.endswith("…") and not long.endswith(" …")
+    # no dangling separator before the ellipsis
+    assert truncate("Portal Norte - Unicervantes") == "Portal Norte…"
+    assert not any(truncate(n)[-2] in " -–—,;:·/" for n in ["Portal Norte - Unicervantes",
+                                                            "Av. Caracas · Calle 45 Norte Bis"])
     assert truncate("Portalnortesinespaciosningunoaqui").endswith("…")
 
 
