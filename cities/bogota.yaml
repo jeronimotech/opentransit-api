@@ -73,6 +73,20 @@ config:
   maintenance: { active: false, message: null }
   # v1.5 first-party analytics: anonymous, aggregated, k-anonymity on every read/export (admin-editable)
   analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
+  # v2.0 conversational assistant. Off until a key is configured; the key never leaves the server and the
+  # model may only answer from our own tools, so it cannot invent a departure time.
+  assistant:
+    enabled: false
+    provider: anthropic          # anthropic | openai | deepseek | gemini
+    model: null                  # null -> the provider's documented default (see docs/API.md)
+    api_key: ${ASSISTANT_API_KEY:-}
+    base_url: null
+    max_replies_per_session: 30
+    max_tool_calls_per_reply: 6
+    daily_budget_usd: 5.0
+    rate_limit_per_minute: 6
+    system_extra: null
+    log_conversations: false
 
 # Official public pages (verified 2026-09-04). Never private/credentialed endpoints.
 links:

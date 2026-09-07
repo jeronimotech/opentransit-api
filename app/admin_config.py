@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from .cities import (
     AnalyticsConfig,
     AppConfig,
+    AssistantConfig,
     BikeShareNetwork,
     Cds,
     CdsCurbsCfg,
@@ -42,6 +43,7 @@ from .cities import (
     OpenMobility,
     ParkRide,
     ServiceTile,
+    ShareConfig,
     TaxiSurcharge,
     TaxiSurchargeWhen,
     TaxiTariff,
@@ -49,7 +51,7 @@ from .cities import (
 )
 from .db import pool
 from .errors import ApiError
-from .ondemand import PLACEHOLDER, mask_credentials
+from .ondemand import PLACEHOLDER, is_masked, mask_credentials, mask_value
 
 log = logging.getLogger("ot.admin_config")
 
@@ -109,6 +111,24 @@ class PushCfg(_Strict):
     enabled: bool = False
 
 
+class AssistantCfg(_Strict):
+    """v2.0 assistant. `apiKey` is the only secret the panel can set: it is masked on read and an omitted
+    key keeps the stored one, exactly like the on-demand credentials."""
+    enabled: bool = False
+    provider: Literal["anthropic", "openai", "deepseek", "gemini"] = "anthropic"
+    model: str | None = Field(None, max_length=80)
+    apiKey: str | None = Field(None, max_length=300)
+    baseUrl: str | None = None
+    maxRepliesPerSession: int = Field(30, ge=1, le=200)
+    maxToolCallsPerReply: int = Field(6, ge=1, le=20)
+    dailyBudgetUsd: float = Field(5.0, ge=0, le=1000)
+    rateLimitPerMinute: int = Field(6, ge=1, le=120)
+    systemExtra: str | None = Field(None, max_length=1000)
+    logConversations: bool = False
+
+    _v = field_validator("baseUrl")(_https)
+
+
 class ConfigCfg(_Strict):
     vehiclePollSeconds: int = Field(15, ge=5, le=120)
     departuresRefreshSeconds: int = Field(20, ge=5, le=120)
@@ -118,6 +138,7 @@ class ConfigCfg(_Strict):
     analytics: AnalyticsCfg = AnalyticsCfg()
     share: ShareCfg = ShareCfg()
     push: PushCfg = PushCfg()
+    assistant: AssistantCfg = AssistantCfg()
 
 
 class LinksCfg(_Strict):
@@ -523,7 +544,10 @@ def deep_merge(base: dict, patch: dict) -> dict:
 def yaml_sections(base: City) -> dict:
     """The editable sections of the YAML city in the public camelCase shape."""
     pub = base.public()
-    return {"fares": pub["fares"], "config": pub["config"], "links": pub["links"], "services": pub["services"],
+    return {"fares": pub["fares"],
+            # the public `config` hides the assistant's settings; the panel edits all of them
+            "config": {**pub["config"], "assistant": base.config.assistant.admin()},
+            "links": pub["links"], "services": pub["services"],
             "branding": {"primaryColor": pub["branding"]["primaryColor"]},
             "mobility": base.mobility_public(admin=True),      # credentials included (masked by describe())
             "openMobility": base.open_mobility_public(admin=True),
@@ -605,6 +629,44 @@ def _validate_ondemand(mob: dict) -> None:
                                status=422)
 
 
+def _assistant(a: dict) -> AssistantConfig:
+    return AssistantConfig(enabled=a["enabled"], provider=a["provider"], model=a["model"],
+                           api_key=a["apiKey"], base_url=a["baseUrl"],
+                           max_replies_per_session=a["maxRepliesPerSession"],
+                           max_tool_calls_per_reply=a["maxToolCallsPerReply"],
+                           daily_budget_usd=a["dailyBudgetUsd"],
+                           rate_limit_per_minute=a["rateLimitPerMinute"],
+                           system_extra=a["systemExtra"], log_conversations=a["logConversations"])
+
+
+def mask_secrets(data):
+    """Every secret an admin payload can carry: the on-demand / MDS credentials plus the assistant's key."""
+    out = mask_credentials(data)
+    cfg = out.get("config") if isinstance(out, dict) else None
+    if isinstance(cfg, dict) and isinstance(cfg.get("assistant"), dict):
+        cfg["assistant"]["apiKey"] = mask_value(cfg["assistant"].get("apiKey"))
+    return out
+
+
+def unmask_assistant_patch(config_patch: dict | None, city: City, base: City) -> dict | None:
+    """`config.assistant.apiKey` follows the on-demand credential rules: an OMITTED key keeps the stored one,
+    the mask echoed back by the panel keeps it, `null` drops the override so the YAML value applies again,
+    and anything else is stored as sent. A masked value that matches the YAML key is dropped rather than
+    copied, so a key that lives in the environment never gets written into the database."""
+    if not config_patch or not isinstance(config_patch.get("assistant"), dict):
+        return config_patch
+    out = copy.deepcopy(config_patch)
+    sent = out["assistant"].get("apiKey")
+    if "apiKey" not in out["assistant"] or not is_masked(sent):
+        return out
+    stored = city.config.assistant.api_key
+    if not stored or stored == base.config.assistant.api_key:
+        del out["assistant"]["apiKey"]
+    else:
+        out["assistant"]["apiKey"] = stored
+    return out
+
+
 def build_city(base: City, sections: dict) -> City:
     """Effective City = YAML city with the validated editable sections applied."""
     upd: dict = {}
@@ -619,7 +681,13 @@ def build_city(base: City, sections: dict) -> City:
                               maintenance=Maintenance(**c["maintenance"]),
                               analytics=AnalyticsConfig(enabled=c["analytics"]["enabled"],
                                                         retention_days=c["analytics"]["retentionDays"],
-                                                        k_threshold=c["analytics"]["kThreshold"]))
+                                                        k_threshold=c["analytics"]["kThreshold"]),
+                              share=ShareConfig(enabled=c["share"]["enabled"],
+                                                ttl_minutes=c["share"]["ttlMinutes"],
+                                                max_ttl_minutes=c["share"]["maxTtlMinutes"]),
+                              # APNs credentials come from the environment: the panel only flips the switch
+                              push=base.config.push.model_copy(update={"enabled": c["push"]["enabled"]}),
+                              assistant=_assistant(c["assistant"]))
     upd["links"] = Links(**sections["links"])
     upd["services"] = [ServiceTile(**s) for s in sections["services"]]
     upd["branding"] = base.branding.model_copy(update={"primary_color": sections["branding"]["primaryColor"]})
@@ -813,7 +881,7 @@ async def load_overrides(store: ConfigStore, runtimes: dict) -> None:
 def describe(rt) -> dict:
     """Shape shared by GET/PUT/DELETE of the admin config endpoint."""
     base = rt.base_city or rt.city
-    return {"effective": rt.city.public(), "override": mask_credentials(rt.override),
-            "yaml": mask_credentials(yaml_sections(base)),
+    return {"effective": rt.city.public(), "override": mask_secrets(rt.override),
+            "yaml": mask_secrets(yaml_sections(base)),
             "revision": rt.config_revision, "updatedAt": rt.config_updated_at, "updatedBy": rt.config_updated_by,
             "editable": list(EDITABLE)}

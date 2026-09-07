@@ -2,12 +2,20 @@ import hmac
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 
-from ..admin_config import ConfigPatch, apply_to_runtime, deep_merge, describe, effective_city
+from ..admin_config import (
+    ConfigPatch,
+    apply_to_runtime,
+    deep_merge,
+    describe,
+    effective_city,
+    mask_secrets,
+    unmask_assistant_patch,
+)
 from ..config import settings
 from ..errors import Unauthorized
 from ..gtfs_static import ingest, load_route_index, load_service_index
 from ..normalize import set_feed_flags
-from ..ondemand import mask_credentials, unmask_open_mobility_patch, unmask_patch
+from ..ondemand import unmask_open_mobility_patch, unmask_patch
 from ..runtime import CityRuntime, city_runtime
 
 router = APIRouter(tags=["admin"])
@@ -59,6 +67,8 @@ async def put_config(patch: ConfigPatch, request: Request, rt: CityRuntime = Dep
         sections["mobility"] = unmask_patch(sections["mobility"], rt.city)
     if sections.get("openMobility"):
         sections["openMobility"] = unmask_open_mobility_patch(sections["openMobility"], rt.city)
+    if sections.get("config"):
+        sections["config"] = unmask_assistant_patch(sections["config"], rt.city, rt.base_city or rt.city)
     new_override = deep_merge(rt.override or {}, sections)
     effective_city(rt.base_city or rt.city, new_override)          # raises 422 with the field path
     row = await request.app.state.config_store.save(rt.city.id, new_override, patch.updatedBy, patch.note)
@@ -80,7 +90,7 @@ async def delete_config(request: Request, rt: CityRuntime = Depends(city_runtime
 async def config_history(request: Request, rt: CityRuntime = Depends(city_runtime),
                          limit: int = Query(20, ge=1, le=200)):
     items = await request.app.state.config_store.history(rt.city.id, limit)
-    return {"items": [{**i, "data": mask_credentials(i.get("data"))} for i in items]}
+    return {"items": [{**i, "data": mask_secrets(i.get("data"))} for i in items]}
 
 
 def _sync_gbfs(rt: CityRuntime) -> None:

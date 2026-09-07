@@ -9,6 +9,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from . import __version__
 from .admin_config import PgConfigStore, load_overrides
 from .analytics import Hasher, PgAnalyticsStore, RateLimiter
+from .assistant.budget import BudgetStore, SessionLimiter
 from .cities import load_registry
 from .config import settings
 from .db import close_pool, init_pool
@@ -25,6 +26,7 @@ from .routers import (
     alerts,
     analytics,
     board,
+    chat,
     geocode,
     health,
     landing,
@@ -161,6 +163,8 @@ async def lifespan(app: FastAPI):
     app.state.analytics_limiter = RateLimiter(60, 60)
     app.state.share_store = PgShareStore()
     app.state.share_limiter = RateLimiter(30, 60)      # creating shares is rarer than sending events
+    app.state.assistant_budget = BudgetStore()
+    app.state.assistant_limiter = SessionLimiter(60)
     app.state.forecast_cache = ForecastCache()
     app.state.watch_cache = WatchCache()
     try:
@@ -214,7 +218,7 @@ def create_app() -> FastAPI:
         version=__version__, lifespan=lifespan,
         openapi_tags=[{"name": "planning"}, {"name": "search"}, {"name": "stops"}, {"name": "routes"},
                       {"name": "realtime"}, {"name": "rental"}, {"name": "ondemand"}, {"name": "platform"},
-                      {"name": "analytics"}, {"name": "openmobility"},
+                      {"name": "analytics"}, {"name": "openmobility"}, {"name": "assistant"},
                       {"name": "admin"}],
     )
     origins = [o.strip() for o in settings().CORS_ORIGINS.split(",") if o.strip()]
@@ -222,7 +226,7 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
     for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, ondemand,
-              landing, analytics, openmobility, share, watch, admin):
+              landing, analytics, openmobility, share, watch, chat, admin):
         app.include_router(r.router)
 
     @app.get("/", include_in_schema=False)

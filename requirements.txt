@@ -8,3 +8,7 @@ pydantic==2.13.5
 pydantic-settings==2.15.0
 PyYAML==6.0.3
 holidays==0.103
+# v2.0 conversational assistant: one SDK per provider (DeepSeek speaks the OpenAI shape)
+anthropic==1.4.0
+openai==3.8.0
+google-genai==2.22.0

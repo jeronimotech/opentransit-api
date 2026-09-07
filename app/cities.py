@@ -126,6 +126,38 @@ class PushConfig(BaseModel):
     apns: ApnsConfig = ApnsConfig()
 
 
+class AssistantConfig(BaseModel):
+    """Conversational assistant (v2.0). The model answers only from tool results, never from its own
+    knowledge, so `apiKey` is the single secret here: it stays server-side, is masked on read, and is
+    never part of any public payload."""
+    enabled: bool = False
+    provider: Literal["anthropic", "openai", "deepseek", "gemini"] = "anthropic"
+    model: str | None = None                 # None -> DEFAULT_MODELS[provider]
+    api_key: str | None = None
+    base_url: str | None = None
+    max_replies_per_session: int = 30
+    max_tool_calls_per_reply: int = 6
+    daily_budget_usd: float = 5.0
+    rate_limit_per_minute: int = 6
+    system_extra: str | None = None
+    log_conversations: bool = False
+
+    def public(self) -> dict:
+        """What a client may know: whether to show the entry point, and whose servers see the question."""
+        return {"enabled": self.enabled, "provider": self.provider}
+
+    def admin(self) -> dict:
+        """Everything the panel edits, camelCase. `apiKey` is real here and masked by the admin layer just
+        before it leaves the process — a payload built by this method must never reach a client."""
+        return {"enabled": self.enabled, "provider": self.provider, "model": self.model,
+                "apiKey": self.api_key, "baseUrl": self.base_url,
+                "maxRepliesPerSession": self.max_replies_per_session,
+                "maxToolCallsPerReply": self.max_tool_calls_per_reply,
+                "dailyBudgetUsd": self.daily_budget_usd,
+                "rateLimitPerMinute": self.rate_limit_per_minute,
+                "systemExtra": self.system_extra, "logConversations": self.log_conversations}
+
+
 class AppConfig(BaseModel):
     """Remote-configurable client behaviour (Maas pattern): polling, feature flags, forced update."""
     vehicle_poll_seconds: int = 15
@@ -137,6 +169,7 @@ class AppConfig(BaseModel):
     analytics: AnalyticsConfig = AnalyticsConfig()
     share: ShareConfig = ShareConfig()
     push: PushConfig = PushConfig()
+    assistant: AssistantConfig = AssistantConfig()
 
 
 class Links(BaseModel):
@@ -673,7 +706,8 @@ class City(BaseModel):
                        "share": {"enabled": self.config.share.enabled,
                                  "ttlMinutes": self.config.share.ttl_minutes},
                        # credentials never leave the server; clients only need to know who drives the activity
-                       "push": {"enabled": self.config.push.enabled}},
+                       "push": {"enabled": self.config.push.enabled},
+                       "assistant": self.config.assistant.public()},
             "links": self.links.model_dump(),
             "services": [s.model_dump() for s in self.services],
             "mobility": self.mobility_public(),

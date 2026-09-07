@@ -160,6 +160,14 @@ class ModeToggle(_Props):
     on: bool
 
 
+class AssistantQuery(_Props):
+    """v2.0. Deliberately the whole event: how many tools ran, how long it took, whether it worked. The
+    question and the answer are free text, so they may never appear here (see CONTRACT-analytics.md)."""
+    toolsUsed: int = Field(0, ge=0, le=20)
+    latencyMs: int = Field(0, ge=0, le=120000)
+    ok: bool = True
+
+
 class ErrorEvent(_Props):
     code: str = Field(max_length=40)
     screen: str | None = Field(None, max_length=30)
@@ -171,7 +179,7 @@ SCHEMAS: dict[str, type[_Props]] = {
     "stop_view": StopEvent, "board_view": StopEvent, "route_view": RouteView, "locate_query": LocateQuery,
     "handoff": Handoff, "rental_station_view": RentalStationView, "favorite_add": Favorite,
     "favorite_remove": Favorite, "alert_view": AlertView, "layer_toggle": LayerToggle, "mode_toggle": ModeToggle,
-    "error": ErrorEvent,
+    "error": ErrorEvent, "assistant_query": AssistantQuery,
 }
 
 
