@@ -110,15 +110,22 @@ def _body(res: Any) -> dict:
     return res if isinstance(res, dict) else json.loads(res.body)
 
 
-async def _resolve(ctx: ToolContext, query: str, near: str | None = None) -> dict | None:
-    """One geocode hit, or None. The single door through which a place becomes coordinates."""
+async def _candidates(ctx: ToolContext, query: str, near: str | None = None) -> list[dict]:
+    """The geocoder's ranked hits. Asking for several rather than one matters twice over: the ranker needs
+    a pool to rank, and a query like «Parque de la 93» can match a station whose name merely starts the
+    same way, so the model is shown the runners-up and can ask which one the user meant."""
     from ..geocode import geocode
     lat = lon = None
     if near and "," in str(near):
         a, b = str(near).split(",", 1)
         lat, lon = _num(a), _num(b)
-    results = await geocode(ctx.rt.city, str(query)[:120], lat, lon, 1)
-    return results[0] if results else None
+    return await geocode(ctx.rt.city, str(query)[:120], lat, lon, 5)
+
+
+async def _resolve(ctx: ToolContext, query: str, near: str | None = None) -> dict | None:
+    """The single door through which a place becomes coordinates."""
+    hits = await _candidates(ctx, query, near)
+    return hits[0] if hits else None
 
 
 def _trim(payload: Any) -> str:
@@ -147,12 +154,17 @@ async def _dispatch(ctx: ToolContext, name: str, args: dict) -> tuple[Any, dict 
     rt, city = ctx.rt, ctx.rt.city
 
     if name == "find_place":
-        hit = await _resolve(ctx, args.get("query") or "", args.get("near"))
-        if not hit:
+        hits = await _candidates(ctx, args.get("query") or "", args.get("near"))
+        if not hits:
             return {"found": False, "query": args.get("query")}, None
+        hit = hits[0]
+        others = [{"name": h.get("name"), "label": h.get("label"), "lat": h.get("lat"), "lon": h.get("lon"),
+                   "stopId": h.get("stopId"), "type": h.get("type")} for h in hits[1:4]]
         return ({"found": True, "name": hit.get("name"), "label": hit.get("label"),
                  "lat": hit.get("lat"), "lon": hit.get("lon"),
-                 "stopId": hit.get("stopId"), "type": hit.get("type")},
+                 "stopId": hit.get("stopId"), "type": hit.get("type"),
+                 # if the best hit does not look like what was asked for, say so instead of planning from it
+                 "alternatives": others},
                 {"kind": "place", "payload": hit})
 
     if name in ("plan_trip", "fare_estimate"):

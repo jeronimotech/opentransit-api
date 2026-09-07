@@ -1,4 +1,4 @@
-# opentransit-api — API contract (v1.5)
+# opentransit-api — API contract (v2.0)
 
 > Source of truth for the web and mobile apps. Deviations from the original shared contract are listed at the end.
 > Interactive docs: `GET /docs` (OpenAPI) on the running service.
@@ -692,3 +692,84 @@ Rules that keep the derived value honest:
   between frames (averaging 350° and 10° yields 0°, not 180°);
 * a bearing change alone marks a vehicle as updated in the SSE delta, so clients that diff on position still
   receive it.
+
+## v2.0 — conversational assistant (phase 1: text)
+
+`POST /v1/cities/{city}/chat` (SSE) and `GET /v1/cities/{city}/chat/health` (admin).
+
+The premise is narrow on purpose: **the model may not answer a transit question from its own knowledge.**
+It answers by calling our tools and paraphrasing what they return, so a hallucinated departure time is
+structurally impossible — it can only repeat what a tool said. If no tool can answer, it says so in one
+sentence.
+
+### Request
+
+```jsonc
+{
+  "sessionId": "abcd1234",                        // opaque, client-generated, never stored
+  "messages": [{"role": "user", "content": "¿Cómo llego del Parque de la 93 al Portal Sur?"}],
+  "context": {"lat": 4.6767, "lon": -74.0483, "locale": "es", "favorites": []}
+}
+```
+
+Only the text of previous turns is replayed: past tool calls are not, so every reply re-reads live data
+instead of paraphrasing a board from ten minutes ago.
+
+### Events
+
+| event   | data                                              | when |
+|---------|---------------------------------------------------|------|
+| `token` | `{text}`                                          | prose delta |
+| `tool`  | `{name, args}`                                    | a tool call starts |
+| `card`  | `{kind, payload}`                                 | **as soon as that tool returns**, before the prose about it |
+| `done`  | `{usage, costUsd, toolsUsed, latencyMs}`          | end of the reply |
+| `error` | `{code, message}`                                 | the provider failed mid-stream |
+
+Card kinds map to the components the apps already have: `place`, `itineraries`, `board`, `next`, `alerts`,
+`fares`, `stops`, `bikeStations`, `vehicles`, `routes`.
+
+Everything that can refuse a request is checked **before** the stream opens, so a refusal is an ordinary
+error envelope, not a 200 whose first event is bad news: `ASSISTANT_DISABLED` (404), `ASSISTANT_BUDGET`
+(503), `ASSISTANT_RATE_LIMITED` (429). `ASSISTANT_UPSTREAM` arrives as an `error` event once the stream is
+open, and as a 503 when the provider cannot even be constructed.
+
+### Tools
+
+`find_place` · `plan_trip` · `next_departures` · `locate_bus` · `service_alerts` · `fare_estimate` ·
+`nearby_stops` · `bike_stations` · `vehicles_near` · `route_info`.
+
+Every tool runs our own function **in-process** — the assistant never makes an HTTP request to this API.
+Coordinates come from the client's context or from `find_place`; the model may not invent them. `find_place`
+returns the ranked runners-up alongside the best hit, so the model can ask which place was meant instead of
+planning from a near-miss. A tool that fails returns a JSON error to the model rather than raising, so the
+reply becomes an explanation instead of a dead stream.
+
+### Providers and models
+
+One adapter per dialect behind a single internal event stream, so the clients never learn which provider a
+city configured. Each id and price below was read from the provider's own documentation on **2026-09-07**:
+
+| provider | SDK | default model | notes |
+|---|---|---|---|
+| `anthropic` | `anthropic` 1.4.0 | `claude-opus-5` | `messages.stream`, `strict: true` on the tool definition, `output_config: {effort: "low"}`, `cache_control` on the tools→system prefix |
+| `openai` | `openai` 3.8.0 | `gpt-6-astra` | Chat Completions; streamed tool-call fragments assembled by `index` |
+| `deepseek` | `openai` 3.8.0 | `deepseek-v4-pro` | the same adapter at `https://api.deepseek.com` |
+| `gemini` | `google-genai` 2.22.0 | `gemini-3.8-flash` | Interactions API, chained with `previous_interaction_id` |
+
+Parallel tool calls are executed concurrently and **all** their results go back in a single user message;
+splitting them teaches the model to stop parallelising. `max_tokens` is 1024 for every provider: the replies
+are short by design because the cards carry the detail.
+
+### Privacy and cost
+
+* The API key lives server-side only. It is masked on read and an omitted key keeps the stored one, exactly
+  like the on-demand credentials. It is never part of any public payload — `/v1/cities/{city}` publishes
+  only `{enabled, provider}`, which is what a client needs to show the entry point and name whose servers
+  see the question.
+* **Chat text never enters analytics.** The one event a client may send is `assistant_query` with
+  `{toolsUsed, latencyMs, ok}`; the schema drops everything else, so a question or an answer cannot be
+  recorded even by accident.
+* Conversations are not persisted unless `logConversations` is on.
+* Spend is metered per city per day from the provider's reported token usage and refused hard when the
+  budget is gone. An unknown model prices at 0 rather than blocking a city; `chat/health` reports
+  `startedAt` so an operator can tell a partial counter (the meter is in memory) from a full day.

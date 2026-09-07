@@ -291,3 +291,32 @@ moment of asking:
 `POST /live-activity/register|end` accept and no-op while the app updates its own activity locally (GO holds a
 foreground location session). Turning push on later is a config change plus credentials in the environment;
 the client calls do not change.
+
+## Conversational assistant (v2.0, phase 1: text)
+
+`POST /v1/cities/{city}/chat` streams an answer over SSE. The rule that makes it usable in transit is that
+the model may not answer from its own knowledge: it calls ten tools that run this API's own code in-process
+and paraphrases what they return, so it cannot invent a departure time. Cards (itineraries, arrival boards,
+alerts, fares, stations) are emitted the moment each tool returns, before the sentence describing them, so
+the app can render tappable results that lead into the real screens.
+
+Off by default. Enable it per city in `config.assistant` (admin-editable) once a key is configured:
+
+```yaml
+assistant:
+  enabled: true
+  provider: anthropic          # anthropic | openai | deepseek | gemini
+  model: null                  # null -> the provider's documented default
+  api_key: ${ASSISTANT_API_KEY:-}
+  daily_budget_usd: 5.0        # hard stop per city per day, metered from reported token usage
+  rate_limit_per_minute: 6     # per session
+```
+
+The key stays server-side, is masked on read and is never sent to a client — clients only learn
+`{enabled, provider}`, which is what they need to show the entry point and name whose servers see the
+question. Chat text never enters analytics: the only event is `assistant_query` with
+`{toolsUsed, latencyMs, ok}`. Model ids, prices and streaming shapes are documented in `docs/API.md`,
+each verified against the provider's own documentation on 2026-09-07.
+
+`GET /v1/cities/{city}/chat/health` (admin) reports the provider, the model, today's spend and the error
+count.

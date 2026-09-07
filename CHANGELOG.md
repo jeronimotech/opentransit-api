@@ -14,6 +14,36 @@ releases start.
   pairs more than 180 s apart are refused, the value is smoothed across two frames, and it is never
   defaulted to 0. Exposed in `/vehicles`, the SSE stream (deltas included) and `/vehicles/{id}`.
 
+## [2.0.0] - 2026-09-07 — conversational assistant (phase 1: text)
+
+### Added
+- **`POST /v1/cities/{city}/chat`** (SSE): a conversational assistant that may not answer a transit question
+  from its own knowledge. It calls ten tools that run this API's own code paths in-process — `plan_trip`,
+  `find_place`, `next_departures`, `locate_bus`, `service_alerts`, `fare_estimate`, `nearby_stops`,
+  `bike_stations`, `vehicles_near`, `route_info` — and paraphrases what they return, so a hallucinated
+  departure time is structurally impossible. Events: `token`, `tool`, `card`, `done`, `error`; each `card` is
+  emitted the moment its tool returns, before the prose about it, so the app paints the itinerary first and
+  the sentence second.
+- Three provider adapters behind one neutral event stream, so clients never learn which provider a city
+  configured: Anthropic (`anthropic` SDK, `messages.stream`, `strict: true` tools, `effort: "low"`,
+  `cache_control` on the tools→system prefix), OpenAI-compatible (covers DeepSeek at its own `baseUrl`) and
+  Gemini (Interactions API). Parallel tool calls run concurrently and all their results return in a single
+  user message. Model ids and prices verified against each provider's own documentation on 2026-09-07.
+- **`config.assistant`**, admin-editable: provider, model, key, limits, budget and `systemExtra`. The API key
+  is masked on read and an omitted key keeps the stored one, exactly like the on-demand credentials; a masked
+  key that matches the YAML value is dropped rather than copied, so a key held in the environment never gets
+  written into the database.
+- **`GET /v1/cities/{city}/chat/health`** (admin): provider, model, today's spend, calls and errors.
+- Per-city daily USD budget metered from the provider's reported token usage, refused hard with
+  `ASSISTANT_BUDGET` (503) when exhausted; per-session rate limit (`ASSISTANT_RATE_LIMITED`, 429) and reply
+  cap; `ASSISTANT_DISABLED` (404) where the assistant is off.
+- `assistant_query` analytics event carrying `{toolsUsed, latencyMs, ok}` and nothing else — the schema drops
+  free text and coordinates, so a question or an answer cannot be recorded even by accident.
+
+### Fixed
+- An admin config PUT no longer resets `config.share` and `config.push` to their defaults: both are now
+  carried through the effective-city rebuild alongside the new assistant section.
+
 ## [1.7.0] - 2026-09-06 — "cuándo salir", shared ETA, wearables, Live Activities
 ### Added
 - `GET /plan/forecast`: departure options across a window with gaps, service notes and a recommendation.
