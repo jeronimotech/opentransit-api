@@ -110,6 +110,10 @@ class ShareConfig(BaseModel):
     enabled: bool = True
     ttl_minutes: int = 180
     max_ttl_minutes: int = 720
+    # Where a shared link should send a person. The API only serves JSON, so a link
+    # pointing at it shows a wall of it to whoever the trip was sent to. Falls back to
+    # the WEB_BASE_URL setting; per-city because each tenant deploys its own web app.
+    web_base_url: str | None = None
 
 
 class ApnsConfig(BaseModel):

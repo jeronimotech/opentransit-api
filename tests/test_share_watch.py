@@ -406,3 +406,67 @@ async def test_one_failing_stop_does_not_sink_the_payload(bogota: City):
         r = await c.get("/v1/cities/bogota/watch/summary?stops=bogota:2300,bogota:2000")
     assert r.status_code == 200
     assert [i["stopId"] for i in r.json()["items"]] == ["bogota:2000"]
+
+
+# ------------------------------------------------------------------ the link a person receives
+@pytest.mark.anyio
+async def test_share_url_points_at_the_web_client_not_the_api(bogota: City, monkeypatch):
+    """A shared trip is read by a person, and the API only speaks JSON.
+
+    The link used to be built from the API's own base URL, so whoever received it got a
+    page of raw JSON instead of the trip.
+    """
+    from app.config import settings
+
+    settings.cache_clear()
+    monkeypatch.setenv("WEB_BASE_URL", "https://web.example.org/")
+    app, _ = _app(bogota)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://api.internal") as c:
+            r = await c.post("/v1/cities/bogota/share/eta", json={"itinerary": ITINERARY})
+            url = r.json()["url"]
+            token = r.json()["token"]
+        assert url == f"https://web.example.org/bogota/eta/{token}"
+        assert "/v1/" not in url and "api.internal" not in url
+    finally:
+        settings.cache_clear()
+
+
+@pytest.mark.anyio
+async def test_city_config_overrides_the_shared_web_base(bogota: City, monkeypatch):
+    """Each tenant deploys its own web client, so the city's own setting wins."""
+    from app.config import settings
+
+    settings.cache_clear()
+    monkeypatch.setenv("WEB_BASE_URL", "https://shared.example.org")
+    bogota.config.share.web_base_url = "https://viajes.bogota.gov.co"
+    app, _ = _app(bogota)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://api.internal") as c:
+            r = await c.post("/v1/cities/bogota/share/eta", json={"itinerary": ITINERARY})
+        assert r.json()["url"].startswith("https://viajes.bogota.gov.co/bogota/eta/")
+    finally:
+        bogota.config.share.web_base_url = None
+        settings.cache_clear()
+
+
+@pytest.mark.anyio
+async def test_unconfigured_web_base_warns_rather_than_failing(bogota: City, monkeypatch, caplog):
+    """Falling back to the API link keeps old deployments working, but it is not silent:
+    the link is unusable for its actual purpose."""
+    from app.config import settings
+
+    settings.cache_clear()
+    # Empty, not deleted: Settings also reads .env, so unsetting the process variable
+    # would not reach the unconfigured case on a developer machine.
+    monkeypatch.setenv("WEB_BASE_URL", "")
+    app, _ = _app(bogota)
+    try:
+        with caplog.at_level("WARNING", logger="ot.share"):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://api.internal") as c:
+                r = await c.post("/v1/cities/bogota/share/eta", json={"itinerary": ITINERARY})
+        assert r.status_code == 201
+        assert "web base URL" in caplog.text
+        assert "/v1/cities/bogota/share/eta/" in r.json()["url"]
+    finally:
+        settings.cache_clear()

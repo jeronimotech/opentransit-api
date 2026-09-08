@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 
 from fastapi import APIRouter, Body, Depends, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
 
+from ..config import settings
 from ..errors import ApiError
 from ..models import ShareCreateResponse, ShareReadResponse
 from ..runtime import CityRuntime, city_runtime
@@ -21,9 +23,27 @@ from ..share import (
     new_write_key,
 )
 
+log = logging.getLogger("ot.share")
+
 router = APIRouter(tags=["share"])
 
 NO_STORE = {"Cache-Control": "no-store"}
+
+
+def public_share_url(rt: CityRuntime, request: Request, token: str) -> str:
+    """The link a person receives.
+
+    It must open the web client. The API answers this path with JSON, so pointing a
+    shared link at it hands the recipient a page of raw JSON -- which is what happened
+    until the web base URL became configurable.
+    """
+    base = rt.city.config.share.web_base_url or settings().WEB_BASE_URL
+    if base:
+        return f"{base.rstrip('/')}/{rt.city.id}/eta/{token}"
+    log.warning(
+        "[%s] no web base URL configured (share.webBaseUrl or WEB_BASE_URL): the shared "
+        "link will point at this API and show JSON to whoever receives it", rt.city.id)
+    return f"{str(request.base_url).rstrip('/')}/v1/cities/{rt.city.id}/share/eta/{token}"
 
 
 class ShareNotFound(ApiError):
@@ -76,9 +96,8 @@ async def create_share(request: Request, rt: CityRuntime = Depends(city_runtime)
     await request.app.state.share_store.create(
         rt.city.id, token, hash_key(write_key), itinerary,
         label=label, started_at=body.get("startedAt"), expires_at=expires)
-    base = str(request.base_url).rstrip("/")
     return JSONResponse(
-        ShareCreateResponse(token=token, url=f"{base}/v1/cities/{rt.city.id}/share/eta/{token}",
+        ShareCreateResponse(token=token, url=public_share_url(rt, request, token),
                             write_key=write_key, expires_at=_iso(expires)).model_dump(by_alias=True),
         status_code=201, headers=NO_STORE)
 

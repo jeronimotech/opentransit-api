@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     ENABLE_ANALYTICS_JOBS: bool = True
     ANALYTICS_ROLLUP_SECONDS: int = 600
 
+    # Public base URL of the web client, used to build links meant for a person
+    # rather than for a client (a shared trip). Per-city override: `share.webBaseUrl`.
+    WEB_BASE_URL: str | None = None
+
     OTP_TIMEOUT_S: float = 25.0
     PHOTON_TIMEOUT_S: float = 4.0
     # Public Photon instances reject requests carrying a library's default User-Agent
