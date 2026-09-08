@@ -9,8 +9,9 @@ router = APIRouter(tags=["search"])
 
 @router.get("/v1/cities/{city}/geocode", response_model=GeocodeResponse)
 async def geocode(rt: CityRuntime = Depends(city_runtime), q: str = Query(..., min_length=1, max_length=120),
-                  lat: float | None = None, lon: float | None = None, limit: int = Query(8, ge=1, le=25)):
-    return {"results": await geo.geocode(rt.city, q, lat, lon, limit)}
+                  lat: float | None = None, lon: float | None = None, limit: int = Query(8, ge=1, le=25),
+                  locale: str | None = Query(None, description="es|en; defaults to the city's own locale")):
+    return {"results": await geo.geocode(rt.city, q, lat, lon, limit, locale)}
 
 
 @router.get("/v1/cities/{city}/reverse", response_model=ReverseResponse)

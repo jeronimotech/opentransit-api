@@ -17,6 +17,21 @@ log = logging.getLogger("ot.geocode")
 
 NEARBY_M = 800
 
+# The one word the API puts in a result's label. Everything else in `label` is data
+# (a stop code, a component), but this is UI text, and it used to be Spanish for every
+# city — so an English reader saw "Estación" and a city that does not speak Spanish
+# would have got Spanish nouns for its own stops.
+STOP_NOUNS = {
+    "es": {"station": "Estación", "stop": "Parada"},
+    "en": {"station": "Station", "stop": "Stop"},
+}
+
+
+def stop_noun(location_type: str, locale: str | None) -> str:
+    lang = (locale or "es").split("-")[0].lower()
+    words = STOP_NOUNS.get(lang) or STOP_NOUNS["es"]
+    return words["station"] if location_type == "station" else words["stop"]
+
 # Reserve part of the page for address/POI results. In a stop-dense city every GTFS
 # station outranks every Photon hit, so a pure sort + truncate returns eight unrelated
 # stations for "Calle 85 #12-30" and never the address itself.
@@ -107,7 +122,8 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
     return sorted(results, key=key)
 
 
-async def search_stops(city: City, q: str, lat: float | None, lon: float | None, limit: int) -> list[dict]:
+async def search_stops(city: City, q: str, lat: float | None, lon: float | None, limit: int,
+                       locale: str | None = None) -> list[dict]:
     qn = normalize_name(q)
     if len(qn) < 2:
         return []
@@ -131,7 +147,7 @@ async def search_stops(city: City, q: str, lat: float | None, lon: float | None,
         s = stop_from_db(city, dict(r))
         out.append({
             "id": f"stop:{s['id']}", "name": s["name"],
-            "label": ("Estación" if s["locationType"] == "station" else "Parada")
+            "label": stop_noun(s["locationType"], locale or city.locale)
             + (f" · {s['code']}" if s.get("code") else "") + (f" · {s['component']}" if s.get("component") else ""),
             "lat": s["lat"], "lon": s["lon"], "type": s["locationType"] if s["locationType"] != "entrance" else "stop",
             "stopId": s["id"], "component": s.get("component"), "source": "gtfs", "_nRoutes": r["n_routes"],
@@ -185,12 +201,13 @@ async def search_photon(city: City, q: str, lat: float | None, lon: float | None
     return out
 
 
-async def geocode(city: City, q: str, lat: float | None, lon: float | None, limit: int) -> list[dict]:
+async def geocode(city: City, q: str, lat: float | None, lon: float | None, limit: int,
+                  locale: str | None = None) -> list[dict]:
     import asyncio
     # Over-fetch from both sources: ranking and street collapsing need candidates to choose
     # from. Asking Photon for exactly `limit` once returned the Calle 85 segment 6 km from
     # the user because the nearer one never made it into the response.
-    stops, photon = await asyncio.gather(search_stops(city, q, lat, lon, limit),
+    stops, photon = await asyncio.gather(search_stops(city, q, lat, lon, limit, locale),
                                          search_photon(city, q, lat, lon, max(limit * 3, 15)))
     seen, merged = set(), []
     for r in rank_results(_collapse_streets(city, photon, lat, lon) + stops, q, lat, lon):

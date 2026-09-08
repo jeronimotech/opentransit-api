@@ -96,3 +96,22 @@ def test_requests_identify_themselves():
 def test_the_default_client_would_be_rejected():
     """Guards the regression directly: httpx's own default is what earned the 403."""
     assert "httpx" in httpx.Client().headers["user-agent"].lower()
+
+
+def test_the_stop_noun_follows_the_reader_not_the_developer():
+    """`label` is mostly data (a code, a component) but this one word is UI text.
+
+    It was Spanish for every reader and every city, so an English user saw "Estación",
+    and a city that does not speak Spanish would have had Spanish nouns for its stops."""
+    from app.geocode import stop_noun
+
+    assert stop_noun("station", "es") == "Estación"
+    assert stop_noun("stop", "es") == "Parada"
+    assert stop_noun("station", "en") == "Station"
+    assert stop_noun("stop", "en") == "Stop"
+    # Region subtags and case are common in a city's configured locale.
+    assert stop_noun("station", "en-US") == "Station"
+    assert stop_noun("station", "ES-CO") == "Estación"
+    # An unknown language falls back rather than failing a search.
+    assert stop_noun("stop", "pt-BR") == "Parada"
+    assert stop_noun("stop", None) == "Parada"
