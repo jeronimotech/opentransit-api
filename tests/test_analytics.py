@@ -206,8 +206,10 @@ async def test_endpoints_apply_k_threshold_and_export(bogota: City):
     app, rt, store = _app(bogota)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         # 4 sessions: everything stays below k=5 -> suppressed; totals still count
+        # One cohort per session: the threshold counts devices, so sharing a cohort
+        # here would mean four sessions of the *same* person, which must never clear it.
         for sid, evs in _fixture_events(4):
-            r = await c.post("/v1/cities/bogota/events", json=_batch(evs, session=sid))
+            r = await c.post("/v1/cities/bogota/events", json=_batch(evs, session=sid, cohort=f"coh-{sid[-8:]}"))
             assert r.status_code == 202 and r.json()["rejected"] == []
         assert (await c.post("/v1/admin/cities/bogota/analytics/rollup", headers=H)).status_code == 200
         q = "?from=2026-09-01&to=2026-09-10"
@@ -220,7 +222,7 @@ async def test_endpoints_apply_k_threshold_and_export(bogota: City):
         assert s["totals"]["sessions"] == 4 and s["totals"]["planRequests"] == 4 and s["topRoutes"] == []
         # two more sessions -> 6 >= k: cells, pairs, routes, searches appear
         for sid, evs in _fixture_events(6)[4:]:
-            await c.post("/v1/cities/bogota/events", json=_batch(evs, session=sid))
+            await c.post("/v1/cities/bogota/events", json=_batch(evs, session=sid, cohort=f"coh-{sid[-8:]}"))
         await c.post("/v1/admin/cities/bogota/analytics/rollup", headers=H)
         od = (await c.get(f"/v1/admin/cities/bogota/analytics/od{q}", headers=H)).json()
         assert len(od["pairs"]) == 1 and od["pairs"][0]["n"] == 6 and od["pairs"][0]["fromCenter"]["lat"]
@@ -307,3 +309,52 @@ async def test_health_queue_lag_is_zero_after_rollup_and_reports_pending(bogota:
 
 def test_public_city_exposes_analytics_config(bogota: City):
     assert bogota.public()["config"]["analytics"] == {"enabled": True, "retentionDays": 90, "kThreshold": 5}
+
+
+@pytest.mark.anyio
+async def test_one_person_never_publishes_their_own_cell(bogota: City):
+    """k counts devices per day, not events.
+
+    The threshold used to be `SUM(n) >= k` over the hourly rollups, which counts
+    events: twelve trips planned from one home cleared a threshold of five and
+    published that 150 m cell — which is exactly what the panel, the contract and
+    the public privacy policy promise never happens.
+    """
+    app, rt, store = _app(bogota)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        # One person, twenty sessions, the same origin and destination every time.
+        for sid, evs in _fixture_events(20):
+            await c.post("/v1/cities/bogota/events",
+                         json=_batch(evs, session=sid, cohort="coh-the-same-one"))
+        assert (await c.post("/v1/admin/cities/bogota/analytics/rollup", headers=H)).status_code == 200
+        q = "?from=2026-09-01&to=2026-09-10"
+        od = (await c.get(f"/v1/admin/cities/bogota/analytics/od{q}", headers=H)).json()
+        assert od["pairs"] == [], "one device cleared the threshold by repeating itself"
+        assert od["cells"]["features"] == []
+        for kind in ("origin", "destination", "search"):
+            pl = (await c.get(f"/v1/admin/cities/bogota/analytics/places{q}&kind={kind}", headers=H)).json()
+            assert pl["items"] == [], f"{kind} cells leaked a single device"
+        # The totals are not location, so they still count: 20 sessions really happened.
+        s = (await c.get(f"/v1/admin/cities/bogota/analytics/summary{q}", headers=H)).json()
+        assert s["totals"]["sessions"] == 20
+
+
+@pytest.mark.anyio
+async def test_a_day_below_the_threshold_contributes_nothing(bogota: City):
+    """The salt rotates daily, so a cohort is only linkable within a day. A day that
+    did not reach k on its own therefore cannot be pooled with one that did."""
+    app, rt, store = _app(bogota)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        # Day one: five devices, one trip each — enough on its own.
+        for sid, evs in _fixture_events(5):
+            await c.post("/v1/cities/bogota/events",
+                         json=_batch(evs, session=f"d1-{sid}", cohort=f"coh-day1-{sid[-4:]}"))
+        # Day two: a single device planning the same trip four more times.
+        day2 = [(f"d2-{i}", [_ev("plan_request", PLAN, at=T0 + dt.timedelta(days=1))]) for i in range(4)]
+        for sid, evs in day2:
+            await c.post("/v1/cities/bogota/events", json=_batch(evs, session=sid, cohort="coh-lonely"))
+        await c.post("/v1/admin/cities/bogota/analytics/rollup", headers=H)
+        od = (await c.get("/v1/admin/cities/bogota/analytics/od?from=2026-09-01&to=2026-09-10",
+                          headers=H)).json()
+        # Day one's five survive; day two's four are dropped rather than added on top.
+        assert len(od["pairs"]) == 1 and od["pairs"][0]["n"] == 5

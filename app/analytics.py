@@ -466,28 +466,60 @@ class MemoryAnalyticsStore:
             return [r for r in rows if day_from <= r["hour"].date() <= day_to]
         return [r for r in rows if day_from <= r["day"] <= day_to]
 
+    # Location aggregates come from the raw events, not the rollups: only the events
+    # carry the cohort, and the threshold counts devices per day. See the Postgres
+    # store's `od` for why a day is the largest window in which that means anything.
+    def _local_day(self, row, tz) -> dt.date:
+        return row["at_bucket"].astimezone(tz).date()
+
+    def _events(self, city_id, day_from, day_to, tz) -> list[dict]:
+        return [r for r in self.rows
+                if r["city_id"] == city_id and day_from <= self._local_day(r, tz) <= day_to]
+
     async def od(self, city_id, day_from, day_to, k, limit, tz):
-        rows = await self.fetch("agg_od_hourly", city_id, day_from, day_to)
-        pairs: Counter = Counter()
-        for r in rows:
-            pairs[(r["from_gh7"], r["to_gh7"])] += r["n"]
-        top = sorted(((a, b, n) for (a, b), n in pairs.items() if n >= k), key=lambda x: -x[2])[:limit]
-        prow = await self.fetch("agg_place_hourly", city_id, day_from, day_to)
-        cells: dict = defaultdict(lambda: Counter())
-        for r in prow:
-            cells[r["gh7"]][r["kind"]] += r["n"]
+        evs = self._events(city_id, day_from, day_to, tz)
+
+        # (day, bucket) -> devices seen, and its event count. A day below k contributes
+        # nothing, so one person planning repeatedly never publishes their own cell.
+        def survivors(key) -> Counter:
+            per_day: dict = defaultdict(lambda: [set(), 0])
+            for r in evs:
+                for bucket in key(r):
+                    e = per_day[(self._local_day(r, tz), bucket)]
+                    e[0].add(r["cohort_hash"])
+                    e[1] += 1
+            out: Counter = Counter()
+            for (_, bucket), (devices, n) in per_day.items():
+                if len(devices) >= k:
+                    out[bucket] += n
+            return out
+
+        pairs = survivors(lambda r: [(r["from_gh7"], r["to_gh7"])] if r.get("from_gh7") and r.get("to_gh7") else [])
+        top = sorted(((a, b, n) for (a, b), n in pairs.items()), key=lambda x: -x[2])[:limit]
+        origins = survivors(lambda r: [r["from_gh7"]] if r.get("from_gh7") else [])
+        dests = survivors(lambda r: [r["to_gh7"]] if r.get("to_gh7") else [])
+        searches = survivors(lambda r: [r["gh7"]] if r.get("gh7") and r["type"] == "search_select" else [])
+        gh7s = set(origins) | set(dests) | set(searches)
         return {"pairs": [{"from_gh7": a, "to_gh7": b, "n": n} for a, b, n in top],
-                "cells": [{"gh7": g, "origins": c["origin"], "destinations": c["destination"],
-                           "searches": c["search"]} for g, c in cells.items()
-                          if max(c["origin"], c["destination"], c["search"]) >= k]}
+                "cells": [{"gh7": g, "origins": origins[g], "destinations": dests[g], "searches": searches[g]}
+                          for g in sorted(gh7s, key=lambda g: -origins[g])]}
 
     async def places(self, city_id, day_from, day_to, kind, k, limit, tz):
-        rows = await self.fetch("agg_place_hourly", city_id, day_from, day_to)
-        c: Counter = Counter()
-        for r in rows:
-            if r["kind"] == kind:
-                c[r["gh7"]] += r["n"]
-        return [{"gh7": g, "n": n} for g, n in c.most_common() if n >= k][:limit]
+        col = {"origin": "from_gh7", "destination": "to_gh7", "search": "gh7"}[kind]
+        per_day: dict = defaultdict(lambda: [set(), 0])
+        for r in self._events(city_id, day_from, day_to, tz):
+            if not r.get(col):
+                continue
+            if kind == "search" and r["type"] != "search_select":
+                continue
+            e = per_day[(self._local_day(r, tz), r[col])]
+            e[0].add(r["cohort_hash"])
+            e[1] += 1
+        out: Counter = Counter()
+        for (_, gh7), (devices, n) in per_day.items():
+            if len(devices) >= k:
+                out[gh7] += n
+        return [{"gh7": g, "n": n} for g, n in out.most_common()][:limit]
 
     async def health(self, city_id: str) -> dict:
         today = dt.datetime.now(dt.UTC).date()
@@ -635,20 +667,62 @@ class PgAnalyticsStore:
         return [dict(r) for r in rows]
 
     async def od(self, city_id, day_from, day_to, k, limit, tz):
+        """Origin/destination cells and pairs, k-anonymised over **devices, per day**.
+
+        This used to threshold on `SUM(n)` from the hourly rollups, which counts
+        *events*: one person planning six trips from home cleared a threshold of
+        five and published their own 150 m cell. The admin panel, the contract and
+        the public privacy policy all say people, so the code was the thing that
+        was wrong.
+
+        Counting distinct `cohort_hash` over the whole window would not fix it
+        either: the salt rotates daily *by design*, so the same person is a
+        different hash tomorrow and would be counted again. A day is therefore the
+        largest window in which "distinct devices" means anything, so a (day, cell)
+        that did not reach k on its own contributes nothing. A lone user never
+        surfaces; a genuinely busy cell contributes the days it was busy.
+
+        Read from the raw events rather than the rollups, because only they carry
+        the cohort. Retention (90 days) covers every range the panel offers; a
+        window reaching further back simply has no events left to count, which is
+        the honest answer rather than a silently weaker one.
+        """
         lo, hi = _hour_range(day_from, day_to, tz)
+        # asyncpg sends parameters as-is, and `AT TIME ZONE` wants the zone's name.
+        tzname = str(tz)
         async with pool().acquire() as c:
-            pairs = await c.fetch("SELECT from_gh7, to_gh7, SUM(n)::int AS n FROM agg_od_hourly WHERE city_id=$1 "
-                                  "AND hour >= $2 AND hour < $3 GROUP BY from_gh7, to_gh7 HAVING SUM(n) >= $4 "
-                                  "ORDER BY n DESC LIMIT $5", city_id, lo, hi, k, limit)
-            cells = await c.fetch("SELECT gh7, SUM(n) FILTER (WHERE kind='origin')::int AS origins, "
-                                  "SUM(n) FILTER (WHERE kind='destination')::int AS destinations, "
-                                  "SUM(n) FILTER (WHERE kind='search')::int AS searches FROM agg_place_hourly "
-                                  "WHERE city_id=$1 AND hour >= $2 AND hour < $3 GROUP BY gh7 "
-                                  "HAVING GREATEST(SUM(n) FILTER (WHERE kind='origin'), "
-                                  "SUM(n) FILTER (WHERE kind='destination'), "
-                                  "SUM(n) FILTER (WHERE kind='search')) >= $4 "
-                                  "ORDER BY 2 DESC NULLS LAST LIMIT 5000",
-                                  city_id, lo, hi, k)
+            pairs = await c.fetch(
+                "WITH per_day AS ("
+                "  SELECT (at_bucket AT TIME ZONE $6)::date AS d, from_gh7, to_gh7,"
+                "         count(*) AS n, count(DISTINCT cohort_hash) AS devices"
+                "    FROM analytics_event"
+                "   WHERE city_id=$1 AND at_bucket >= $2 AND at_bucket < $3"
+                "     AND from_gh7 IS NOT NULL AND to_gh7 IS NOT NULL"
+                "   GROUP BY 1, 2, 3)"
+                "SELECT from_gh7, to_gh7, SUM(n)::int AS n FROM per_day WHERE devices >= $4 "
+                "GROUP BY from_gh7, to_gh7 ORDER BY n DESC LIMIT $5",
+                city_id, lo, hi, k, limit, tzname)
+            cells = await c.fetch(
+                "WITH per_day AS ("
+                "  SELECT (at_bucket AT TIME ZONE $4)::date AS d, gh7, kind,"
+                "         count(*) AS n, count(DISTINCT cohort_hash) AS devices"
+                "    FROM ("
+                "      SELECT at_bucket, cohort_hash, gh7, 'search' AS kind FROM analytics_event"
+                "       WHERE city_id=$1 AND at_bucket >= $2 AND at_bucket < $3"
+                "         AND type='search_select' AND gh7 IS NOT NULL"
+                "      UNION ALL"
+                "      SELECT at_bucket, cohort_hash, from_gh7, 'origin' FROM analytics_event"
+                "       WHERE city_id=$1 AND at_bucket >= $2 AND at_bucket < $3 AND from_gh7 IS NOT NULL"
+                "      UNION ALL"
+                "      SELECT at_bucket, cohort_hash, to_gh7, 'destination' FROM analytics_event"
+                "       WHERE city_id=$1 AND at_bucket >= $2 AND at_bucket < $3 AND to_gh7 IS NOT NULL"
+                "    ) e GROUP BY 1, 2, 3)"
+                "SELECT gh7, SUM(n) FILTER (WHERE kind='origin')::int AS origins, "
+                "       SUM(n) FILTER (WHERE kind='destination')::int AS destinations, "
+                "       SUM(n) FILTER (WHERE kind='search')::int AS searches "
+                "  FROM per_day WHERE devices >= $5 GROUP BY gh7 "
+                " ORDER BY 2 DESC NULLS LAST LIMIT 5000",
+                city_id, lo, hi, tzname, k)
         return {"pairs": [dict(r) for r in pairs],
                 "cells": [{"gh7": r["gh7"], "origins": r["origins"] or 0, "destinations": r["destinations"] or 0,
                            "searches": r["searches"] or 0} for r in cells]}
@@ -656,10 +730,22 @@ class PgAnalyticsStore:
     async def places(self, city_id, day_from, day_to, kind, k, limit, tz):
         lo, hi = _hour_range(day_from, day_to, tz)
         async with pool().acquire() as c:
-            rows = await c.fetch("SELECT gh7, SUM(n)::int AS n FROM agg_place_hourly WHERE city_id=$1 AND kind=$2 "
-                                 "AND hour >= $3 AND hour < $4 GROUP BY gh7 HAVING SUM(n) >= $5 "
-                                 "ORDER BY n DESC LIMIT $6",
-                                 city_id, kind, lo, hi, k, limit)
+            # Same rule as od(): a (day, cell) that did not reach k devices on its own
+            # contributes nothing, so no one publishes a cell by themselves.
+            col = {"origin": "from_gh7", "destination": "to_gh7", "search": "gh7"}[kind]
+            tzname = str(tz)
+            rows = await c.fetch(
+                "WITH per_day AS ("
+                f"  SELECT (at_bucket AT TIME ZONE $5)::date AS d, {col} AS gh7,"
+                "          count(*) AS n, count(DISTINCT cohort_hash) AS devices"
+                "     FROM analytics_event"
+                "    WHERE city_id=$1 AND at_bucket >= $2 AND at_bucket < $3"
+                f"     AND {col} IS NOT NULL"
+                + ("  AND type='search_select'" if kind == "search" else "")
+                + "   GROUP BY 1, 2)"
+                "SELECT gh7, SUM(n)::int AS n FROM per_day WHERE devices >= $4 "
+                "GROUP BY gh7 ORDER BY n DESC LIMIT $6",
+                city_id, lo, hi, k, tzname, limit)
         return [dict(r) for r in rows]
 
     async def health(self, city_id: str) -> dict:
