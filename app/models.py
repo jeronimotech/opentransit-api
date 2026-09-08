@@ -545,6 +545,16 @@ class OpenMobilityHealth(Out):
     mds: OpenMobilityMdsHealth = OpenMobilityMdsHealth()
 
 
+class GeocoderHealth(Out):
+    enabled: bool = False
+    provider: str | None = None
+    calls: int = 0
+    failed: int = 0
+    ok_rate: float | None = None
+    last_error: str | None = None
+    last_error_age_seconds: int | None = None
+
+
 class CityHealth(Out):
     static: StaticHealth
     realtime: RealtimeHealth
@@ -553,6 +563,7 @@ class CityHealth(Out):
     ondemand: OnDemandHealth = OnDemandHealth()
     analytics: AnalyticsHealth = AnalyticsHealth()
     open_mobility: OpenMobilityHealth = OpenMobilityHealth()
+    geocoder: GeocoderHealth = GeocoderHealth()
 
 
 # ------------------------------------------------------------------ v1.2 shared vehicles (GBFS)

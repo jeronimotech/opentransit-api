@@ -1,5 +1,7 @@
 """Search: GTFS stops/stations from Postgres (trigram + prefix), merged with Photon (OSM) results."""
 import logging
+import re
+import time
 
 import httpx
 
@@ -15,6 +17,53 @@ log = logging.getLogger("ot.geocode")
 
 NEARBY_M = 800
 
+# Reserve part of the page for address/POI results. In a stop-dense city every GTFS
+# station outranks every Photon hit, so a pure sort + truncate returns eight unrelated
+# stations for "Calle 85 #12-30" and never the address itself.
+MIN_PLACE_SLOTS = 3
+
+# A house number is the strongest signal that the user means a street address and not a
+# similarly named stop. Covers "Calle 85 #12-30", "Cra 7 No 72-41", "Av 68 # 24 - 10" and
+# the anglophone "221B Baker Street".
+_HOUSE_NUMBER = re.compile(r"(#\s*\d|\bn[o°º]?\.?\s*\d|\d+\s*-\s*\d|^\s*\d+[a-z]?\s+\w)", re.I)
+
+
+def looks_like_address(q: str) -> bool:
+    return bool(_HOUSE_NUMBER.search(q or ""))
+
+
+def _geocoder_headers() -> dict:
+    return {"User-Agent": settings().GEOCODER_USER_AGENT}
+
+
+class _ProviderHealth:
+    """Photon failing is invisible otherwise: the caller still gets GTFS stops and no error.
+    It was returning 403 for every request and nothing surfaced it."""
+
+    def __init__(self) -> None:
+        self.ok = 0
+        self.failed = 0
+        self.last_error: str | None = None
+        self.last_error_at: float | None = None
+
+    def record_ok(self) -> None:
+        self.ok += 1
+
+    def record_failure(self, e: object) -> None:
+        self.failed += 1
+        self.last_error = str(e)[:300]
+        self.last_error_at = time.time()
+
+    def snapshot(self) -> dict:
+        total = self.ok + self.failed
+        return {"calls": total, "failed": self.failed,
+                "okRate": round(self.ok / total, 3) if total else None,
+                "lastError": self.last_error,
+                "lastErrorAgeSeconds": int(time.time() - self.last_error_at) if self.last_error_at else None}
+
+
+photon_health = _ProviderHealth()
+
 
 def rank_results(results: list[dict], q: str, lat: float | None = None, lon: float | None = None) -> list[dict]:
     """With a user position: GTFS stops/stations within NEARBY_M first (closest first), then stations, then
@@ -22,6 +71,9 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
     qn = normalize_name(q)
     have_pos = lat is not None and lon is not None
     named_query = " " in qn.strip()
+    # "Calle 85 #12-30" is not a request for the station named "Calle 34". When the query
+    # carries a house number the address IS the answer, so it outranks every stop.
+    address_query = looks_like_address(q)
 
     def dist(r: dict) -> float | None:
         if not have_pos or r.get("lat") is None:
@@ -41,9 +93,11 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
         # there an exact match IS the answer: "Parque de la 93" used to return
         # the station "Parque" first, and the assistant planned from the wrong
         # place because of it.
+        addr_hit = address_query and r["source"] == "photon" and r["type"] in ("address", "street")
         return (
-            0 if near else 1 if (exact and named_query) else 2 if r["type"] == "station"
-            else 3 if r["source"] == "gtfs" else 4,
+            0 if addr_hit else
+            1 if near else 2 if (exact and named_query) else 3 if r["type"] == "station"
+            else 4 if r["source"] == "gtfs" else 5,
             d if near else 0,
             0 if exact else 1 if prefix else 2 if word else 3,
             -(r.get("_nRoutes") or 0),
@@ -109,12 +163,16 @@ async def search_photon(city: City, q: str, lat: float | None, lon: float | None
     if lat is not None and lon is not None:
         params.update(lat=lat, lon=lon)
     try:
-        async with httpx.AsyncClient(timeout=settings().PHOTON_TIMEOUT_S) as cli:
+        async with httpx.AsyncClient(timeout=settings().PHOTON_TIMEOUT_S,
+                                     headers=_geocoder_headers()) as cli:
             r = await cli.get(f"{url.rstrip('/')}/api/", params=params)
             r.raise_for_status()
             feats = r.json().get("features") or []
+        photon_health.record_ok()
     except Exception as e:  # noqa: BLE001
-        log.warning("[%s] photon failed: %s", city.id, e)
+        photon_health.record_failure(e)
+        # Errors here silently degrade search to stops-only, so they are not a warning.
+        log.error("[%s] photon search failed (addresses unavailable): %s", city.id, e)
         return []
     out = []
     for f in feats:
@@ -129,33 +187,85 @@ async def search_photon(city: City, q: str, lat: float | None, lon: float | None
 
 async def geocode(city: City, q: str, lat: float | None, lon: float | None, limit: int) -> list[dict]:
     import asyncio
+    # Over-fetch from both sources: ranking and street collapsing need candidates to choose
+    # from. Asking Photon for exactly `limit` once returned the Calle 85 segment 6 km from
+    # the user because the nearer one never made it into the response.
     stops, photon = await asyncio.gather(search_stops(city, q, lat, lon, limit),
-                                         search_photon(city, q, lat, lon, limit))
+                                         search_photon(city, q, lat, lon, max(limit * 3, 15)))
     seen, merged = set(), []
-    for r in rank_results(stops + photon, q, lat, lon):
+    for r in rank_results(_collapse_streets(city, photon, lat, lon) + stops, q, lat, lon):
         k = (round(r["lat"] or 0, 4), round(r["lon"] or 0, 4), normalize_name(r["name"]))
         if k in seen:
             continue
         seen.add(k)
         r.pop("_nRoutes", None)
         merged.append(r)
-    return merged[:limit]
+    return _reserve_place_slots(merged, limit)
+
+
+def _collapse_streets(city: City, results: list[dict], lat: float | None, lon: float | None) -> list[dict]:
+    """OSM splits a long street into segments, so "Calle 85" comes back several times.
+    Keep one per name, and keep the segment nearest the user (city centre when we have no
+    position) -- picking an arbitrary segment can land the trip kilometres from the door."""
+    ref_lat = lat if lat is not None else city.center.lat
+    ref_lon = lon if lon is not None else city.center.lon
+    best: dict[str, dict] = {}
+    out = []
+    for r in results:
+        if r["type"] != "street" or r.get("lat") is None:
+            out.append(r)
+            continue
+        key = normalize_name(r["name"])
+        d = haversine_m(ref_lat, ref_lon, r["lat"], r["lon"])
+        if key not in best or d < best[key]["_d"]:
+            best[key] = {**r, "_d": d}
+    for r in best.values():
+        r.pop("_d", None)
+        out.append(r)
+    return out
+
+
+def _reserve_place_slots(ranked: list[dict], limit: int) -> list[dict]:
+    """Keep the ranked order but guarantee addresses and POIs a share of the page.
+
+    Ranking alone is not enough: a query like "Calle 85" matches dozens of GTFS stations,
+    all of which sort above any Photon result, so plain truncation returns stops only and
+    the user can never pick an address to walk or cycle to."""
+    head = ranked[:limit]
+    quota = min(MIN_PLACE_SLOTS, limit)
+    places_in_head = sum(1 for r in head if r["source"] != "gtfs")
+    missing = quota - places_in_head
+    if missing <= 0:
+        return head
+    spare = [r for r in ranked[limit:] if r["source"] != "gtfs"][:missing]
+    if not spare:
+        return head
+    # Drop the weakest GTFS rows to make room, never a place already earned its slot.
+    droppable = [i for i, r in enumerate(head) if r["source"] == "gtfs"]
+    for i in droppable[-len(spare):]:
+        head[i] = None  # type: ignore[call-overload]
+    kept = [r for r in head if r is not None]
+    order = {id(r): i for i, r in enumerate(ranked)}
+    return sorted(kept + spare, key=lambda r: order[id(r)])
 
 
 async def reverse(city: City, lat: float, lon: float) -> dict:
     url = city.geocoder.photon_url
     if url:
         try:
-            async with httpx.AsyncClient(timeout=settings().PHOTON_TIMEOUT_S) as cli:
+            async with httpx.AsyncClient(timeout=settings().PHOTON_TIMEOUT_S,
+                                         headers=_geocoder_headers()) as cli:
                 r = await cli.get(f"{url.rstrip('/')}/reverse", params={"lat": lat, "lon": lon})
                 r.raise_for_status()
                 feats = r.json().get("features") or []
+            photon_health.record_ok()
             if feats:
                 p = feats[0]["properties"]
                 name = ", ".join(str(x) for x in (p.get("name"), p.get("street"), p.get("housenumber")) if x)
                 return {"name": name or _photon_label(p) or f"{lat:.5f}, {lon:.5f}", "lat": lat, "lon": lon}
         except Exception as e:  # noqa: BLE001
-            log.warning("[%s] photon reverse failed: %s", city.id, e)
+            photon_health.record_failure(e)
+            log.error("[%s] photon reverse failed: %s", city.id, e)
     async with pool().acquire() as c:
         fv = await c.fetchval("SELECT id FROM feed_version WHERE city=$1 AND is_active LIMIT 1", city.id)
         row = await c.fetchrow(
