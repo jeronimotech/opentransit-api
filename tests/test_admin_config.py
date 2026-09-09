@@ -138,3 +138,32 @@ async def test_invalid_put_is_rejected_without_saving(bogota: City):
         assert r.status_code == 422 and "duplicate" in r.json()["error"]["message"]
         assert (await c.get("/v1/admin/cities/bogota/config/history", headers=H)).json()["items"] == []
     assert rt.override is None and rt.city.fares.base == 3200
+
+
+def test_update_urls_are_server_side_and_admin_editable(bogota: City):
+    """The forced-update screen is only useful if its destination is data.
+
+    Someone blocked on an old build cannot be sent new code, so the place to get the
+    update has to arrive over the wire — and it has to be editable, because the day
+    iOS moves from TestFlight to the App Store the builds already installed follow.
+    """
+    pub = bogota.public()["config"]
+    assert "updateUrls" in pub, "clients cannot find out where to update"
+    assert pub["updateUrls"]["ios"] and pub["updateUrls"]["android"]
+
+    eff = effective_city(bogota, {"config": {"updateUrls": {"ios": "https://apps.apple.com/app/id6809010622"}}})
+    assert eff.config.update_urls.ios == "https://apps.apple.com/app/id6809010622"
+    # The patch replaces one key without wiping the other.
+    assert eff.config.update_urls.android == bogota.config.update_urls.android
+
+
+def test_update_urls_accept_store_schemes_and_refuse_the_rest(bogota: City):
+    """TestFlight and Play have their own schemes, and those open the app rather than
+    a browser tab. Anything else would send a blocked person somewhere useless."""
+    for ok in ("itms-beta://beta.itunes.apple.com/v1/app/1", "market://details?id=a.b",
+               "https://apps.apple.com/app/id1", "itms-apps://apps.apple.com/app/id1"):
+        assert effective_city(bogota, {"config": {"updateUrls": {"ios": ok}}}).config.update_urls.ios == ok
+    for bad in ("http://insecure.example/app", "javascript:alert(1)", "ftp://x/y"):
+        with pytest.raises(ApiError) as e:
+            effective_city(bogota, {"config": {"updateUrls": {"ios": bad}}})
+        assert e.value.status == 422 and "updateUrls" in e.value.message

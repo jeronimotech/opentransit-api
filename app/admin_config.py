@@ -48,6 +48,7 @@ from .cities import (
     TaxiSurchargeWhen,
     TaxiTariff,
     TaxiZone,
+    UpdateUrls,
 )
 from .db import pool
 from .errors import ApiError
@@ -64,6 +65,19 @@ LANDING_ICONS = ("route", "live", "board", "bike", "open", "alert", "accessibili
 # ------------------------------------------------------------------ strict validation (camelCase, public shape)
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+# The stores are not all reachable over https: TestFlight and Play both have their own
+# scheme, and those are the ones that open the right app instead of a browser tab.
+_UPDATE_SCHEMES = ("https://", "itms-beta://", "itms-apps://", "market://")
+
+
+def _update_url(v: str | None) -> str | None:
+    if v is None or not v.strip():
+        return None
+    if not v.startswith(_UPDATE_SCHEMES):
+        raise ValueError("must start with " + ", ".join(_UPDATE_SCHEMES))
+    return v
 
 
 def _https(v: str | None) -> str | None:
@@ -129,11 +143,21 @@ class AssistantCfg(_Strict):
     _v = field_validator("baseUrl")(_https)
 
 
+class UpdateUrlsCfg(_Strict):
+    """Where a blocked build goes to update. Editable here on purpose: the day iOS
+    moves from TestFlight to the App Store, the builds already installed follow."""
+    ios: str | None = None
+    android: str | None = None
+
+    _v = field_validator("ios", "android")(_update_url)
+
+
 class ConfigCfg(_Strict):
     vehiclePollSeconds: int = Field(15, ge=5, le=120)
     departuresRefreshSeconds: int = Field(20, ge=5, le=120)
     features: dict[str, bool] = {}
     minAppVersion: MinAppVersionCfg = MinAppVersionCfg()
+    updateUrls: UpdateUrlsCfg = UpdateUrlsCfg()
     maintenance: MaintenanceCfg = MaintenanceCfg()
     analytics: AnalyticsCfg = AnalyticsCfg()
     share: ShareCfg = ShareCfg()
@@ -678,6 +702,7 @@ def build_city(base: City, sections: dict) -> City:
     upd["config"] = AppConfig(vehicle_poll_seconds=c["vehiclePollSeconds"],
                               departures_refresh_seconds=c["departuresRefreshSeconds"], features=c["features"],
                               min_app_version=MinAppVersion(**c["minAppVersion"]),
+                              update_urls=UpdateUrls(**c["updateUrls"]),
                               maintenance=Maintenance(**c["maintenance"]),
                               analytics=AnalyticsConfig(enabled=c["analytics"]["enabled"],
                                                         retention_days=c["analytics"]["retentionDays"],

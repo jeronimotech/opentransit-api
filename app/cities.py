@@ -93,6 +93,20 @@ class MinAppVersion(BaseModel):
     android: str = "1.0.0"
 
 
+class UpdateUrls(BaseModel):
+    """Where a build that is too old is sent to update.
+
+    This has to be server-side, and it is the whole reason the forced-update screen
+    works at all: someone blocked on an old build cannot receive new code, only new
+    data. It also lets iOS move from TestFlight to the App Store on launch day
+    without shipping anything — the builds already in people's hands follow.
+
+    Empty means the client falls back to the platform's store for its own bundle id.
+    """
+    ios: str | None = None
+    android: str | None = None
+
+
 class Maintenance(BaseModel):
     active: bool = False
     message: str | None = None
@@ -169,6 +183,7 @@ class AppConfig(BaseModel):
     features: dict[str, bool] = {"liveVehicles": True, "board": True, "pois": True, "followAlong": True,
                                  "bike": True}
     min_app_version: MinAppVersion = MinAppVersion()
+    update_urls: UpdateUrls = UpdateUrls()
     maintenance: Maintenance = Maintenance()
     analytics: AnalyticsConfig = AnalyticsConfig()
     share: ShareConfig = ShareConfig()
@@ -703,6 +718,7 @@ class City(BaseModel):
                        "departuresRefreshSeconds": self.config.departures_refresh_seconds,
                        "features": self.config.features,
                        "minAppVersion": self.config.min_app_version.model_dump(),
+                       "updateUrls": self.config.update_urls.model_dump(),
                        "maintenance": self.config.maintenance.model_dump(),
                        "analytics": {"enabled": self.config.analytics.enabled,
                                      "retentionDays": self.config.analytics.retention_days,

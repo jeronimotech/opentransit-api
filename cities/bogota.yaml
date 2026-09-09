@@ -70,6 +70,12 @@ config:
   departures_refresh_seconds: 20
   features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }
   min_app_version: { ios: "1.0.0", android: "1.0.0" }
+  # Where a blocked build is sent. Changing this needs no app release, which is the
+  # point: someone stuck on an old build can only be redirected by data. Swap the iOS
+  # one for https://apps.apple.com/app/id6809010622 the day the app is public.
+  update_urls:
+    ios: "itms-beta://beta.itunes.apple.com/v1/app/6809010622"      # TestFlight, while in internal testing
+    android: "https://play.google.com/store/apps/details?id=com.jeronimotech.opentransit"
   maintenance: { active: false, message: null }
   # v1.5 first-party analytics: anonymous, aggregated, k-anonymity on every read/export (admin-editable)
   analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
