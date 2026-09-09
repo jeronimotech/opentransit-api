@@ -67,3 +67,22 @@ otp: {base_url: http://o, feed_id: x}
 """)
     with pytest.raises(ValueError):
         load_city_file(p)
+
+
+def test_toronto_bike_share_matches_the_otp_updater():
+    """Bike Share Toronto is only reachable if the config's `network` equals the OTP updater's, so pin
+    both ends: a rename on one side silently returns rentals OTP cannot resolve to a network."""
+    import json
+
+    city = load_registry(Path("cities"))["toronto"]
+    assert city.features.bike_share is True and city.config.features["bike"] is True
+    net = city.bike_network("bike_share_toronto")
+    assert net is not None and net.id == "bike-share-toronto"
+    assert net.form_factors == ["bicycle"]          # no scooters are docked in Toronto
+    assert net.single_trip_price["currency"] == "CAD"
+
+    updaters = json.loads(Path("otp/toronto/router-config.json").read_text())["updaters"]
+    rental = [u for u in updaters if u["type"] == "vehicle-rental"]
+    assert len(rental) == 1
+    assert rental[0]["network"] == net.network
+    assert rental[0]["url"] == net.gbfs_url

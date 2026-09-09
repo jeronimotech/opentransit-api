@@ -41,7 +41,8 @@ _INFO_TTL = 600
 
 
 def text(value: Any, lang: str = "es") -> str | None:
-    """GBFS 3.0 localized string (`[{text, language}]`) or a plain string -> one string (es, en, first)."""
+    """GBFS 3.0 localized string (`[{text, language}]`) or a plain string -> one string
+    (the city's language, then es, en, then whatever the feed has)."""
     if value is None:
         return None
     if isinstance(value, str):
@@ -99,9 +100,12 @@ def _money(v: float) -> str:
 
 class GbfsNetwork:
     def __init__(self, city_id: str, cfg: BikeShareNetwork, fetcher: Fetcher | None = None,
-                 client: httpx.AsyncClient | None = None):
+                 client: httpx.AsyncClient | None = None, lang: str = "es"):
         self.city_id = city_id
         self.cfg = cfg
+        # The feed's localized strings are picked in the city's language, not the platform's first one:
+        # Toronto's station names are published in en/fr/nl/es, Bogotá's only in es.
+        self.lang = (lang or "es").split("-")[0].lower()
         self._fetch = fetcher or self._http_fetch
         self._cli = client or httpx.AsyncClient(timeout=15, follow_redirects=True,
                                                 headers={"User-Agent": "opentransit-api (+gbfs)"})
@@ -189,8 +193,8 @@ class GbfsNetwork:
 
     # ------------------------------------------------------------------ views
     def _plan(self, p: dict) -> dict:
-        return {"id": p.get("plan_id"), "name": text(p.get("name")), "price": p.get("price"),
-                "currency": p.get("currency"), "description": text(p.get("description")) or None,
+        return {"id": p.get("plan_id"), "name": text(p.get("name"), self.lang), "price": p.get("price"),
+                "currency": p.get("currency"), "description": text(p.get("description"), self.lang) or None,
                 "isTaxable": bool(p.get("is_taxable"))}
 
     def vehicle_type(self, vid: str | None) -> dict | None:
@@ -198,7 +202,7 @@ class GbfsNetwork:
         if not v:
             return None
         return {"id": v["vehicle_type_id"], "formFactor": v.get("form_factor"),
-                "propulsion": v.get("propulsion_type"), "name": text(v.get("name")) or v["vehicle_type_id"]}
+                "propulsion": v.get("propulsion_type"), "name": text(v.get("name"), self.lang) or v["vehicle_type_id"]}
 
     def is_electric(self, vid: str | None) -> bool:
         v = self.vehicle_types.get(vid or "") or {}
@@ -219,7 +223,7 @@ class GbfsNetwork:
         ebikes = sum(int(t.get("count") or 0) for t in types if self.is_electric(t.get("vehicle_type_id")))
         out = {
             "id": self.public_id(raw), "networkId": self.cfg.id, "kind": "rental_station",
-            "name": text(info.get("name")) or raw, "lat": info.get("lat"), "lon": info.get("lon"),
+            "name": text(info.get("name"), self.lang) or raw, "lat": info.get("lat"), "lon": info.get("lon"),
             "capacity": info.get("capacity"),
             "vehiclesAvailable": int(avail) if avail is not None else None,
             "ebikesAvailable": ebikes if types else None,
@@ -358,7 +362,7 @@ class GbfsNetwork:
     def summary(self) -> dict:
         return {
             **self.cfg.public(), "pricingSummary": self.pricing_summary(), "formFactors": self.form_factors(),
-            "systemId": self.system.get("system_id"), "systemName": text(self.system.get("name")),
+            "systemId": self.system.get("system_id"), "systemName": text(self.system.get("name"), self.lang),
             "timezone": self.system.get("timezone"), "gbfsVersion": self.version,
             "stations": len(self.station_info), "vehiclesAvailable": self.vehicles_available(),
             "vehicleTypes": [self.vehicle_type(v) for v in self.vehicle_types],

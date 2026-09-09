@@ -3,7 +3,7 @@
     "apiProcessingTimeout": "30s"
   },
   "routingDefaults": {
-    "_comment": "Bogotá publishes no trip/stop accessibility data (wheelchair_boarding=1 everywhere, no wheelchair_accessible on trips). With OTP's defaults every trip would be excluded in wheelchair mode; unknown is allowed with a cost instead.",
+    "_comment": "Neither the TTC nor Bogotá publish usable trip/stop accessibility data, so unknown is allowed with a cost instead of excluding every trip in wheelchair mode.",
     "wheelchairAccessibility": {
       "trip": {
         "onlyConsiderAccessible": false,
@@ -43,6 +43,16 @@
       "features": [
         "position"
       ]
+    },
+    {
+      "type": "vehicle-rental",
+      "sourceType": "gbfs",
+      "network": "bike_share_toronto",
+      "url": "https://tor.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json",
+      "language": "en",
+      "frequency": "60s",
+      "allowKeepingRentedVehicleAtDestination": false,
+      "geofencingZones": true
     }
   ]
 }

@@ -64,7 +64,7 @@ def sync_gbfs(rt: CityRuntime) -> None:
         if nid in rt.gbfs:
             rt.gbfs[nid].cfg = cfg_net
         else:
-            rt.gbfs[nid] = GbfsNetwork(rt.city.id, cfg_net)
+            rt.gbfs[nid] = GbfsNetwork(rt.city.id, cfg_net, lang=rt.city.locale)
 
 
 async def _bootstrap_static(rt: CityRuntime, do_ingest: bool) -> None:

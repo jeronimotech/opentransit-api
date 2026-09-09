@@ -123,3 +123,28 @@ async def test_two_networks_keep_distinct_ids_and_colors():
     assert a.summary()["formFactors"] == ["bicycle"]
     assert a.mode_available("BICYCLE_RENTAL") is True and b.mode_available("SCOOTER_RENTAL") is False
     assert a.station("zed:1") is None           # a foreign scoped id is not silently accepted
+
+
+@pytest.mark.asyncio
+async def test_localized_names_follow_the_city_language():
+    """The feed answers in several languages; Toronto must not be served Bogotá's. Before this the
+    picker was hardcoded to Spanish, the same bug that put "Estación" in the English geocoder."""
+    assert text([{"text": "Union", "language": "en"}, {"text": "Unión", "language": "es"}], "en") == "Union"
+
+    def bilingual(url: str):
+        base = _fetcher(FIX)
+
+        async def fetch(u: str) -> dict:
+            d = await base(u)
+            if u.endswith("station_information"):
+                d["data"]["stations"][0]["name"] = [{"text": "Bay St / Albert St", "language": "en"},
+                                                    {"text": "CL 82 con KR 11", "language": "es"}]
+            return d
+        return fetch
+
+    en = GbfsNetwork("city", _net(), fetcher=bilingual(FIX), lang="en-CA")
+    await en.refresh()
+    assert en.lang == "en" and en.station("1")["name"] == "Bay St / Albert St"
+    es = GbfsNetwork("city", _net(), fetcher=bilingual(FIX))
+    await es.refresh()
+    assert es.lang == "es" and es.station("1")["name"] == "CL 82 con KR 11"

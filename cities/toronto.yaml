@@ -19,10 +19,10 @@ features:
   trip_updates: true         # via stop-keyed predictions; see feeds for why not via OTP
   alerts: true
   fares: true
-  bike_share: false          # Bike Share Toronto is a separate operator; not wired yet
+  bike_share: true           # Bike Share Toronto (PBSC/Lyft), a separate operator from the TTC
   on_demand: true
 
-attribution: "Data: Toronto Transit Commission (GTFS) · City of Toronto Open Data · Map: © OpenMapTiles © OpenStreetMap contributors"
+attribution: "Data: Toronto Transit Commission (GTFS) · City of Toronto Open Data · Bike Share Toronto (GBFS) · Map: © OpenMapTiles © OpenStreetMap contributors"
 
 feeds:
   gtfs_static_url: https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/7795b45e-e65a-4465-81fc-c36b9dfff169/resource/cfb6b2b8-6191-41e3-bda1-b175c51148cb/download/opendata_ttc_schedules.zip
@@ -62,7 +62,7 @@ components:
 config:
   vehicle_poll_seconds: 20
   departures_refresh_seconds: 20
-  features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: false }
+  features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }
   min_app_version: { ios: "1.0.0", android: "1.0.0" }
   update_urls:
     ios: "itms-beta://beta.itunes.apple.com/v1/app/6809010622"
@@ -74,6 +74,26 @@ links:
   privacy: https://www.ttc.ca/privacy-policy
 
 mobility:
+  # Bike Share Toronto is run by the Toronto Parking Authority on PBSC hardware (the same vendor as
+  # Tembici in Bogotá) and its GBFS is served by Lyft. Verified 2026-09-09: GBFS 3.0, 1066 stations,
+  # all installed and renting, 7 764 bikes available. `network` must equal the `network` of the
+  # vehicle-rental updater in otp/toronto/router-config.json.
+  bike_share:
+    - id: bike-share-toronto
+      name: Bike Share Toronto
+      network: bike_share_toronto            # = system_id in the feed
+      gbfs_url: https://tor.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json
+      color: "#00B140"                       # the green of the operator's own app icon
+      url: https://bikesharetoronto.com/
+      apps:
+        ios: https://apps.apple.com/ca/app/id6499236069        # "Bike Share Toronto" (Lyft, Inc.)
+        android: https://play.google.com/store/apps/details?id=com.lyft.android.torontoapp
+      # Pinned, not derived: the pricing feed is 150+ plans of memberships, corporate and test tariffs,
+      # and the heuristic in gbfs.py reads Spanish plan names and formats money the Colombian way.
+      pricing_summary: "Pay as you go: $1 unlock + $0.12/min ($0.20 e-bike) · Day pass $15 · Annual $105"
+      single_trip_price: { amount: 1.0, currency: CAD, label: "Unlock, then $0.12/min" }
+      form_factors: [bicycle]                # the fleet is bikes only; no scooters are docked today
+
   on_demand:
     - id: uber
       name: Uber
@@ -121,11 +141,13 @@ landing:
     - { icon: route, title: "Door to door", text: "Subway, streetcar, bus and walking combined into one itinerary, from an address rather than a stop." }
     - { icon: live,  title: "Vehicles in real time", text: "Over a thousand TTC vehicles on the map, with the direction each one is heading." }
     - { icon: board, title: "Arrivals at your stop", text: "Live predictions from the TTC feed, paired with the schedule — and we say which is which." }
+    - { icon: bike,  title: "Bike Share Toronto", text: "Over a thousand docking stations with live bike and dock counts, planned as part of the trip rather than shown on a separate map." }
     - { icon: open,  title: "Open data", text: "Built on the City of Toronto's GTFS and the TTC's GTFS-Realtime. No accounts, no trackers, no ads." }
-  stats: { show: true, items: [routes, stops, vehiclesLive, alertsActive] }
+  stats: { show: true, items: [routes, stops, vehiclesLive, bikeStations, alertsActive] }
   partners:
     - { name: "Toronto Transit Commission", logo_url: null, url: https://www.ttc.ca, role: "GTFS and GTFS-Realtime" }
     - { name: "City of Toronto Open Data",  logo_url: null, url: https://open.toronto.ca, role: "Schedule dataset" }
+    - { name: "Bike Share Toronto",         logo_url: null, url: https://bikesharetoronto.com, role: "GBFS bike share" }
   open_data:
     show: true
     links:
@@ -133,6 +155,7 @@ landing:
       - { label: "GTFS-RT · vehicles",   url: "https://gtfsrt.ttc.ca/vehicles/position?format=binary" }
       - { label: "GTFS-RT · arrivals",   url: "https://gtfsrt.ttc.ca/trips/update?format=binary" }
       - { label: "GTFS-RT · alerts",     url: "https://gtfsrt.ttc.ca/alerts/all?format=binary" }
+      - { label: "GBFS · bike share",   url: "https://tor.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json" }
   faq:
     - { q: "Do I need an account?", a: "No. It works without signing up, without requiring your location and without ads. Favourites stay on your device." }
     - { q: "Where do the arrival times come from?", a: "From the TTC's own GTFS-Realtime feed. Its trip identifiers do not match the published schedule, so we pair each prediction with the timetable by stop and route, and show the scheduled time when there is no prediction." }
