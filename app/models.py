@@ -307,13 +307,20 @@ class Departure(Out):
     route: RouteRef
     headsign: str | None = None
     trip_id: str | None = None
-    scheduled_time: str
+    # Null when a predicted arrival could not be paired with a scheduled one — the
+    # honest answer for a feed whose trip ids are not the schedule's. `realtimeTime` is
+    # always set in that case, so `realtimeTime ?? scheduledTime` still has a time.
+    scheduled_time: str | None = None
     realtime_time: str | None = None
     realtime: bool = False
     delay_seconds: int | None = None
     canceled: bool = False
     vehicle_id: str | None = None
     stop_sequence: int | None = None
+    # How the realtime time was arrived at: "trip" when the feed's trip matched the
+    # schedule, "stop" when it was paired by stop and route instead. Null when there
+    # is no realtime at all.
+    realtime_source: str | None = None
 
 
 class DeparturesResponse(Out):

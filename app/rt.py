@@ -73,27 +73,46 @@ def parse_alerts(msg: gtfsrt.FeedMessage) -> tuple[list[dict], dict[str, list[in
     return out, by_route, by_stop
 
 
-def parse_trip_updates(msg: gtfsrt.FeedMessage) -> tuple[dict[str, int], dict[str, dict]]:
-    """trip_id -> delay seconds, trip_id -> next stop prediction (first stop_time_update only)."""
+def parse_trip_updates(
+    msg: gtfsrt.FeedMessage,
+) -> tuple[dict[str, int], dict[str, dict], dict[str, list[dict]]]:
+    """trip_id -> delay, trip_id -> next stop, and **stop_id -> predicted arrivals**.
+
+    The third index exists because a feed's trip ids are not always the schedule's. The
+    TTC's are not: none of its realtime trip ids appear in Toronto's open-data GTFS, so
+    everything keyed on the trip is unusable there. Its stop ids match 99.6%, so the
+    predictions are perfectly good — they just have to be read by stop instead.
+
+    Every stop_time_update is kept here, not only the first: the point is to answer
+    "what is coming to this stop", which is a different question from "where is this
+    trip now".
+    """
     delays: dict[str, int] = {}
     nxt: dict[str, dict] = {}
+    by_stop: dict[str, list[dict]] = {}
     for e in msg.entity:
         if not e.HasField("trip_update"):
             continue
         t = e.trip_update
         tid = t.trip.trip_id
-        if not tid:
-            continue
-        if t.HasField("delay"):
+        route = t.trip.route_id or None
+        if t.HasField("delay") and tid:
             delays[tid] = t.delay
+        first = True
         for su in t.stop_time_update:
             ev = su.arrival if su.HasField("arrival") else (su.departure if su.HasField("departure") else None)
             eta = ev.time if ev is not None and ev.time else None
-            if ev is not None and ev.HasField("delay") and tid not in delays:
+            if ev is not None and ev.HasField("delay") and tid and tid not in delays:
                 delays[tid] = ev.delay
-            nxt[tid] = {"stop": su.stop_id or None, "seq": su.stop_sequence or None, "eta": eta}
-            break
-    return delays, nxt
+            if first and tid:
+                nxt[tid] = {"stop": su.stop_id or None, "seq": su.stop_sequence or None, "eta": eta}
+                first = False
+            if su.stop_id and eta:
+                by_stop.setdefault(su.stop_id, []).append(
+                    {"route": route, "trip": tid or None, "eta": eta, "seq": su.stop_sequence or None})
+    for arrivals in by_stop.values():
+        arrivals.sort(key=lambda a: a["eta"])
+    return delays, nxt, by_stop
 
 
 def parse_positions(msg: gtfsrt.FeedMessage, known_trips: set[str] | None) -> tuple[list[dict], list[int], int]:
@@ -162,6 +181,9 @@ class RTCache:
         self.by_id: dict[str, dict] = {}
         self.trip_delays: dict[str, int] = {}
         self.trip_next: dict[str, dict] = {}
+        # stop_id -> arrivals predicted for it, soonest first. Usable when the feed's
+        # trip ids do not match the schedule's.
+        self.stop_arrivals: dict[str, list[dict]] = {}
         self.alerts: list[dict] = []
         self.alerts_by_route: dict[str, list[int]] = {}
         self.alerts_by_stop: dict[str, list[int]] = {}
@@ -287,7 +309,7 @@ class RTCache:
         if al is not None:
             self.alerts, self.alerts_by_route, self.alerts_by_stop = parse_alerts(al)
         if tu is not None:
-            self.trip_delays, self.trip_next = parse_trip_updates(tu)
+            self.trip_delays, self.trip_next, self.stop_arrivals = parse_trip_updates(tu)
         if pos is None:
             return
         ents, ages, unresolved = parse_positions(pos, self.known_trips)

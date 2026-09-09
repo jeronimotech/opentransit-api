@@ -16,7 +16,7 @@ branding:
 
 features:
   realtime_vehicles: true
-  trip_updates: false        # see feeds: the RT trip ids do not exist in the schedule
+  trip_updates: true         # via stop-keyed predictions; see feeds for why not via OTP
   alerts: true
   fares: true
   bike_share: false          # Bike Share Toronto is a separate operator; not wired yet
@@ -28,12 +28,13 @@ feeds:
   gtfs_static_url: https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/7795b45e-e65a-4465-81fc-c36b9dfff169/resource/cfb6b2b8-6191-41e3-bda1-b175c51148cb/download/opendata_ttc_schedules.zip
   rt_positions_url: https://gtfsrt.ttc.ca/vehicles/position?format=binary
   rt_alerts_url: https://gtfsrt.ttc.ca/alerts/all?format=binary
-  # rt_tripupdates_url is deliberately unset. The feed exists at
-  # https://gtfsrt.ttc.ca/trips/update?format=binary, but none of its trip_ids appear in
-  # the open-data schedule (0 of 590 checked when this city was added) and it carries no
-  # start_time/start_date/direction_id to match on instead, so nothing could be applied.
-  # Its stop_ids DO match (99.6%), so stop-level predictions are possible without the
-  # schedule's trips — that is a separate piece of work, not a config line.
+  # Read by this API, not by OTP. None of this feed's trip_ids appear in the open-data
+  # schedule (0 of 590 checked when the city was added) and it carries no
+  # start_time/start_date/direction_id to match on instead, so OTP's stop-time updater
+  # is deliberately absent from router-config.json — it could only discard every
+  # message. The stop_ids do match (99.6%), so the arrivals are read by stop and paired
+  # with the schedule here. See `apply_stop_predictions`.
+  rt_tripupdates_url: https://gtfsrt.ttc.ca/trips/update?format=binary
   poll_seconds: 20
   static_refresh_hours: 24
 
@@ -104,3 +105,49 @@ mobility:
         apps: { ios: "https://apps.apple.com/ca/app/id529379082", android: "https://play.google.com/store/apps/details?id=me.lyft.android" }
       enabled: true
       order: 2
+
+landing:
+  enabled: true
+  slug: null
+  locale: en
+  theme: { primary_color: null, accent_color: "#0054A6", logo_url: null, hero_image_url: null, dark_hero: true }
+  hero:
+    title: "Ride Toronto with live data"
+    subtitle: "Plan a trip, watch the streetcars move and know when your bus arrives. Free, no account, open source."
+    cta_primary: { label: "Open the web app", url: null }
+    cta_secondary: { label: "How it works", url: "#features" }
+  apps: { ios: null, android: null, web: null }
+  highlights:
+    - { icon: route, title: "Door to door", text: "Subway, streetcar, bus and walking combined into one itinerary, from an address rather than a stop." }
+    - { icon: live,  title: "Vehicles in real time", text: "Over a thousand TTC vehicles on the map, with the direction each one is heading." }
+    - { icon: board, title: "Arrivals at your stop", text: "Live predictions from the TTC feed, paired with the schedule — and we say which is which." }
+    - { icon: open,  title: "Open data", text: "Built on the City of Toronto's GTFS and the TTC's GTFS-Realtime. No accounts, no trackers, no ads." }
+  stats: { show: true, items: [routes, stops, vehiclesLive, alertsActive] }
+  partners:
+    - { name: "Toronto Transit Commission", logo_url: null, url: https://www.ttc.ca, role: "GTFS and GTFS-Realtime" }
+    - { name: "City of Toronto Open Data",  logo_url: null, url: https://open.toronto.ca, role: "Schedule dataset" }
+  open_data:
+    show: true
+    links:
+      - { label: "GTFS schedule",        url: https://open.toronto.ca/dataset/ttc-routes-and-schedules/ }
+      - { label: "GTFS-RT · vehicles",   url: "https://gtfsrt.ttc.ca/vehicles/position?format=binary" }
+      - { label: "GTFS-RT · arrivals",   url: "https://gtfsrt.ttc.ca/trips/update?format=binary" }
+      - { label: "GTFS-RT · alerts",     url: "https://gtfsrt.ttc.ca/alerts/all?format=binary" }
+  faq:
+    - { q: "Do I need an account?", a: "No. It works without signing up, without requiring your location and without ads. Favourites stay on your device." }
+    - { q: "Where do the arrival times come from?", a: "From the TTC's own GTFS-Realtime feed. Its trip identifiers do not match the published schedule, so we pair each prediction with the timetable by stop and route, and show the scheduled time when there is no prediction." }
+    - { q: "Is the fare shown exact?", a: "Fares are not shown for Toronto yet. Check ttc.ca for current fares and transfer rules." }
+    - { q: "Can I use this for my city?", a: "Yes. The whole project is open source (MIT). Any city with a GTFS feed can deploy it and configure it without writing code." }
+  contact:
+    email: null
+    url: https://www.ttc.ca/customer-service
+    social: { x: null, instagram: null, facebook: null, youtube: null, github: https://github.com/jeronimotech }
+  footer:
+    legal_name: null
+    privacy_url: null
+    terms_url: null
+    attribution: null
+  seo:
+    title: "Toronto transit, live · open-source trip planner"
+    description: "Plan trips across Toronto with live TTC vehicles, arrivals at your stop and open data. Free and open source."
+    og_image_url: null

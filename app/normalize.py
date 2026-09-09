@@ -360,6 +360,7 @@ def departure_from_otp(city: City, st: dict) -> dict:
         "realtime": rt, "delaySeconds": st.get("departureDelay") if rt else None,
         "canceled": st.get("realtimeState") == "CANCELED", "vehicleId": None,
         "stopSequence": st.get("stopPositionInPattern"),
+        "realtimeSource": "trip" if rt else None,
     }
 
 
@@ -382,3 +383,67 @@ def enrich_rental(plan: dict, lookup) -> dict:
                     ref["docksAvailable"] = live.get("docksAvailable")
                     ref["lastReported"] = live.get("lastReported")
     return plan
+
+
+def apply_stop_predictions(deps: list[dict], arrivals: list[dict], city, now: int,
+                           window_seconds: int = 900) -> list[dict]:
+    """Fill in realtime from predictions keyed by stop rather than by trip.
+
+    Some feeds publish trip ids that are not the schedule's — the TTC's are not — so
+    nothing can be matched on the trip and the board would show scheduled times only.
+    The stop ids do match, so the arrivals are there; they just have to be paired.
+
+    Pairing is deliberately conservative. A prediction is only attached to a scheduled
+    departure of the *same route* whose time it is nearest, and only within
+    [window_seconds]; each is used at most once. Anything left over is a real arrival
+    the schedule did not describe, so it is added rather than dropped, with no
+    scheduled time to claim. Nothing here guesses a trip: `realtimeSource` says how the
+    time was arrived at, so a client can be honest about it too.
+    """
+    if not arrivals:
+        return deps
+    from .rt import iso
+
+    unused = sorted((a for a in arrivals if (a.get("eta") or 0) >= now - 120), key=lambda a: a["eta"])
+    for d in deps:
+        route = (d.get("route") or {}).get("id") or ""
+        raw_route = route.split(":", 1)[1] if ":" in route else route
+        sched = d.get("scheduledTime")
+        if not sched or d.get("realtimeTime"):
+            continue
+        sched_epoch = _epoch(sched)
+        if sched_epoch is None:
+            continue
+        best = None
+        for a in unused:
+            if a.get("route") and raw_route and a["route"] != raw_route:
+                continue
+            gap = abs(a["eta"] - sched_epoch)
+            if gap <= window_seconds and (best is None or gap < best[0]):
+                best = (gap, a)
+        if best:
+            unused.remove(best[1])
+            d["realtimeTime"] = iso(best[1]["eta"])
+            d["realtime"] = True
+            d["delaySeconds"] = best[1]["eta"] - sched_epoch
+            d["realtimeSource"] = "stop"
+
+    for a in unused:
+        rid = city.scoped(a["route"]) if a.get("route") else ""
+        deps.append({
+            "route": {"id": rid, "mode": "BUS"}, "headsign": None, "tripId": None,
+            # No scheduled time: this arrival was never matched to one, and inventing
+            # it would be the one lie this whole function exists to avoid.
+            "scheduledTime": None, "realtimeTime": iso(a["eta"]), "realtime": True,
+            "delaySeconds": None, "canceled": False, "vehicleId": None,
+            "stopSequence": a.get("seq"), "realtimeSource": "stop",
+        })
+    return deps
+
+
+def _epoch(iso_time: str) -> int | None:
+    import datetime as _dt
+    try:
+        return int(_dt.datetime.fromisoformat(iso_time.replace("Z", "+00:00")).timestamp())
+    except Exception:  # noqa: BLE001
+        return None

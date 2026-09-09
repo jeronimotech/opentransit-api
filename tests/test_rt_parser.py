@@ -32,11 +32,17 @@ def _trip_updates(ts: int) -> gtfsrt.FeedMessage:
     e.id = "tu1"
     tu = e.trip_update
     tu.trip.trip_id = "T1"
+    tu.trip.route_id = "R1"
     tu.delay = 90
     su = tu.stop_time_update.add()
     su.stop_id = "S10"
     su.stop_sequence = 5
     su.arrival.time = ts + 120
+    # A real update carries the whole rest of the trip, not just the next stop.
+    su2 = tu.stop_time_update.add()
+    su2.stop_id = "S11"
+    su2.stop_sequence = 6
+    su2.arrival.time = ts + 300
     return m
 
 
@@ -68,10 +74,19 @@ def test_parse_positions_resolves_trips_against_static():
     assert unresolved == 0
 
 
-def test_parse_trip_updates_only_first_stop():
-    delays, nxt = parse_trip_updates(_trip_updates(1_700_000_000))
+def test_parse_trip_updates_keeps_the_next_stop_and_every_stop():
+    """`trip_next` is still the first stop only — it answers "where is this trip now".
+    `by_stop` keeps them all, because "what is coming to this stop" is a different
+    question, and the only one a feed whose trip ids do not match the schedule can
+    answer at all."""
+    delays, nxt, by_stop = parse_trip_updates(_trip_updates(1_700_000_000))
     assert delays == {"T1": 90}
     assert nxt == {"T1": {"stop": "S10", "seq": 5, "eta": 1_700_000_120}}
+    assert by_stop["S10"] == [{"route": "R1", "trip": "T1", "eta": 1_700_000_120, "seq": 5}]
+    assert by_stop["S11"] == [{"route": "R1", "trip": "T1", "eta": 1_700_000_300, "seq": 6}]
+    # Soonest first, so a caller can take the head of the list.
+    for arrivals in by_stop.values():
+        assert arrivals == sorted(arrivals, key=lambda a: a["eta"])
 
 
 def test_parse_alerts_indexes():

@@ -5,7 +5,15 @@ from fastapi import APIRouter, Depends, Query
 from ..db import pool
 from ..errors import RouterUnavailable, StopNotFound
 from ..models import DeparturesResponse, NearbyResponse, StopDetail
-from ..normalize import departure_from_otp, merge_departures, route_ref, route_ref_from_db, stop_from_db, stop_from_otp
+from ..normalize import (
+    apply_stop_predictions,
+    departure_from_otp,
+    merge_departures,
+    route_ref,
+    route_ref_from_db,
+    stop_from_db,
+    stop_from_otp,
+)
 from ..otp import DEPARTURES_QUERY, STATION_DEPARTURES_QUERY, STATION_QUERY, STOP_QUERY
 from ..runtime import CityRuntime, city_runtime
 
@@ -115,6 +123,14 @@ async def departures(stopId: str, rt: CityRuntime = Depends(city_runtime),
     for d in deps:
         d["vehicleId"] = by_trip.get(rt.city.unscoped(d["tripId"])) if d.get("tripId") else None
         rt.with_window(d.get("route"))
-    deps = merge_departures(deps)[:limit]
+    # Predictions keyed by stop, for a feed whose trip ids are not the schedule's.
+    # A no-op where they are: everything is already realtime by then.
+    raw_stop = rt.city.unscoped(stopId)
+    arrivals = rt.rt.stop_arrivals.get(raw_stop or "", [])
+    if arrivals:
+        deps = apply_stop_predictions(deps, arrivals, rt.city, int(dt.datetime.now(dt.UTC).timestamp()))
+    deps = merge_departures(deps)
+    deps.sort(key=lambda d: d.get("realtimeTime") or d.get("scheduledTime") or "")
+    deps = deps[:limit]
     now = dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z")
     return {"stop": stop, "generatedAt": now, "departures": deps}
