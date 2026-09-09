@@ -1,0 +1,106 @@
+# Toronto (TTC) — the platform's second city, and the first with one operator running
+# several modes. See `route_type_components` below: keying components on the agency, as
+# Bogotá does, would put a bus icon on Line 1.
+id: toronto
+name: Toronto
+country: CA
+timezone: America/Toronto
+locale: en-CA
+center: { lat: 43.6532, lon: -79.3832 }        # downtown, not the centroid of the stops
+bbox: [-79.6799, 43.5621, -79.0931, 43.9397]   # from the feed's own stops, padded
+default_zoom: 12
+modes: [WALK, BUS, TRAM, SUBWAY, BICYCLE]
+
+branding:
+  primary_color: "#DA291C"                      # TTC red
+
+features:
+  realtime_vehicles: true
+  trip_updates: false        # see feeds: the RT trip ids do not exist in the schedule
+  alerts: true
+  fares: true
+  bike_share: false          # Bike Share Toronto is a separate operator; not wired yet
+  on_demand: true
+
+attribution: "Data: Toronto Transit Commission (GTFS) · City of Toronto Open Data · Map: © OpenMapTiles © OpenStreetMap contributors"
+
+feeds:
+  gtfs_static_url: https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/7795b45e-e65a-4465-81fc-c36b9dfff169/resource/cfb6b2b8-6191-41e3-bda1-b175c51148cb/download/opendata_ttc_schedules.zip
+  rt_positions_url: https://gtfsrt.ttc.ca/vehicles/position?format=binary
+  rt_alerts_url: https://gtfsrt.ttc.ca/alerts/all?format=binary
+  # rt_tripupdates_url is deliberately unset. The feed exists at
+  # https://gtfsrt.ttc.ca/trips/update?format=binary, but none of its trip_ids appear in
+  # the open-data schedule (0 of 590 checked when this city was added) and it carries no
+  # start_time/start_date/direction_id to match on instead, so nothing could be applied.
+  # Its stop_ids DO match (99.6%), so stop-level predictions are possible without the
+  # schedule's trips — that is a separate piece of work, not a config line.
+  poll_seconds: 20
+  static_refresh_hours: 24
+
+otp:
+  base_url: ${OTP_TORONTO_URL:-${OTP_URL:-http://localhost:8080}}
+  feed_id: toronto           # must match build-config.json transitFeeds[].feedId
+
+geocoder:
+  photon_url: https://photon.komoot.io
+
+agencies:
+  - { id: "1", name: "Toronto Transit Commission", component: bus, color: "#DA291C" }
+
+# One operator, three modes: the GTFS mode decides, not the agency.
+route_type_components:
+  "0": tram      # streetcars
+  "1": rail      # Lines 1-4
+  "3": bus
+
+components:
+  - { id: rail, label: "Subway",    color: "#DA291C", icon: rail }
+  - { id: tram, label: "Streetcar", color: "#0054A6", icon: tram }
+  - { id: bus,  label: "Bus",       color: "#DA291C", icon: bus }
+
+config:
+  vehicle_poll_seconds: 20
+  departures_refresh_seconds: 20
+  features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: false }
+  min_app_version: { ios: "1.0.0", android: "1.0.0" }
+  update_urls:
+    ios: "itms-beta://beta.itunes.apple.com/v1/app/6809010622"
+    android: "https://play.google.com/store/apps/details?id=com.jeronimotech.opentransit"
+  analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
+
+links:
+  support: https://www.ttc.ca/customer-service
+  privacy: https://www.ttc.ca/privacy-policy
+
+mobility:
+  on_demand:
+    - id: uber
+      name: Uber
+      kind: ridehail
+      color: "#000000"
+      text_color: "#FFFFFF"
+      estimate: { kind: none }      # estimates need Uber's partner API; the hand-off prefills the trip
+      handoff:
+        kind: template
+        template: "https://m.uber.com/looking?client_id={clientId}&pickup={pickupJson}&drop[0]={dropoffJson}"
+        web: https://m.uber.com/
+        apps: { ios: "https://apps.apple.com/ca/app/id368677368", android: "https://play.google.com/store/apps/details?id=com.ubercab" }
+      credentials: { clientId: "${UBER_CLIENT_ID:-}" }
+      enabled: true
+      order: 1
+    - id: lyft
+      name: Lyft
+      kind: ridehail
+      color: "#FF00BF"
+      text_color: "#FFFFFF"
+      estimate: { kind: none }
+      handoff:
+        # Lyft's universal link prefills from coordinates alone; `partner` is only for
+        # attribution, so this works with no credentials rather than falling back to a
+        # bare home page the way Uber does without its client id.
+        kind: template
+        template: "https://lyft.com/ride?id=lyft&pickup[latitude]={pickupLat}&pickup[longitude]={pickupLon}&destination[latitude]={dropoffLat}&destination[longitude]={dropoffLon}"
+        web: https://ride.lyft.com/
+        apps: { ios: "https://apps.apple.com/ca/app/id529379082", android: "https://play.google.com/store/apps/details?id=me.lyft.android" }
+      enabled: true
+      order: 2

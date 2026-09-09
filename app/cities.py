@@ -11,7 +11,7 @@ from pydantic.alias_generators import to_camel
 
 log = logging.getLogger("ot.cities")
 
-Component = Literal["trunk", "feeder", "dual", "zonal", "cable", "rail", "other"]
+Component = Literal["trunk", "feeder", "dual", "zonal", "cable", "rail", "tram", "bus", "other"]
 # The default may itself be a reference: `${OTP_MYCITY_URL:-${OTP_URL:-http://localhost:8080}}`.
 # Innermost references (whose default contains no `${`) are resolved first, until nothing is left.
 _ENV = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-((?:(?!\$\{)[^}])*))?\}")
@@ -581,6 +581,10 @@ class City(BaseModel):
     geocoder: Geocoder = Geocoder()
     agencies: list[AgencyCfg] = []
     components: list[ComponentCfg] = []
+    # GTFS route_type -> component, for an operator that runs several modes itself.
+    # Empty keeps the agency-based mapping, which is right when each mode is its own
+    # operator. Keys are strings because that is what a GTFS file holds.
+    route_type_components: dict[str, Component] = {}
     fares: Fares | None = None
     config: AppConfig = AppConfig()
     links: Links = Links()
@@ -603,6 +607,21 @@ class City(BaseModel):
             if a.id == agency_id:
                 return a.component
         return "other"
+
+    def component_of_route(self, agency_id: str | None, route_type: str | int | None) -> Component:
+        """Component for one route.
+
+        Agency is the right key where each mode is its own operator, as in Bogotá.
+        It is the wrong key for an operator that runs several modes itself: the TTC is
+        one agency running a subway, streetcars and buses, and keying on the agency
+        would put a bus icon on Line 1. `route_type_components` maps the GTFS mode
+        when a city needs it; without it nothing changes.
+        """
+        if self.route_type_components and route_type not in (None, ""):
+            mapped = self.route_type_components.get(str(route_type).strip())
+            if mapped:
+                return mapped
+        return self.component_of_agency(agency_id)
 
     def color_of_agency(self, agency_id: str | None) -> str | None:
         for a in self.agencies:

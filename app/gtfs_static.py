@@ -209,7 +209,8 @@ async def ingest(city: City, force: bool = False) -> dict:
                 exceptions.append((c["service_id"], d, int(c.get("exception_type") or 1)))
 
     def comp_of_route(rid: str | None) -> str:
-        return city.component_of_agency((routes.get(rid) or {}).get("agency_id"))
+        r = routes.get(rid) or {}
+        return city.component_of_route(r.get("agency_id"), r.get("route_type"))
 
     stops = []
     wheelchair_counts: collections.Counter = collections.Counter()
