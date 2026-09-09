@@ -31,7 +31,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
 from .db import pool
-from .errors import ApiError
+from .errors import ApiError, Forbidden
 
 log = logging.getLogger("ot.admin_auth")
 
@@ -216,6 +216,13 @@ class AdminUserStore(Protocol):
     async def delete_session(self, token_hash: str) -> bool: ...
     async def delete_sessions_of(self, user_id: int) -> int: ...
     async def drop_expired_sessions(self) -> int: ...
+    # v1.12 provider identities (Google / Microsoft). See `sign_in_with_identity`.
+    async def identity(self, provider: str, subject: str) -> dict | None: ...
+    async def identity_for_user(self, user_id: int, provider: str) -> dict | None: ...
+    async def link_identity(self, *, provider: str, subject: str, user_id: int, email: str) -> dict: ...
+    async def touch_identity(self, provider: str, subject: str, email: str) -> None: ...
+    async def unlink_identity(self, user_id: int, provider: str) -> bool: ...
+    async def identities_of(self, user_id: int) -> list[dict]: ...
 
 
 def _iso(t: dt.datetime | None) -> str | None:
@@ -233,6 +240,7 @@ def public_user(row: dict) -> dict:
 
 
 _USER_COLS = "id, email, name, role, cities, disabled, password_hash, created_at, last_login_at"
+_IDENTITY_COLS = "provider, subject, user_id, email, created_at, last_login_at"
 
 
 class PgAdminUserStore:
@@ -318,6 +326,44 @@ class PgAdminUserStore:
             r = await c.execute("DELETE FROM admin_session WHERE expires_at <= now()")
         return int(r.rsplit(" ", 1)[-1] or 0)
 
+    # ---------------------------------------------------------- provider identities
+    async def identity(self, provider: str, subject: str) -> dict | None:
+        async with pool().acquire() as c:
+            r = await c.fetchrow(f"SELECT {_IDENTITY_COLS} FROM admin_identity WHERE provider=$1 AND subject=$2",
+                                 provider, subject)
+        return dict(r) if r else None
+
+    async def identity_for_user(self, user_id: int, provider: str) -> dict | None:
+        async with pool().acquire() as c:
+            r = await c.fetchrow(f"SELECT {_IDENTITY_COLS} FROM admin_identity WHERE user_id=$1 AND provider=$2",
+                                 user_id, provider)
+        return dict(r) if r else None
+
+    async def link_identity(self, *, provider: str, subject: str, user_id: int, email: str) -> dict:
+        async with pool().acquire() as c:
+            r = await c.fetchrow(
+                """INSERT INTO admin_identity (provider, subject, user_id, email, last_login_at)
+                   VALUES ($1,$2,$3,$4,now()) RETURNING """ + _IDENTITY_COLS,
+                provider, subject, user_id, email)
+        return dict(r)
+
+    async def touch_identity(self, provider: str, subject: str, email: str) -> None:
+        async with pool().acquire() as c:
+            await c.execute("UPDATE admin_identity SET last_login_at=now(), email=$3 "
+                            "WHERE provider=$1 AND subject=$2", provider, subject, email)
+
+    async def unlink_identity(self, user_id: int, provider: str) -> bool:
+        async with pool().acquire() as c:
+            r = await c.execute("DELETE FROM admin_identity WHERE user_id=$1 AND provider=$2",
+                                user_id, provider)
+        return r.endswith("1")
+
+    async def identities_of(self, user_id: int) -> list[dict]:
+        async with pool().acquire() as c:
+            rows = await c.fetch(f"SELECT {_IDENTITY_COLS} FROM admin_identity WHERE user_id=$1 ORDER BY provider",
+                                 user_id)
+        return [dict(r) for r in rows]
+
 
 class MemoryAdminUserStore:
     """Test double with the same contract as the Postgres store."""
@@ -325,6 +371,7 @@ class MemoryAdminUserStore:
     def __init__(self) -> None:
         self.users: dict[int, dict] = {}
         self.sessions: dict[str, dict] = {}
+        self.identities: dict[tuple[str, str], dict] = {}
         self._next_id = 1
 
     async def count_users(self) -> int:
@@ -397,6 +444,37 @@ class MemoryAdminUserStore:
         self.sessions = {k: v for k, v in self.sessions.items() if v["expires_at"] > now}
         return before - len(self.sessions)
 
+    # ---------------------------------------------------------- provider identities
+    async def identity(self, provider: str, subject: str) -> dict | None:
+        row = self.identities.get((provider, subject))
+        return copy.deepcopy(row) if row else None
+
+    async def identity_for_user(self, user_id: int, provider: str) -> dict | None:
+        return next((copy.deepcopy(r) for r in self.identities.values()
+                     if r["user_id"] == user_id and r["provider"] == provider), None)
+
+    async def link_identity(self, *, provider: str, subject: str, user_id: int, email: str) -> dict:
+        row = {"provider": provider, "subject": subject, "user_id": user_id, "email": email,
+               "created_at": dt.datetime.now(dt.UTC), "last_login_at": dt.datetime.now(dt.UTC)}
+        self.identities[(provider, subject)] = row
+        return copy.deepcopy(row)
+
+    async def touch_identity(self, provider: str, subject: str, email: str) -> None:
+        row = self.identities.get((provider, subject))
+        if row is not None:
+            row["last_login_at"] = dt.datetime.now(dt.UTC)
+            row["email"] = email
+
+    async def unlink_identity(self, user_id: int, provider: str) -> bool:
+        gone = [k for k, v in self.identities.items() if v["user_id"] == user_id and v["provider"] == provider]
+        for k in gone:
+            del self.identities[k]
+        return bool(gone)
+
+    async def identities_of(self, user_id: int) -> list[dict]:
+        return [copy.deepcopy(r) for r in sorted(self.identities.values(), key=lambda r: r["provider"])
+                if r["user_id"] == user_id]
+
 
 # ------------------------------------------------------------------ login / bootstrap
 async def open_session(store: AdminUserStore, user: dict, *, hours: int,
@@ -439,3 +517,88 @@ async def bootstrap_owner(store: AdminUserStore, email: str, password: str, name
                                   name=name or "", role="owner", cities=[])
     log.info("bootstrapped the first owner account (%s)", row["email"])
     return row
+
+
+# ------------------------------------------------------------------ provider sign-in (v1.12)
+class ProviderIdentity(Protocol):
+    """What a verified id_token yields (`app.oidc.Identity`). Declared structurally to keep the import
+    one-way: oidc.py knows about accounts, accounts know nothing about OpenID Connect."""
+
+    provider: str
+    subject: str
+    email: str
+    name: str
+
+
+async def sign_in_with_identity(store: AdminUserStore, ident: ProviderIdentity, *,
+                                provision=None) -> dict:
+    """
+    Turn a *verified* provider identity into an account — or refuse.
+
+    Signing in with Google or Microsoft does not create an account. It finds an existing, enabled one
+    by email; an owner has to have invited that person first. `provision` is the deliberately awkward
+    escape hatch for a deployment that has decided otherwise (see `domain_provisioner`), and it is
+    None unless somebody configured it.
+
+    The email is only ever the *lookup*. What the account is bound to is the provider's stable subject
+    id: the first successful sign-in links it, and every later one must present the same value. Both
+    directions of mismatch are refusals, never a silent re-link — that is the difference between
+    "prove you still control this Google account" and "prove you control an address that spells the
+    same as the one we have".
+    """
+    email = normalize_email(ident.email)
+    user = await store.by_email(email)
+    if user is None and provision is not None:
+        user = await provision(ident)
+    if user is None or user["disabled"]:
+        # One message for both: whether an address is an admin here is not a stranger's business.
+        log.info("provider sign-in refused for %s via %s (%s)", email, ident.provider,
+                 "disabled" if user else "no account")
+        raise Forbidden("no enabled admin account for this address — ask an owner to invite you")
+
+    linked = await store.identity(ident.provider, ident.subject)
+    if linked is not None and linked["user_id"] != user["id"]:
+        log.warning("provider sign-in refused: %s identity already belongs to account %s, not %s",
+                    ident.provider, linked["user_id"], user["id"])
+        raise Forbidden("this provider account is already linked to a different admin account")
+    if linked is None:
+        existing = await store.identity_for_user(user["id"], ident.provider)
+        if existing is not None and existing["subject"] != ident.subject:
+            log.warning("provider sign-in refused: %s is linked to a different %s identity",
+                        user["email"], ident.provider)
+            raise Forbidden(f"this account is linked to a different {ident.provider} identity; "
+                            "ask an owner to unlink it first")
+        await store.link_identity(provider=ident.provider, subject=ident.subject, user_id=user["id"],
+                                  email=email)
+        log.info("linked %s identity to %s", ident.provider, user["email"])
+    else:
+        await store.touch_identity(ident.provider, ident.subject, email)
+    return user
+
+
+def domain_provisioner(store: AdminUserStore, *, domains: list[str], role: str, cities: list[str]):
+    """
+    Optional, off by default, and a genuinely dangerous thing to switch on: it turns "can receive mail
+    at this domain" into "has an account in the admin panel". Only worth it when the domain is a
+    corporate directory whose account lifecycle you actually control — and even then the role should
+    be `viewer`. Returns None when no domain is configured, which is the case we expect.
+    """
+    allowed = {d.strip().lower().lstrip("@") for d in domains if d.strip()}
+    if not allowed:
+        return None
+    log.warning("OIDC_AUTO_PROVISION_DOMAINS is set (%s, role=%s): anyone with a verified address at "
+                "one of these domains gets an admin account on first sign-in", ", ".join(sorted(allowed)), role)
+
+    async def provision(ident: ProviderIdentity) -> dict | None:
+        email = normalize_email(ident.email)
+        if email.rsplit("@", 1)[-1] not in allowed:
+            return None
+        # There is no password to know: the digest is of 32 random bytes nobody ever sees, so the
+        # account can only ever be entered through the provider (or after an owner sets a password).
+        row = await store.create_user(email=email, password_hash=_hasher.hash(secrets.token_urlsafe(32)),
+                                      name=(ident.name or "")[:120], role=role, cities=list(cities))
+        log.warning("auto-provisioned admin account %s (%s) from a %s sign-in", row["email"], role,
+                    ident.provider)
+        return row
+
+    return provision

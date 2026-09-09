@@ -7,6 +7,41 @@ releases start.
 ## [Unreleased]
 
 ### Added
+- **Sign in with Google or Microsoft, beside the password.** OpenID Connect authorization code flow with
+  PKCE (S256), configured per deployment and **off unless configured** — the login screen shows a button
+  only for a provider whose client id *and* secret are set, and an unconfigured provider's endpoints answer
+  `404`. New endpoints: `GET /v1/admin/auth/providers` (public, names only),
+  `POST /v1/admin/auth/oidc/{provider}/start`, `POST /v1/admin/auth/oidc/{provider}/callback`.
+  - **It never creates an account.** A verified provider email signs in an existing, **enabled**
+    `admin_user`; anybody else gets `403` and is told to ask an owner for an invitation. Delegating "who is
+    an operator here" to "who can prove they own an address" is the failure mode this rules out.
+  - **The account is bound to the provider's stable subject, not to the email string.** New `admin_identity`
+    table (Google `sub`, Microsoft `oid`): the first sign-in links it, later sign-ins must present the same
+    subject for that account *and* the same account for that subject. Either mismatch is refused rather than
+    re-linked, so a recycled address never inherits an admin account.
+  - **The id_token is verified**: RS256 signature against the provider's JWKS (`alg: none` and symmetric
+    algorithms refused before a key is fetched, unknown `kid` refetches the key set once), issuer, audience,
+    `exp`/`iat`/`nbf` with 60 s leeway, and the `nonce` from the request that started the flow.
+  - **Email verification per each provider's own rules**: Google must report `email_verified: true`;
+    Microsoft is restricted to an explicit tenant-id allowlist and refuses a token whose `xms_edov` is
+    present and false. Microsoft sign-in will not enable without that allowlist (`MICROSOFT_TENANT` as a
+    GUID, or `MICROSOFT_ALLOWED_TENANT_IDS`) because Entra signs every tenant with the same keys.
+  - `state` and the PKCE verifier are single-use, expire in `OIDC_STATE_TTL_SECONDS` (default 10 min) and
+    are bound to the browser that started the flow; new `admin_oidc_state` table, consumed with a
+    `DELETE … RETURNING`, swept by the maintenance loop. The `redirect_uri` is computed from
+    `OIDC_REDIRECT_BASE` and never accepted from the caller.
+  - The session it issues is the **same `admin_session`** the password flow issues: same roles, same city
+    scope, same expiry, same revocation, same httpOnly-cookie proxy.
+  - New settings: `OIDC_REDIRECT_BASE`, `OIDC_STATE_TTL_SECONDS`, `OIDC_ALLOW_INSECURE_HTTP`,
+    `GOOGLE_CLIENT_ID`/`_SECRET`, `MICROSOFT_CLIENT_ID`/`_SECRET`/`MICROSOFT_TENANT`/
+    `MICROSOFT_ALLOWED_TENANT_IDS`. Redirect URIs to register are in `docs/DEPLOY-RAILWAY.md` §4c.
+  - Optional and **off by default**: `OIDC_AUTO_PROVISION_DOMAINS` creates an account for a verified address
+    at a listed domain. It is documented in `SECURITY.md` as the risk it is and logs a warning at start-up.
+- `scripts/admin_user.py unlink <email> --provider google|microsoft` — the deliberate recovery when a linked
+  identity legitimately changes; `list` now shows which providers each account is linked to.
+- `PyJWT[crypto]` is a new runtime dependency (id_token signature and claim validation).
+
+### Added
 - **Named admin accounts replace the shared `ADMIN_TOKEN` for people.** An `admin_user` table (email unique
   case-insensitively, argon2id password digest, name, role, city scope, disabled, timestamps) and an
   `admin_session` table that stores only the sha256 of the session token, its expiry, and the user agent that

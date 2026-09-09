@@ -71,6 +71,9 @@ Volumes (`railway volume add -m <path>` needs the directory linked to the servic
 | api | `OTP_<CITY>_URL` | `http://otp.railway.internal:8080` (referenced from `cities/<city>.yaml`) |
 | api | `ADMIN_TOKEN` | `openssl rand -hex 32` — the **machine credential** for CI and scripts. Set it only in Railway, never in the repo. `ADMIN_TOKEN_ENABLED=false` switches it off once nothing automated uses it |
 | api | `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` | optional: creates the first owner account on the next boot and then does nothing forever after (see §4b). Remove them once the account exists |
+| api | `OIDC_REDIRECT_BASE` | optional, for Google/Microsoft sign-in: the **web** client's public origin, e.g. `https://bogota.opentransit.tech`. Falls back to `WEB_BASE_URL` (see §4c) |
+| api | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional: enables the "Continue with Google" button. Both or neither |
+| api | `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` / `MICROSOFT_TENANT` | optional: enables "Continue with Microsoft". `MICROSOFT_TENANT` is your Directory (tenant) ID; anything other than a GUID also needs `MICROSOFT_ALLOWED_TENANT_IDS` or the provider stays off (§4c) |
 | api | `CORS_ORIGINS` | `https://<web public domain>` (use `*` only while testing) |
 | api | `LOG_JSON` / `LOG_LEVEL` | `true` / `INFO` |
 | web | `NEXT_PUBLIC_API_URL` | `https://<api public domain>` (build-time: redeploy web after changing it) |
@@ -123,6 +126,72 @@ owner. Afterwards the owner creates the rest from `/admin/users`: `viewer` (read
 manages accounts, and every use is logged. `NEXT_PUBLIC_API_URL` stays the browser-facing API URL; the web
 service may also set `API_URL` to an internal hostname (`http://api.railway.internal:8000`) that the admin
 proxy uses server-side.
+
+## 4c. Sign in with Google / Microsoft (optional)
+
+Operators can use a Google or Microsoft account instead of a password. Read this first, because it changes
+nothing about *who* may sign in:
+
+> **Signing in with a provider does not create an account.** It signs in an existing, enabled account whose
+> email matches the verified address the provider returned. Somebody with no account gets `403` and a "ask an
+> owner to invite you" message. Create the account first (§4b or `/admin/users`), then they can use the
+> button. Full rules in `SECURITY.md`.
+
+The redirect URI is built from `OIDC_REDIRECT_BASE` (or `WEB_BASE_URL`) and must be registered **exactly** in
+each provider's console. For production at `https://bogota.opentransit.tech`:
+
+| provider | redirect URI to register |
+|---|---|
+| Google | `https://bogota.opentransit.tech/admin/auth/callback/google` |
+| Microsoft | `https://bogota.opentransit.tech/admin/auth/callback/microsoft` |
+
+For a staging environment, register the staging origin as a second redirect URI on the same app (or a
+separate app); for local development add `http://localhost:3000/admin/auth/callback/<provider>` and set
+`OIDC_ALLOW_INSECURE_HTTP=true` on the API. A mismatched or unregistered URI fails at the provider with
+`redirect_uri_mismatch` before anything reaches us.
+
+**Google** — [Cloud console](https://console.cloud.google.com/apis/credentials) → *APIs & Services* →
+*Credentials* → *Create credentials* → *OAuth client ID* → **Web application**. Add the redirect URI above
+under *Authorised redirect URIs*. On the *OAuth consent screen*, `Internal` (Workspace) or `External` with
+the operators added as test users; the scopes needed are only `openid`, `email` and `profile`. Copy the
+client ID and secret:
+
+```bash
+railway variables --service api --set GOOGLE_CLIENT_ID=... --set GOOGLE_CLIENT_SECRET=...
+railway variables --service api --set OIDC_REDIRECT_BASE=https://bogota.opentransit.tech
+```
+
+**Microsoft (Entra ID)** — [Entra admin center](https://entra.microsoft.com) → *App registrations* →
+*New registration*. Supported account types: **Accounts in this organizational directory only** unless you
+have a reason otherwise. Platform **Web**, redirect URI as above. Then *Certificates & secrets* → *New client
+secret* (note the expiry — a rotated secret has to be updated here), and copy *Application (client) ID* and
+*Directory (tenant) ID* from the Overview page.
+
+```bash
+railway variables --service api --set MICROSOFT_CLIENT_ID=... --set MICROSOFT_CLIENT_SECRET=... \
+  --set MICROSOFT_TENANT=<Directory (tenant) ID>
+```
+
+`MICROSOFT_TENANT` as a tenant GUID is the safe setup: only that directory may sign in. If you deliberately
+use `common`, `organizations`, `consumers` or a domain name, you **must** also set
+`MICROSOFT_ALLOWED_TENANT_IDS` to the tenant GUIDs allowed in — otherwise Microsoft sign-in refuses to enable
+at all, and the API logs why. Entra signs every tenant's tokens with the same keys, so without that list a
+stranger's tenant could issue a perfectly valid token carrying one of your operators' email addresses.
+Optionally add the `email` and `xms_edov` **optional claims** to the app registration (*Token configuration*
+→ *Add optional claim* → *ID*): `email` guarantees the address is present, and `xms_edov` lets the API refuse
+an address whose domain the tenant admin has not verified.
+
+Neither provider needs anything on the `web` service. Restart `api` after setting the variables — it logs
+`provider sign-in enabled: google, microsoft` — and the buttons appear on `/admin/login` on their own,
+because the login screen draws only what `GET /v1/admin/auth/providers` reports. Nothing appears for a
+provider that is not configured, and its endpoints answer `404`.
+
+If a linked account ever stops matching (a directory account re-created, an app registration replaced), the
+sign-in is refused as a mismatch by design. Clear the link deliberately:
+
+```bash
+railway run -s api python scripts/admin_user.py unlink you@example.com --provider microsoft
+```
 
 ## 5. Verify
 

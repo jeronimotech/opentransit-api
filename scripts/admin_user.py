@@ -8,6 +8,7 @@ from outside the API. This script talks straight to Postgres with the same `DATA
     python scripts/admin_user.py create-owner luis@example.com --name "Luis"
     python scripts/admin_user.py create luis@example.com --role admin --cities bogota
     python scripts/admin_user.py passwd luis@example.com      # also revokes their sessions
+    python scripts/admin_user.py unlink luis@example.com --provider google
     python scripts/admin_user.py list
 
 The password is read from a prompt (never echoed, never in your shell history). `--password-stdin`
@@ -16,6 +17,11 @@ would put the secret in the process list.
 
 `create-owner` refuses once any account exists — the same rule as the ADMIN_BOOTSTRAP_* variables — so
 it is safe to leave in a provisioning script.
+
+`unlink` is the escape hatch for the one way provider sign-in can lock somebody out: an account is
+linked to a Google or Microsoft subject id, that id changes (a re-created directory account, a replaced
+app registration), and every later sign-in is refused as a mismatch — which is exactly what should
+happen, until a human decides otherwise. Unlinking lets the next sign-in re-link.
 """
 from __future__ import annotations
 
@@ -67,7 +73,8 @@ async def run(args: argparse.Namespace) -> int:
                 print("no accounts yet — run `create-owner`")
             for u in users:
                 scope = ",".join(u["cities"]) or "all cities"
-                print(f"{u['id']:>4}  {u['email']:<32} {u['role']:<7} {scope:<24}"
+                linked = ",".join(i["provider"] for i in await store.identities_of(u["id"])) or "-"
+                print(f"{u['id']:>4}  {u['email']:<32} {u['role']:<7} {scope:<24}{linked:<20}"
                       f"{'disabled' if u['disabled'] else ''}")
             return 0
 
@@ -103,6 +110,10 @@ async def run(args: argparse.Namespace) -> int:
         elif args.cmd == "enable":
             await store.update_user(user["id"], disabled=False)
             print(f"enabled {user['email']}")
+        elif args.cmd == "unlink":
+            gone = await store.unlink_identity(user["id"], args.provider)
+            print(f"unlinked {args.provider} from {user['email']}" if gone
+                  else f"{user['email']} has no {args.provider} identity")
         return 0
     finally:
         await close_pool()
@@ -132,6 +143,10 @@ def main() -> int:
         p.add_argument("email")
         if cmd == "passwd":
             with_password(p)
+
+    p = sub.add_parser("unlink", help="forget a linked Google/Microsoft identity")
+    p.add_argument("email")
+    p.add_argument("--provider", required=True, choices=["google", "microsoft"])
 
     sub.add_parser("list", help="list accounts")
 

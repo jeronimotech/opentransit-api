@@ -42,6 +42,33 @@ class Settings(BaseSettings):
     ADMIN_BOOTSTRAP_PASSWORD: str | None = None
     ADMIN_BOOTSTRAP_NAME: str = ""
 
+    # v1.12 sign in with Google / Microsoft (OpenID Connect, authorization code + PKCE).
+    # Both providers stay off unless their client id *and* secret are set here, per deployment; the
+    # login screen only shows a button for a provider that is actually configured. Secrets never live
+    # in the repository — see .env.example and docs/DEPLOY-RAILWAY.md.
+    OIDC_REDIRECT_BASE: str | None = None      # public origin of the web client; falls back to WEB_BASE_URL
+    OIDC_STATE_TTL_SECONDS: int = 600          # how long a started sign-in stays completable
+    OIDC_ALLOW_INSECURE_HTTP: bool = False     # localhost development only
+
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+
+    MICROSOFT_CLIENT_ID: str | None = None
+    MICROSOFT_CLIENT_SECRET: str | None = None
+    # Your tenant GUID (recommended), a verified domain, or common/organizations/consumers. Anything
+    # other than a GUID also needs MICROSOFT_ALLOWED_TENANT_IDS, because Entra signs every tenant on
+    # earth with the same keys: without an allowlist, a stranger's tenant could mint a token naming
+    # one of your operators. See SECURITY.md.
+    MICROSOFT_TENANT: str = ""
+    MICROSOFT_ALLOWED_TENANT_IDS: str = ""     # comma-separated tenant GUIDs allowed to sign in
+
+    # OFF BY DEFAULT, AND IT SHOULD STAY THAT WAY. When set, a verified provider email whose domain is
+    # listed here creates an account on first sign-in instead of being refused. That hands an admin
+    # account to anybody who can get an address at that domain. SECURITY.md spells out the risk.
+    OIDC_AUTO_PROVISION_DOMAINS: str = ""
+    OIDC_AUTO_PROVISION_ROLE: str = "viewer"
+    OIDC_AUTO_PROVISION_CITIES: str = ""       # comma-separated city ids; empty means every city
+
     OTP_TIMEOUT_S: float = 25.0
     PHOTON_TIMEOUT_S: float = 4.0
     # Public Photon instances reject requests carrying a library's default User-Agent

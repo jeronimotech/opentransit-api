@@ -20,6 +20,7 @@ from .gbfs import GbfsNetwork
 from .gtfs_static import ingest, load_route_index, load_service_index
 from .logging_setup import setup_logging
 from .normalize import set_feed_flags
+from .oidc import OidcService, PgOidcStateStore, configured_providers
 from .openmobility import PgOpenMobilityStore, refresh_from_url
 from .otp import OtpClient
 from .routers import (
@@ -112,6 +113,10 @@ async def _analytics_loop(app: FastAPI, stop: asyncio.Event) -> None:
             dropped_sessions = await app.state.admin_users.drop_expired_sessions()
             if dropped_sessions:
                 log.info("admin sessions: dropped %d expired", dropped_sessions)
+            # Half-finished sign-ins: a person who closed the tab at the provider leaves a row behind.
+            dropped_states = await app.state.oidc_states.drop_expired_states()
+            if dropped_states:
+                log.info("provider sign-ins: dropped %d abandoned", dropped_states)
             for rt in app.state.cities.values():
                 if rt.city.config.analytics.enabled:
                     r = await store.rollup(rt.city)
@@ -195,6 +200,12 @@ async def lifespan(app: FastAPI):
     app.state.config_store = PgConfigStore()
     app.state.admin_users = PgAdminUserStore()
     await _bootstrap_admin(app.state.admin_users, cfg)
+    # Sign in with Google / Microsoft. Both stay off unless their credentials are set: `configured_providers`
+    # returns only what this deployment can actually use, and the login screen shows exactly that.
+    app.state.oidc_states = PgOidcStateStore()
+    app.state.oidc = OidcService(configured_providers(cfg))
+    if app.state.oidc.providers:
+        log.info("provider sign-in enabled: %s", ", ".join(sorted(app.state.oidc.providers)))
     app.state.openmobility_store = PgOpenMobilityStore()
     await load_overrides(app.state.config_store, app.state.cities)
     stop = asyncio.Event()

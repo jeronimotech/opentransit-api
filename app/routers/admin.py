@@ -17,6 +17,7 @@ from ..admin_auth import (
     open_session,
     principal_from_user,
     public_user,
+    sign_in_with_identity,
     validate_cities,
     validate_email,
     validate_password,
@@ -36,6 +37,7 @@ from ..config import settings
 from ..errors import ApiError, Forbidden, Unauthorized
 from ..gtfs_static import ingest, load_route_index, load_service_index
 from ..normalize import set_feed_flags
+from ..oidc import redirect_uri_for
 from ..ondemand import unmask_open_mobility_patch, unmask_patch
 from ..runtime import CityRuntime, city_runtime
 
@@ -44,6 +46,9 @@ router = APIRouter(tags=["admin"])
 
 SESSION_COOKIE = "ot_admin_session"
 _throttle = LoginThrottle()
+# Starting a provider sign-in is cheap for us and costs an attacker nothing either, but it does write a
+# row; a looser limit than the password throttle keeps a shared office address from locking itself out.
+_oidc_throttle = LoginThrottle(limit=30, window_s=300)
 
 
 # ------------------------------------------------------------------ authentication
@@ -144,9 +149,18 @@ async def login(body: LoginBody, request: Request):
         raise Unauthorized("wrong email or password")
     for k in keys:
         _throttle.clear(k)
+    log.info("admin sign-in: %s (%s)", user["email"], user["role"])
+    return await _issue_session(request, store, user)
+
+
+async def _issue_session(request: Request, store, user: dict) -> dict:
+    """
+    The one place a session is minted. Password sign-in and provider sign-in both end here, so a
+    session issued by Google is the same `admin_session` row as one issued by a password: same roles,
+    same city scope, same revocation, same cookie proxy. The token is returned exactly once.
+    """
     token, expires_at = await open_session(store, user, hours=settings().ADMIN_SESSION_HOURS,
                                            user_agent=request.headers.get("user-agent"))
-    log.info("admin sign-in: %s (%s)", user["email"], user["role"])
     return {"token": token, "expiresAt": expires_at.isoformat().replace("+00:00", "Z"),
             "user": public_user(user), "cities": visible_cities(principal_from_user(user),
                                                                 sorted(request.app.state.cities))}
@@ -170,6 +184,86 @@ async def auth_me(request: Request, me: Principal = Depends(_authenticate)):
 async def admin_me(request: Request, me: Principal = Depends(_authenticate)):
     """Kept for scripts and older clients; `/v1/admin/auth/me` is the same answer."""
     return await auth_me(request, me)
+
+
+# ------------------------------------------------------------------ sign in with Google / Microsoft
+# Three unauthenticated endpoints, because signing in is by definition what you do before you have a
+# session. The browser never talks to them directly: the web's own server-side route handlers do, so
+# the browser token that binds the flow stays in an httpOnly cookie. See app/oidc.py for the rules.
+def _oidc(request: Request):
+    svc = getattr(request.app.state, "oidc", None)
+    if svc is None or not svc.providers:
+        raise ApiError("provider sign-in is not configured on this deployment", status=404,
+                       code="NOT_FOUND")
+    return svc
+
+
+def _states(request: Request):
+    states = getattr(request.app.state, "oidc_states", None)
+    if states is None:
+        raise ApiError("provider sign-in is not available on this deployment", status=503,
+                       code="UNAVAILABLE")
+    return states
+
+
+def _provisioner(request: Request):
+    """None unless this deployment explicitly opted into domain provisioning — which it should not."""
+    from ..admin_auth import domain_provisioner
+    cfg = settings()
+    return domain_provisioner(
+        _store(request),
+        domains=[d for d in (cfg.OIDC_AUTO_PROVISION_DOMAINS or "").split(",") if d.strip()],
+        role=validate_role((cfg.OIDC_AUTO_PROVISION_ROLE or "viewer").strip()),
+        cities=validate_cities([c for c in (cfg.OIDC_AUTO_PROVISION_CITIES or "").split(",") if c.strip()],
+                               set(request.app.state.cities)))
+
+
+@router.get("/v1/admin/auth/providers")
+async def auth_providers(request: Request):
+    """What the login screen may offer. A provider that is not configured is simply not in this list."""
+    svc = getattr(request.app.state, "oidc", None)
+    return {"password": True, "providers": svc.public() if svc is not None else []}
+
+
+@router.post("/v1/admin/auth/oidc/{provider}/start")
+async def oidc_start(provider: str, request: Request):
+    """
+    Begins the flow: mints `state`, a PKCE verifier and a nonce, stores them for a few minutes, and
+    returns the provider's authorization URL plus the browser token the caller must keep. The
+    `redirect_uri` is computed from this deployment's configuration and never accepted from the
+    caller — one that a caller can choose is an open redirect with an authorization code attached.
+    """
+    svc, cfg = _oidc(request), settings()
+    svc.provider(provider)          # 404 for a provider this deployment has not configured
+    key = f"o:{request.client.host if request.client else '?'}"
+    now = time.time()
+    if _oidc_throttle.blocked(key, now):
+        raise ApiError("too many sign-in attempts; wait a few minutes", status=429, code="RATE_LIMITED")
+    _oidc_throttle.fail(key, now)
+    return await svc.start(_states(request), provider, redirect_uri=redirect_uri_for(cfg, provider),
+                           ttl_s=cfg.OIDC_STATE_TTL_SECONDS)
+
+
+class OidcCallbackBody(BaseModel):
+    state: str
+    code: str
+    browserToken: str      # noqa: N815 — the wire shape is camelCase like every other admin response
+
+
+@router.post("/v1/admin/auth/oidc/{provider}/callback")
+async def oidc_callback(provider: str, body: OidcCallbackBody, request: Request):
+    """
+    Finishes the flow. Everything that could go wrong before this line — a replayed `state`, a token
+    from another browser, a forged id_token — has already been refused in `OidcService.complete`; what
+    is left is the question this endpoint exists to answer: is there an account for this person?
+    """
+    svc, store, cfg = _oidc(request), _store(request), settings()
+    ident = await svc.complete(_states(request), provider, state=body.state, code=body.code,
+                               browser_token=body.browserToken,
+                               redirect_uri=redirect_uri_for(cfg, provider))
+    user = await sign_in_with_identity(store, ident, provision=_provisioner(request))
+    log.info("admin sign-in via %s: %s (%s)", provider, user["email"], user["role"])
+    return await _issue_session(request, store, user)
 
 
 # ------------------------------------------------------------------ accounts (owner only)

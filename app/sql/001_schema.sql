@@ -374,3 +374,36 @@ CREATE TABLE IF NOT EXISTS admin_session (
 );
 CREATE INDEX IF NOT EXISTS admin_session_user ON admin_session (user_id);
 CREATE INDEX IF NOT EXISTS admin_session_expiry ON admin_session (expires_at);
+
+-- ─────────────── v1.12 sign in with Google / Microsoft ───────────────
+-- A provider identity is *linked* to an account, never a substitute for one. `subject` is the
+-- provider's stable id for the person (Google `sub`; Microsoft `oid`, which survives an app
+-- registration being replaced). The primary key makes one provider identity reachable from one
+-- account; the unique index makes one account reachable from one identity per provider. Between them
+-- a later sign-in that presents a different subject for the same email is a refusal, not a re-link.
+CREATE TABLE IF NOT EXISTS admin_identity (
+  provider      TEXT NOT NULL,                   -- google | microsoft
+  subject       TEXT NOT NULL,                   -- the provider's stable id; never the email
+  user_id       BIGINT NOT NULL REFERENCES admin_user(id) ON DELETE CASCADE,
+  email         TEXT NOT NULL DEFAULT '',        -- last seen, for the audit trail only
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_login_at TIMESTAMPTZ,
+  PRIMARY KEY (provider, subject)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS admin_identity_one_per_provider ON admin_identity (user_id, provider);
+
+-- One row per started sign-in. It holds the PKCE verifier and the nonce, and the digests of the two
+-- secrets that make the flow single-use and browser-bound: `state` (returned by the provider) and a
+-- browser token (held only in an httpOnly cookie on the web origin). The row is taken with a
+-- DELETE ... RETURNING, so a replay finds nothing at all.
+CREATE TABLE IF NOT EXISTS admin_oidc_state (
+  state_hash    TEXT PRIMARY KEY,                -- sha256 of the `state` handed to the browser
+  browser_hash  TEXT NOT NULL,                   -- sha256 of the cookie that binds this to one browser
+  provider      TEXT NOT NULL,
+  code_verifier TEXT NOT NULL,
+  nonce         TEXT NOT NULL,
+  redirect_uri  TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at    TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS admin_oidc_state_expiry ON admin_oidc_state (expires_at);
