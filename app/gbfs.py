@@ -270,8 +270,11 @@ class GbfsNetwork:
         found.sort(key=lambda s: s["distanceMeters"])
         return found[:limit]
 
-    def price_estimate(self) -> dict | None:
-        """Configured `single_trip_price` wins; otherwise the GBFS pricing heuristic."""
+    def price_estimate(self, minutes: float | None = None, electric: bool = False) -> dict | None:
+        """What one trip costs. A configured `per_minute_price` is priced from the ride's length (with no
+        `minutes`, only the unlock fee is certain); then a flat `single_trip_price`; then the heuristic."""
+        if self.cfg.per_minute_price:
+            return self.cfg.per_minute_price.quote(minutes, electric)
         cfg = self.cfg.single_trip_price
         if cfg and cfg.get("amount") is not None:
             return {"amount": float(cfg["amount"]), "currency": cfg.get("currency") or "COP",
@@ -287,8 +290,13 @@ class GbfsNetwork:
         if self.cfg.pricing_summary:
             return self.cfg.pricing_summary
         parts: list[str] = []
-        single = self.price_estimate()
-        if single:
+        pm = self.cfg.per_minute_price
+        if pm:
+            rate = f"{_money(pm.per_minute)}/min"
+            if pm.per_minute_electric is not None:
+                rate += f" ({_money(pm.per_minute_electric)}/min electric)"
+            parts.append(f"{pm.label} {_money(pm.unlock)} + {rate}" if pm.unlock else f"{pm.label} {rate}")
+        elif single := self.price_estimate():
             parts.append(f"{single['label']} {_money(single['amount'])}")
         real = [p for p in self.pricing_plans if p.get("price") and float(p["price"]) > 0
                 and not _EXCLUDE_PLAN.search(p.get("name") or "")]

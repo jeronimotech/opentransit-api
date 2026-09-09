@@ -42,6 +42,7 @@ from .cities import (
     OnDemandProvider,
     OpenMobility,
     ParkRide,
+    PerMinutePrice,
     ServiceTile,
     ShareConfig,
     TaxiSurcharge,
@@ -201,6 +202,14 @@ class SingleTripPriceCfg(_Strict):
     label: str | None = Field(None, max_length=60)
 
 
+class PerMinutePriceCfg(_Strict):
+    unlock: float = Field(0, ge=0)
+    perMinute: float = Field(ge=0)
+    perMinuteElectric: float | None = Field(None, ge=0)
+    currency: str = Field("COP", pattern=r"^[A-Z]{3}$")
+    label: str = Field("1 viaje", max_length=60)
+
+
 class BikeShareCfg(_Strict):
     id: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
     name: str = Field(min_length=1, max_length=80)
@@ -211,6 +220,7 @@ class BikeShareCfg(_Strict):
     apps: AppLinksCfg = AppLinksCfg()
     pricingSummary: str | None = Field(None, max_length=160)
     singleTripPrice: SingleTripPriceCfg | None = None
+    perMinutePrice: PerMinutePriceCfg | None = None
     formFactors: list[Literal["bicycle", "scooter", "cargo_bicycle", "moped", "car", "other"]] = ["bicycle"]
 
     _v = field_validator("gbfsUrl", "url")(_https)
@@ -653,6 +663,15 @@ def _validate_ondemand(mob: dict) -> None:
                                status=422)
 
 
+def _per_minute_price(v: dict | None) -> PerMinutePrice | None:
+    """camelCase over the wire, snake_case in the YAML model."""
+    if not v:
+        return None
+    return PerMinutePrice(unlock=v.get("unlock") or 0, per_minute=v["perMinute"],
+                          per_minute_electric=v.get("perMinuteElectric"),
+                          currency=v.get("currency") or "COP", label=v.get("label") or "1 viaje")
+
+
 def _assistant(a: dict) -> AssistantConfig:
     return AssistantConfig(enabled=a["enabled"], provider=a["provider"], model=a["model"],
                            api_key=a["apiKey"], base_url=a["baseUrl"],
@@ -719,6 +738,7 @@ def build_city(base: City, sections: dict) -> City:
     nets = [BikeShareNetwork(id=n["id"], name=n["name"], network=n["network"], gbfs_url=n["gbfsUrl"],
                              color=n["color"], url=n.get("url"), apps=n.get("apps") or {},
                              pricing_summary=n.get("pricingSummary"), single_trip_price=n.get("singleTripPrice"),
+                             per_minute_price=_per_minute_price(n.get("perMinutePrice")),
                              form_factors=n.get("formFactors") or [])
             for n in sections["mobility"]["bikeShare"]]
     mob = sections["mobility"]

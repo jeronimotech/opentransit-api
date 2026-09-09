@@ -91,7 +91,8 @@ mobility:
       # Pinned, not derived: the pricing feed is 150+ plans of memberships, corporate and test tariffs,
       # and the heuristic in gbfs.py reads Spanish plan names and formats money the Colombian way.
       pricing_summary: "Pay as you go: $1 unlock + $0.12/min ($0.20 e-bike) · Day pass $15 · Annual $105"
-      single_trip_price: { amount: 1.0, currency: CAD, label: "Unlock, then $0.12/min" }
+      # Pay-as-you-go, so the estimate is the ride's own length and every ride pays its own unlock fee.
+      per_minute_price: { unlock: 1.0, per_minute: 0.12, per_minute_electric: 0.20, currency: CAD, label: "Pay as you go" }
       form_factors: [bicycle]                # the fleet is bikes only; no scooters are docked today
 
   on_demand:

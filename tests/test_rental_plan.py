@@ -86,6 +86,22 @@ def test_rental_leg_from_real_otp_response(bogota: City):
         {"label": "Acme Bikes · Diario", "amount": 11000, "route": None, "kind": "rental"}]
 
 
+def test_pay_as_you_go_leg_is_priced_from_its_own_duration(bogota: City):
+    """The shared per-network quote cannot know the minutes, so the leg's own duration prices the ride:
+    467 s is 8 started minutes, $1 to unlock plus 8 x $0.12."""
+    nets = [BikeShareNetwork(id="acme", name="Acme Bikes", network="acme_city", color="#112233",
+                             gbfs_url="https://example.org/gbfs.json",
+                             per_minute_price={"unlock": 1.0, "per_minute": 0.12, "per_minute_electric": 0.20,
+                                               "currency": "CAD", "label": "Pay as you go"})]
+    city = bogota.model_copy(update={"mobility": Mobility(bike_share=nets)})
+    stale = {"acme": {"amount": 999, "currency": "CAD", "label": "ignored", "estimated": True}}
+    out = plan_from_otp(city, _rental_fixture_as("acme_city"), {"name": None, "lat": 0, "lon": 0},
+                        {"name": None, "lat": 0, "lon": 0}, None, "es", stale)
+    r = out["itineraries"][0]["legs"][1]["rental"]
+    assert r["priceEstimate"] == {"amount": 1.96, "currency": "CAD",
+                                  "label": "Pay as you go", "estimated": True}
+
+
 def test_enrich_rental_uses_live_cache_and_strips_private_keys(bogota: City):
     city = _with_networks(bogota)
     out = plan_from_otp(city, _rental_fixture_as("acme_city"), {"name": None, "lat": 0, "lon": 0},
@@ -128,6 +144,21 @@ def test_fare_combines_transit_and_one_rental_pass_per_network(bogota: City):
     assert f["amount"] == 3200 + 11000
     assert [b["kind"] for b in f["breakdown"]] == ["transit", "rental"]        # second ride is on the same pass
     assert f["breakdown"][1]["label"] == "Acme · Diario"
+
+
+def test_pay_as_you_go_charges_every_ride_not_one_pass(bogota: City):
+    """A day pass covers the access and the egress ride; $1-to-unlock does not. Charging Toronto once per
+    itinerary would have halved the price of any trip that rides a bike at both ends."""
+    city = bogota.model_copy(update={"mobility": Mobility(bike_share=[BikeShareNetwork(
+        id="acme", name="Acme Bikes", network="acme_city", gbfs_url="https://example.org/gbfs.json",
+        per_minute_price={"unlock": 1.0, "per_minute": 0.12, "currency": "CAD", "label": "Pay as you go"})])})
+    ride = {"transit": False, "rental": {"networkId": "acme", "networkName": "Acme Bikes", "priceEstimate":
+                                         {"amount": 2.2, "currency": "CAD", "label": "Pay as you go"}}}
+    legs = [ride, {"transit": True, "startTime": "2026-09-04T08:10:00-05:00", "route": {"shortName": "G12"}}, ride]
+
+    f = estimate_fare(city, legs, "es")
+    assert [b["kind"] for b in f["breakdown"]] == ["transit", "rental", "rental"]
+    assert f["amount"] == pytest.approx(3200 + 2.2 + 2.2)
 
 
 def test_fare_without_city_fares_but_with_rental(bogota: City):

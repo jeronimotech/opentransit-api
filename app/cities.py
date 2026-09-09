@@ -1,5 +1,6 @@
 """City (tenant) registry. Loaded once from cities/*.yaml; `${VAR}` / `${VAR:-default}` are expanded."""
 import logging
+import math
 import os
 import re
 from pathlib import Path
@@ -198,6 +199,31 @@ class Links(BaseModel):
     privacy: str | None = None
 
 
+class PerMinutePrice(BaseModel):
+    """Pay-as-you-go rental: a fixed unlock fee plus a rate per minute ridden, optionally a higher rate
+    for electric vehicles. Unlike a day pass this is charged on **every** ride, so `estimate_fare` must
+    not collapse two legs on the same network into one charge."""
+    unlock: float = 0.0
+    per_minute: float
+    per_minute_electric: float | None = None
+    currency: str = "COP"
+    label: str = "1 viaje"
+
+    def rate(self, electric: bool = False) -> float:
+        return self.per_minute_electric if (electric and self.per_minute_electric is not None) else self.per_minute
+
+    def quote(self, minutes: float | None = None, electric: bool = False) -> dict:
+        """A whole started minute is charged, the way the operators bill it."""
+        ridden = math.ceil(minutes) if minutes and minutes > 0 else 0
+        return {"amount": round(self.unlock + self.rate(electric) * ridden, 2),
+                "currency": self.currency, "label": self.label, "estimated": True}
+
+    def public(self) -> dict:
+        return {"unlock": self.unlock, "perMinute": self.per_minute,
+                "perMinuteElectric": self.per_minute_electric,
+                "currency": self.currency, "label": self.label}
+
+
 class BikeShareNetwork(BaseModel):
     """One shared-vehicle network published as GBFS (v1.2). `network` is the OTP updater network id."""
     id: str = Field(pattern=r"^[a-z0-9-]+$")
@@ -208,7 +234,8 @@ class BikeShareNetwork(BaseModel):
     url: str | None = None
     apps: dict[str, str | None] = {}
     pricing_summary: str | None = None
-    single_trip_price: dict | None = None     # {amount, currency, label}: overrides the GBFS pricing heuristic
+    single_trip_price: dict | None = None     # {amount, currency, label}: flat fare, overrides the heuristic
+    per_minute_price: PerMinutePrice | None = None   # pay-as-you-go; wins over both, priced per ride
     form_factors: list[str] = ["bicycle"]
 
     def public(self) -> dict:
@@ -216,6 +243,7 @@ class BikeShareNetwork(BaseModel):
                 "color": self.color, "url": self.url,
                 "apps": {"ios": self.apps.get("ios"), "android": self.apps.get("android")},
                 "pricingSummary": self.pricing_summary, "singleTripPrice": self.single_trip_price,
+                "perMinutePrice": self.per_minute_price.public() if self.per_minute_price else None,
                 "formFactors": self.form_factors}
 
 

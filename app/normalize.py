@@ -246,7 +246,12 @@ def rental_from_otp(city: City, leg: dict, rental_prices: dict | None = None) ->
     form, prop = (vt.get("formFactor") or "").upper() or None, (vt.get("propulsionType") or "").upper() or None
     vtype = _VEHICLE_TYPE.get((form, prop)) or _VEHICLE_TYPE.get((form, None)) \
         or ("bicycle" if form == "BICYCLE" or leg.get("mode") == "BICYCLE" else None)
-    price = (rental_prices or {}).get(net.id) if net else None
+    # Pay-as-you-go networks are priced from this ride: the shared `rental_prices` quote only carries the
+    # unlock fee, because the minutes are a property of the leg, not of the network.
+    if net and net.per_minute_price:
+        price = net.per_minute_price.quote((leg.get("duration") or 0) / 60, electric=vtype == "electric_assist")
+    else:
+        price = (rental_prices or {}).get(net.id) if net else None
     return {
         "networkId": net.id if net else (otp_net or "unknown"),
         "networkName": net.name if net else otp_net, "color": net.color if net else None,

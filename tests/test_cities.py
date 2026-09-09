@@ -79,7 +79,7 @@ def test_toronto_bike_share_matches_the_otp_updater():
     net = city.bike_network("bike_share_toronto")
     assert net is not None and net.id == "bike-share-toronto"
     assert net.form_factors == ["bicycle"]          # no scooters are docked in Toronto
-    assert net.single_trip_price["currency"] == "CAD"
+    assert net.per_minute_price is not None and net.per_minute_price.currency == "CAD"
 
     updaters = json.loads(Path("otp/toronto/router-config.json").read_text())["updaters"]
     rental = [u for u in updaters if u["type"] == "vehicle-rental"]

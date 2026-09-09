@@ -47,12 +47,15 @@ def estimate_fare(city: City, legs: list[dict], locale: str = "es") -> dict | No
             window_start, transfers_used = t, 0
             total += f.base
             breakdown.append({"label": lbl_fare, "amount": f.base, "route": route, "kind": "transit"})
-    # One rental pass per network per itinerary (a day pass covers both the access and the egress ride).
+    # One rental pass per network per itinerary — a day pass covers both the access and the egress ride.
+    # Pay-as-you-go networks are the exception: every ride pays its own unlock fee and its own minutes,
+    # so those legs are each charged (Bike Share Toronto bills this way, Tembici Bogotá does not).
     charged: set[str] = set()
     currency = f.currency if f is not None else None
     for lg in rentals:
         r = lg["rental"]
-        if r["networkId"] in charged:
+        net = city.bike_network(r["networkId"])
+        if not (net and net.per_minute_price) and r["networkId"] in charged:
             continue
         charged.add(r["networkId"])
         pe = r["priceEstimate"]

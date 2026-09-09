@@ -148,3 +148,24 @@ async def test_localized_names_follow_the_city_language():
     es = GbfsNetwork("city", _net(), fetcher=bilingual(FIX))
     await es.refresh()
     assert es.lang == "es" and es.station("1")["name"] == "CL 82 con KR 11"
+
+
+@pytest.mark.asyncio
+async def test_pay_as_you_go_is_priced_from_the_ride_not_the_network():
+    """Bike Share Toronto bills $1 to unlock plus a rate per started minute, and e-bikes cost more. A flat
+    per-network amount could only ever state the unlock fee, so the estimate takes the ride's length."""
+    from app.cities import PerMinutePrice
+
+    g = GbfsNetwork("city", _net(), fetcher=_fetcher(FIX))
+    await g.refresh()
+    g.cfg = g.cfg.model_copy(update={"per_minute_price": PerMinutePrice(
+        unlock=1.0, per_minute=0.12, per_minute_electric=0.20, currency="CAD", label="Pay as you go")})
+
+    assert g.price_estimate(14.2) == {"amount": 2.8, "currency": "CAD",     # 15 started minutes
+                                      "label": "Pay as you go", "estimated": True}
+    assert g.price_estimate(14.2, electric=True)["amount"] == 4.0
+    assert g.price_estimate()["amount"] == 1.0                              # only the unlock is certain
+    # it also wins over a flat price left in the config, and the summary states the rate
+    g.cfg = g.cfg.model_copy(update={"single_trip_price": {"amount": 9999, "currency": "CAD"}})
+    assert g.price_estimate(10)["amount"] == 2.2
+    assert g.pricing_summary().startswith("Pay as you go $1 + $0.12/min ($0.2/min electric)")
