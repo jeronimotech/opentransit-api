@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # Public base URL of the web client, used to build links meant for a person
     # rather than for a client (a shared trip). Per-city override: `share.webBaseUrl`.
     WEB_BASE_URL: str | None = None
+    # Every city gets its own subdomain, so listing origins one by one means a new city
+    # is a browser error nobody sees until a person opens the site — which is exactly
+    # how toronto.opentransit.tech shipped broken. A pattern covers the ones to come.
+    CORS_ORIGIN_REGEX: str | None = None
 
     # v1.11 admin accounts. People sign in with an email and a password; ADMIN_TOKEN survives only as a
     # machine credential for CI and scripts, and a deployment can switch it off entirely.

@@ -76,3 +76,27 @@ def test_parse_modes():
                          arrive_by=False, transit=[], street=["WALK"], wheelchair=False, num=3, locale="es",
                          walk_reluctance=None)
     assert v2["modes"] == {"direct": ["WALK"], "directOnly": True}
+
+
+def test_cors_covers_every_city_subdomain_not_just_the_listed_ones(monkeypatch):
+    """A new city is a new subdomain. Listing origins one by one means the next city
+    ships with a browser error nobody sees until someone opens the site — which is
+    exactly how toronto.opentransit.tech went out.
+    """
+    import re
+
+    from app.config import settings
+
+    settings.cache_clear()
+    monkeypatch.setenv("CORS_ORIGIN_REGEX", r"https://([a-z0-9-]+\.)?opentransit\.tech")
+    try:
+        rx = re.compile(settings().CORS_ORIGIN_REGEX)
+        for allowed in ("https://opentransit.tech", "https://bogota.opentransit.tech",
+                        "https://toronto.opentransit.tech", "https://medellin.opentransit.tech"):
+            assert rx.fullmatch(allowed), allowed
+        # A pattern this broad is only safe if it is anchored: these must not match.
+        for denied in ("https://opentransit.tech.evil.example", "http://bogota.opentransit.tech",
+                       "https://evil-opentransit.tech", "https://a.b.opentransit.tech"):
+            assert not rx.fullmatch(denied), denied
+    finally:
+        settings.cache_clear()

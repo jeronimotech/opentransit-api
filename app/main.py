@@ -253,8 +253,11 @@ def create_app() -> FastAPI:
                       {"name": "analytics"}, {"name": "openmobility"}, {"name": "assistant"},
                       {"name": "admin"}],
     )
-    origins = [o.strip() for o in settings().CORS_ORIGINS.split(",") if o.strip()]
-    app.add_middleware(CORSMiddleware, allow_origins=origins or ["*"], allow_methods=["*"], allow_headers=["*"])
+    cfg = settings()
+    origins = [o.strip() for o in cfg.CORS_ORIGINS.split(",") if o.strip()]
+    rx = (cfg.CORS_ORIGIN_REGEX or "").strip() or None
+    app.add_middleware(CORSMiddleware, allow_origins=[] if rx and not origins else (origins or ["*"]),
+                       allow_origin_regex=rx, allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
     for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, ondemand,
