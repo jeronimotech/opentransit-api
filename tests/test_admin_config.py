@@ -67,7 +67,9 @@ async def test_requires_admin_token(bogota: City):
         r = await c.get("/v1/admin/me", headers={"X-Admin-Token": "wrong"})
         assert r.status_code == 401
         r = await c.get("/v1/admin/me", headers=H)
-        assert r.json() == {"ok": True, "cities": ["bogota"]}
+        body = r.json()
+        assert body["ok"] is True and body["cities"] == ["bogota"]
+        assert body["user"]["kind"] == "machine" and body["canManageUsers"] is False
 
 
 async def test_put_propagates_to_public_city_and_fares(bogota: City):

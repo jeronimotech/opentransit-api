@@ -7,6 +7,35 @@ releases start.
 ## [Unreleased]
 
 ### Added
+- **Named admin accounts replace the shared `ADMIN_TOKEN` for people.** An `admin_user` table (email unique
+  case-insensitively, argon2id password digest, name, role, city scope, disabled, timestamps) and an
+  `admin_session` table that stores only the sha256 of the session token, its expiry, and the user agent that
+  opened it. New endpoints: `POST /v1/admin/auth/login` · `…/logout` · `GET /v1/admin/auth/me`, and
+  `GET/POST /v1/admin/users`, `PATCH …/users/{id}`, `POST …/users/{id}/disable` for owners.
+  - Roles `viewer` < `admin` < `owner`, and a city scope (`[]` = every city). **Both are enforced on every
+    admin route**, including the analytics, assistant-health and open-mobility ones — a role that is too low
+    or a city outside the scope now gets `403 FORBIDDEN` rather than being a UI-only distinction.
+  - Sessions expire (`ADMIN_SESSION_HOURS`, default 12) and are revoked on sign-out, on disable, and whenever
+    a password, role or city scope changes. Expired rows are swept by the maintenance loop. The last enabled
+    owner cannot be disabled or demoted.
+  - Repeated failed sign-ins are throttled per email and per client address; a wrong email, a wrong password
+    and a disabled account are indistinguishable in the response, and a missing account still pays for one
+    hash so timing does not leak either.
+  - The config audit trail now records the signed-in account: `updatedBy` sent by a person is ignored.
+- **`scripts/admin_user.py`** — `create-owner` (refuses once any account exists), `create`, `passwd`,
+  `disable`, `enable`, `list`. Passwords are prompted, never passed as a flag. `ADMIN_BOOTSTRAP_EMAIL` +
+  `ADMIN_BOOTSTRAP_PASSWORD` do the same at start-up for platforms without a shell, with the same refusal.
+- `argon2-cffi` is a new runtime dependency.
+
+### Changed
+- **`ADMIN_TOKEN` is now an explicitly-labelled machine credential.** `X-Admin-Token` keeps working exactly as
+  before for CI, cron and `make ingest` — it holds the `admin` role over every city — but it can never manage
+  accounts, every use is logged, and `ADMIN_TOKEN_ENABLED=false` switches it off. Nothing automated breaks.
+- `GET /v1/admin/me` gained `user` and `canManageUsers` beside the existing `ok` and `cities`; it is an alias
+  of `GET /v1/admin/auth/me`.
+- New error code `FORBIDDEN` (403) for "authenticated, but not allowed".
+
+### Added
 - Vehicle `bearing` is now **derived server-side** from consecutive positions when the feed omits it, with a
   new `bearingSource` (`feed` | `derived` | `null`) so clients can be honest about where it came from and
   automatically prefer the feed if an agency starts publishing it. Bogotá's GTFS-RT publishes no bearing on

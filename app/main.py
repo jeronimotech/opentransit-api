@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from . import __version__
+from .admin_auth import PgAdminUserStore, bootstrap_owner
 from .admin_config import PgConfigStore, load_overrides
 from .analytics import Hasher, PgAnalyticsStore, RateLimiter
 from .assistant.budget import BudgetStore, SessionLimiter
@@ -108,6 +109,9 @@ async def _analytics_loop(app: FastAPI, stop: asyncio.Event) -> None:
             dropped_shares = await app.state.share_store.drop_expired()
             if dropped_shares:
                 log.info("share links: dropped %d expired", dropped_shares)
+            dropped_sessions = await app.state.admin_users.drop_expired_sessions()
+            if dropped_sessions:
+                log.info("admin sessions: dropped %d expired", dropped_sessions)
             for rt in app.state.cities.values():
                 if rt.city.config.analytics.enabled:
                     r = await store.rollup(rt.city)
@@ -153,6 +157,21 @@ async def _open_mobility_loop(app: FastAPI, stop: asyncio.Event) -> None:
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=300)
 
+
+async def _bootstrap_admin(store: PgAdminUserStore, cfg) -> None:
+    """First owner on a fresh deployment. Refuses once any account exists, so the variables are safe
+    to leave set; the password is read once here and never logged."""
+    if not (cfg.ADMIN_BOOTSTRAP_EMAIL and cfg.ADMIN_BOOTSTRAP_PASSWORD):
+        return
+    try:
+        created = await bootstrap_owner(store, cfg.ADMIN_BOOTSTRAP_EMAIL, cfg.ADMIN_BOOTSTRAP_PASSWORD,
+                                        cfg.ADMIN_BOOTSTRAP_NAME)
+        if created is None:
+            log.info("ADMIN_BOOTSTRAP_* ignored: an admin account already exists")
+    except Exception:  # noqa: BLE001
+        log.exception("could not create the bootstrap owner (start the API and use scripts/admin_user.py)")
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = settings()
@@ -174,6 +193,8 @@ async def lifespan(app: FastAPI):
     registry = load_registry(cfg.CITIES_DIR)
     app.state.cities = {cid: CityRuntime(city=c, rt=RTCache(c), otp=OtpClient(c)) for cid, c in registry.items()}
     app.state.config_store = PgConfigStore()
+    app.state.admin_users = PgAdminUserStore()
+    await _bootstrap_admin(app.state.admin_users, cfg)
     app.state.openmobility_store = PgOpenMobilityStore()
     await load_overrides(app.state.config_store, app.state.cities)
     stop = asyncio.Event()

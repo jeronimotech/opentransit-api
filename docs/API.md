@@ -127,17 +127,48 @@ Alert { "id": "...", "cause": "UNKNOWN_CAUSE"|..., "effect": "DETOUR"|..., "seve
 ```
 - `GET /v1/cities/{city}/health` → `{ "static": {"feedVersion": "...", "fetchedAt": "...", "routes": 1024, "stops": 8309}, "realtime": {"lastFetchAt": "...", "entityAgeP50Seconds": .., "vehicles": .., "pctTripResolved": .., "alerts": ..}, "router": {"up": true, "version": "2.10.0", "graphBuiltAt": "..."} }`
 
-### Admin (header `X-Admin-Token`)
-- `POST /v1/admin/cities/{city}/ingest-static?force=true`
-- `POST /v1/admin/cities/{city}/purge`
-- `GET /v1/admin/me` → `{ "ok": true, "cities": ["bogota"] }` (token check for the admin UI login)
+### Admin authentication (v1.11)
+Two ways in, and every admin route accepts either:
+
+| Credential | How | Who |
+|---|---|---|
+| A **named account** | `Authorization: Bearer <session token>` (or the `ot_admin_session` cookie) | a person |
+| The **machine credential** | `X-Admin-Token: <ADMIN_TOKEN>` | CI, cron, `make ingest`; logged on every use; never manages accounts; `ADMIN_TOKEN_ENABLED=false` disables it |
+
+- `POST /v1/admin/auth/login` body `{ "email", "password" }` → `{ "token", "expiresAt", "user", "cities" }`.
+  The token is returned **once**; only its sha256 is stored. 401 `UNAUTHORIZED` for a wrong email, a wrong
+  password or a disabled account alike; 429 `RATE_LIMITED` after repeated failures.
+- `POST /v1/admin/auth/logout` → `{ "ok": true }` (revokes this session; a no-op for the machine credential).
+- `GET /v1/admin/auth/me` → `{ "ok": true, "user": {id, email, name, role, cities, kind}, "cities": [...],
+  "canManageUsers": bool }`. `GET /v1/admin/me` is the same answer, kept for older clients and scripts.
+
+Roles are `viewer` < `admin` < `owner`; the machine credential ranks with `admin`. A user's `cities` list
+scopes it, and `[]` means every city. Both are checked on every admin route: a role that is too low, or a
+city outside the scope, gets **403 `FORBIDDEN`** (not 401 — the credential is fine, the permission is not).
+
+### Admin accounts (owner only, and only a signed-in owner — never the machine credential)
+- `GET /v1/admin/users` → `{ "users": [ {id, email, name, role, cities, disabled, createdAt, lastLoginAt} ] }`.
+- `POST /v1/admin/users` body `{ "email", "password", "name"?, "role"?, "cities"? }` → 201 with the user.
+  Passwords are ≥ 12 characters and hashed with argon2id; emails are unique case-insensitively (409
+  `CONFLICT`); an unknown city or role is 422.
+- `PATCH /v1/admin/users/{id}` body `{ "name"?, "role"?, "cities"?, "disabled"?, "password"? }`.
+- `POST /v1/admin/users/{id}/disable` — accounts are disabled, never deleted, so history rows that name them
+  stay readable. Disabling, or changing a password, role or city scope, revokes that person's sessions at
+  once. The last enabled owner cannot be disabled or demoted (409 `CONFLICT`).
+
+A password and a session token are never returned by any endpoint other than the one that mints them, and
+never logged.
+
+### Admin operations
+- `POST /v1/admin/cities/{city}/ingest-static?force=true` (`admin`)
+- `POST /v1/admin/cities/{city}/purge` (`admin`)
 
 ### Admin configuration (v1.1.1) — editable at runtime, no redeploy
 The city YAML stays the base. Admins can override these sections only: `fares`, `config` (vehiclePollSeconds, departuresRefreshSeconds, features, minAppVersion, maintenance), `links`, `services`, `branding.primaryColor`. The override is stored in Postgres (`city_config_override` + `city_config_history`), deep-merged over the YAML, validated strictly, and swapped into memory, so `/v1/cities/{city}` and the `/plan` fare estimate reflect it immediately. Public city endpoints are served with `Cache-Control: public, max-age=60`, so cached clients see changes within a minute.
-- `GET /v1/admin/cities/{city}/config` → `{ "effective": City, "override": {...}|null, "yaml": {fares, config, links, services, branding, mobility, landing}, "revision": n, "updatedAt": "...", "updatedBy": "...", "editable": ["fares","config","links","services","branding","mobility","landing"] }`
-- `PUT /v1/admin/cities/{city}/config` body `{ "fares"?: {...}, "config"?: {...}, "links"?: {...}, "services"?: [...], "branding"?: {"primaryColor"}, "note"?: string, "updatedBy"?: string }` → partial deep-merge into the override (dicts merge, lists replace, a JSON `null` for a section or key removes that override so the YAML applies again). Validation runs on the *effective* result before anything is saved; errors use the standard envelope with the field path, e.g. `fares.maxTransfers: Input should be less than or equal to 5`. Rules: fares `currency` = 3 uppercase letters, `base`/`transfer` ≥ 0, `transferWindowMinutes` 0..600, `maxTransfers` 0..5, `note` ≤ 300; config poll/refresh seconds 5..120, `minAppVersion` semver `x.y.z`, `maintenance.message` ≤ 500; links https or null; services `id` slug, `label` ≤ 60, `icon` ∈ card|report|help|link|bike|parking|taxi|ticket|info|map, `url` https, `kind` external|internal|deeplink, unique ids; branding `primaryColor` `#RRGGBB`. Unknown sections (e.g. `feeds`) are rejected. Returns the GET shape; writes a history row.
-- `DELETE /v1/admin/cities/{city}/config?updatedBy=` → clears the override (history row with note `reset`).
-- `GET /v1/admin/cities/{city}/config/history?limit=20` → `{ "items": [ {"revision", "changedAt", "changedBy", "note", "data"} ] }` newest first.
+- `GET /v1/admin/cities/{city}/config` (`viewer`) → `{ "effective": City, "override": {...}|null, "yaml": {fares, config, links, services, branding, mobility, landing}, "revision": n, "updatedAt": "...", "updatedBy": "...", "editable": ["fares","config","links","services","branding","mobility","landing"] }`
+- `PUT /v1/admin/cities/{city}/config` (`admin`) body `{ "fares"?: {...}, "config"?: {...}, "links"?: {...}, "services"?: [...], "branding"?: {"primaryColor"}, "note"?: string, "updatedBy"?: string }` → partial deep-merge into the override (dicts merge, lists replace, a JSON `null` for a section or key removes that override so the YAML applies again). Validation runs on the *effective* result before anything is saved; errors use the standard envelope with the field path, e.g. `fares.maxTransfers: Input should be less than or equal to 5`. Rules: fares `currency` = 3 uppercase letters, `base`/`transfer` ≥ 0, `transferWindowMinutes` 0..600, `maxTransfers` 0..5, `note` ≤ 300; config poll/refresh seconds 5..120, `minAppVersion` semver `x.y.z`, `maintenance.message` ≤ 500; links https or null; services `id` slug, `label` ≤ 60, `icon` ∈ card|report|help|link|bike|parking|taxi|ticket|info|map, `url` https, `kind` external|internal|deeplink, unique ids; branding `primaryColor` `#RRGGBB`. Unknown sections (e.g. `feeds`) are rejected. Returns the GET shape; writes a history row.
+- `DELETE /v1/admin/cities/{city}/config?updatedBy=` (`admin`) → clears the override (history row with note `reset`).
+- `GET /v1/admin/cities/{city}/config/history?limit=20` (`viewer`) → `{ "items": [ {"revision", "changedAt", "changedBy", "note", "data"} ] }` newest first.
 
 ## OTP integration
 - OTP 2.10 Docker image `opentripplanner/opentripplanner:2.10.0_2026-09-04T13-20` (pin), graph built once with `--build --save`, served with `--load`. GraphQL endpoint `POST http://<otp-host>:8080/otp/gtfs/v1` (GTFS GraphQL API; verify exact path/schema for 2.10 via docs `https://docs.opentripplanner.org/`).
@@ -433,7 +464,7 @@ the whole batch. Rate limit 60 batches/min per client (`429 RATE_LIMITED`). When
 `error` (see `app/analytics.py` for the exact schema; unknown props are dropped, events with an implausible `at`
 (> 7 days from receipt) are rejected).
 
-### Admin analytics (`X-Admin-Token`, all aggregated, k applied; `from`/`to` = `YYYY-MM-DD`, default last 30 days)
+### Admin analytics (`viewer` and up, all aggregated, k applied; `from`/`to` = `YYYY-MM-DD`, default last 30 days)
 All keys are camelCase (`routeId`, `modeSet`, `planRequests`, `hadEstimate`…), including CSV headers.
 - `GET /v1/admin/cities/{city}/analytics/summary` → `kpis` (= `totals`: sessions, appOpens, planRequests,
   itinerarySelects, goStarts, goCompletions, handoffs, activeDays), `previousTotals`, `delta`, `topModes`
@@ -545,7 +576,7 @@ Only our `priceLabel` uses them; the verbatim endpoints below keep the integers 
 All carry `ETag` and `Last-Modified`. An `Accept` header asking for a version we do not serve gets **406
 `NOT_ACCEPTABLE`**, as both specs require. Gated by `cds.publish` / `mds.publishPolicy` (404 when off).
 
-### Admin (`X-Admin-Token`)
+### Admin (`admin` role for the writes, `viewer` for the read)
 | Endpoint | Notes |
 |---|---|
 | `GET /v1/admin/cities/{city}/curbs` | The stored inventory, verbatim. |

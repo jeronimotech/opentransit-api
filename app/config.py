@@ -9,7 +9,6 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql://opentransit:opentransit@localhost:5435/opentransit"
     CITIES_DIR: Path = Path("cities")
-    ADMIN_TOKEN: str = "change-me"
     CORS_ORIGINS: str = "*"
     LOG_LEVEL: str = "INFO"
     LOG_JSON: bool = False
@@ -31,6 +30,17 @@ class Settings(BaseSettings):
     # Public base URL of the web client, used to build links meant for a person
     # rather than for a client (a shared trip). Per-city override: `share.webBaseUrl`.
     WEB_BASE_URL: str | None = None
+
+    # v1.11 admin accounts. People sign in with an email and a password; ADMIN_TOKEN survives only as a
+    # machine credential for CI and scripts, and a deployment can switch it off entirely.
+    ADMIN_TOKEN: str = "change-me"
+    ADMIN_TOKEN_ENABLED: bool = True
+    ADMIN_SESSION_HOURS: int = 12
+    # One-shot seed for a fresh deployment: creates the first owner and then refuses to do anything,
+    # so the variables can be left in place (or removed) once a real account exists.
+    ADMIN_BOOTSTRAP_EMAIL: str | None = None
+    ADMIN_BOOTSTRAP_PASSWORD: str | None = None
+    ADMIN_BOOTSTRAP_NAME: str = ""
 
     OTP_TIMEOUT_S: float = 25.0
     PHOTON_TIMEOUT_S: float = 4.0

@@ -69,7 +69,8 @@ Volumes (`railway volume add -m <path>` needs the directory linked to the servic
 | otp | `RAILWAY_DOCKERFILE_PATH` | `deploy/otp/Dockerfile` |
 | api | `DATABASE_URL` | `postgresql://opentransit:<POSTGRES_PASSWORD>@postgres.railway.internal:5432/opentransit` |
 | api | `OTP_<CITY>_URL` | `http://otp.railway.internal:8080` (referenced from `cities/<city>.yaml`) |
-| api | `ADMIN_TOKEN` | `openssl rand -hex 32` — set it only in Railway, never in the repo |
+| api | `ADMIN_TOKEN` | `openssl rand -hex 32` — the **machine credential** for CI and scripts. Set it only in Railway, never in the repo. `ADMIN_TOKEN_ENABLED=false` switches it off once nothing automated uses it |
+| api | `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` | optional: creates the first owner account on the next boot and then does nothing forever after (see §4b). Remove them once the account exists |
 | api | `CORS_ORIGINS` | `https://<web public domain>` (use `*` only while testing) |
 | api | `LOG_JSON` / `LOG_LEVEL` | `true` / `INFO` |
 | web | `NEXT_PUBLIC_API_URL` | `https://<api public domain>` (build-time: redeploy web after changing it) |
@@ -95,7 +96,33 @@ railway up -s web -e <env> -d -c
 ```
 `otp` downloads the graph into its volume on first boot (≈ 1–2 min) and then loads it (≈ 1–2 min).
 `api` creates the schema, starts the GTFS-RT and GBFS pollers immediately and ingests the static GTFS
-in the background (≈ 118 MB download; a few minutes). `web` is a static build against the API URL.
+in the background (≈ 118 MB download; a few minutes). `web` is a Next.js server build against the API URL;
+it also serves `/api/admin/*`, the route handler that holds the operator session cookie.
+
+## 4b. The first admin account
+
+People sign in to `/admin` with a named account (email + password), so a fresh database needs one owner
+before anybody can get in — and nobody can create it through the UI. Two ways, pick either:
+
+```bash
+# a) one-shot seed: set the variables, redeploy once, then remove them
+railway variables --service api --set ADMIN_BOOTSTRAP_EMAIL=you@example.com \
+  --set "ADMIN_BOOTSTRAP_PASSWORD=$(openssl rand -base64 18)"     # note it down, it is shown nowhere else
+railway redeploy -s api
+railway variables --service api --unset ADMIN_BOOTSTRAP_PASSWORD --unset ADMIN_BOOTSTRAP_EMAIL
+
+# b) from a shell with DATABASE_URL pointing at the deployment
+railway run -s api python scripts/admin_user.py create-owner you@example.com --name "You"
+```
+
+The seed refuses to do anything once any account exists, so leaving it set cannot re-create or reset an
+owner. Afterwards the owner creates the rest from `/admin/users`: `viewer` (reads analytics), `admin`
+(edits city config) and `owner` (manages accounts), each scoped to specific cities or to all of them.
+
+`ADMIN_TOKEN` keeps working exactly as before as `X-Admin-Token` for CI, cron and `make ingest`; it never
+manages accounts, and every use is logged. `NEXT_PUBLIC_API_URL` stays the browser-facing API URL; the web
+service may also set `API_URL` to an internal hostname (`http://api.railway.internal:8000`) that the admin
+proxy uses server-side.
 
 ## 5. Verify
 
@@ -118,13 +145,17 @@ bounded to −1 month / +6 months of transit service.
 
 Same steps with the **production** project token: create the four services in the `production`
 environment (or duplicate the sandbox environment from the dashboard), attach the two volumes, set the
-variables with a fresh `ADMIN_TOKEN` and `POSTGRES_PASSWORD`, point `NEXT_PUBLIC_API_URL` at the prod
+variables with a fresh `ADMIN_TOKEN` and `POSTGRES_PASSWORD`, create the production owner account (§4b),
+point `NEXT_PUBLIC_API_URL` at the prod
 API domain, tighten `CORS_ORIGINS` to the prod web domain, add custom domains if any, then `railway up`
 each service. Keep the same graph release unless the feed changed.
 
 ## Operations notes
 
 - Secrets live only in Railway variables (and your password manager). This repo never contains them.
+- Admin passwords are stored as argon2id digests and session tokens as sha256 digests; neither is recoverable.
+  An owner resets a forgotten password from `/admin/users`, or `scripts/admin_user.py passwd <email>` does it
+  from a shell.
 - The `otp` service needs a plan that allows ≥ 6 GB RAM per service for Bogotá-sized graphs.
 - Health checks: `api` uses `/healthz` (in `railway.json`). `otp` has none because its boot takes
   minutes; the API reports `router.up` instead.

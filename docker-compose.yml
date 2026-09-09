@@ -40,7 +40,13 @@ services:
     environment:
       DATABASE_URL: postgresql://opentransit:${POSTGRES_PASSWORD:-opentransit}@postgres:5432/opentransit
       OTP_URL: http://otp:8080  # default router for every city; override per city with OTP_<CITY>_URL
+      # Machine credential for CI and scripts; people sign in with their own account instead.
       ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env (openssl rand -hex 32)}
+      ADMIN_TOKEN_ENABLED: ${ADMIN_TOKEN_ENABLED:-true}
+      # Optional one-shot seed of the first owner; ignored once any account exists.
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      ADMIN_BOOTSTRAP_NAME: ${ADMIN_BOOTSTRAP_NAME:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
     ports: ["${API_HOST_PORT:-8001}:8000"]
     depends_on:

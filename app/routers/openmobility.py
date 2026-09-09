@@ -44,7 +44,7 @@ from ..openmobility import (
     refresh_from_url,
     zones_public,
 )
-from ..routers.admin import require_admin
+from ..routers.admin import require_admin, require_editor
 from ..runtime import CityRuntime, city_runtime
 
 log = logging.getLogger("ot.openmobility")
@@ -239,7 +239,7 @@ async def admin_curbs(request: Request, rt: CityRuntime = Depends(city_runtime))
     return {"zones": zones, "policies": policies, "count": len(zones)}
 
 
-@router.put("/v1/admin/cities/{city}/curbs", dependencies=[Depends(require_admin)])
+@router.put("/v1/admin/cities/{city}/curbs", dependencies=[Depends(require_editor)])
 async def put_curbs(request: Request, rt: CityRuntime = Depends(city_runtime),
                     replace: bool = Query(False, description="replace the whole inventory instead of upserting"),
                     body: Any = Body(...)):
@@ -258,7 +258,7 @@ async def put_curbs(request: Request, rt: CityRuntime = Depends(city_runtime),
     return {"ok": True, **result, "replaced": replace}
 
 
-@router.delete("/v1/admin/cities/{city}/curbs", dependencies=[Depends(require_admin)])
+@router.delete("/v1/admin/cities/{city}/curbs", dependencies=[Depends(require_editor)])
 async def delete_curbs(request: Request, rt: CityRuntime = Depends(city_runtime),
                        zoneId: str | None = Query(None)):
     """Delete one zone, or the whole inventory when `zoneId` is omitted."""
@@ -270,7 +270,7 @@ async def delete_curbs(request: Request, rt: CityRuntime = Depends(city_runtime)
     return {"ok": True, "deleted": await store.clear_curbs(rt.city.id)}
 
 
-@router.put("/v1/admin/cities/{city}/mds/documents", dependencies=[Depends(require_admin)])
+@router.put("/v1/admin/cities/{city}/mds/documents", dependencies=[Depends(require_editor)])
 async def put_mds_documents(request: Request, rt: CityRuntime = Depends(city_runtime),
                             replace: bool = Query(False),
                             body: Any = Body(...)):
@@ -289,7 +289,7 @@ async def put_mds_documents(request: Request, rt: CityRuntime = Depends(city_run
     return {"ok": True, **result, "replaced": replace}
 
 
-@router.post("/v1/admin/cities/{city}/openmobility/refresh", dependencies=[Depends(require_admin)])
+@router.post("/v1/admin/cities/{city}/openmobility/refresh", dependencies=[Depends(require_editor)])
 async def refresh(request: Request, rt: CityRuntime = Depends(city_runtime),
                   kind: str = Query("cds", pattern="^(cds|mds)$")):
     """Pull the configured third-party feed now (CDS Curbs URL or MDS authority URL)."""

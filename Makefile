@@ -28,8 +28,11 @@ otp-stop:        ## stop the native OTP for CITY
 dev:             ## run the API with reload on :$(PORT)
 	.venv/bin/uvicorn app.main:app --reload --port $(PORT)
 
-ingest:          ## force a static GTFS re-ingest for CITY (needs ADMIN_TOKEN from .env)
+ingest:          ## force a static GTFS re-ingest for CITY (uses the machine credential ADMIN_TOKEN from .env)
 	curl -s -X POST -H "X-Admin-Token: $$(grep ADMIN_TOKEN .env | cut -d= -f2)" "localhost:$(PORT)/v1/admin/cities/$(CITY)/ingest-static?force=true"
+
+owner:           ## create the first admin account (prompts for a password)
+	$(PY) scripts/admin_user.py create-owner $(EMAIL)
 
 test:            ## unit tests (no network, no database)
 	$(PY) -m pytest -q

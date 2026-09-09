@@ -7,6 +7,8 @@ protobuf==7.36.1
 pydantic==2.13.5
 pydantic-settings==2.15.0
 PyYAML==6.0.3
+# v1.11 named admin accounts: argon2id password hashing (memory-hard, RFC 9106)
+argon2-cffi==25.1.0
 holidays==0.103
 # v2.0 conversational assistant: one SDK per provider (DeepSeek speaks the OpenAI shape)
 anthropic==1.4.0

@@ -346,3 +346,31 @@ CREATE TABLE IF NOT EXISTS share_eta (
   PRIMARY KEY (city_id, token)
 );
 CREATE INDEX IF NOT EXISTS share_eta_expiry ON share_eta (expires_at);
+
+-- ─────────────── v1.11 named admin accounts ───────────────
+-- Replaces the single shared ADMIN_TOKEN for people. `email_norm` is the identity (lower-cased), so
+-- `Luis@x.com` and `luis@x.com` are one account. `cities = '{}'` means every city.
+CREATE TABLE IF NOT EXISTS admin_user (
+  id            BIGSERIAL PRIMARY KEY,
+  email         TEXT NOT NULL,
+  email_norm    TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,                  -- argon2id; the password itself is never stored
+  name          TEXT NOT NULL DEFAULT '',
+  role          TEXT NOT NULL DEFAULT 'viewer', -- viewer | admin | owner
+  cities        TEXT[] NOT NULL DEFAULT '{}',
+  disabled      BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_login_at TIMESTAMPTZ
+);
+
+-- The session token is never stored: a dump of this table cannot be replayed as a login.
+CREATE TABLE IF NOT EXISTS admin_session (
+  token_hash   TEXT PRIMARY KEY,                -- sha256 of the token handed to the client
+  user_id      BIGINT NOT NULL REFERENCES admin_user(id) ON DELETE CASCADE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at   TIMESTAMPTZ NOT NULL,
+  user_agent   TEXT
+);
+CREATE INDEX IF NOT EXISTS admin_session_user ON admin_session (user_id);
+CREATE INDEX IF NOT EXISTS admin_session_expiry ON admin_session (expires_at);

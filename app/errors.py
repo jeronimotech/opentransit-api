@@ -41,6 +41,12 @@ class Unauthorized(ApiError):
     status, code = 401, "UNAUTHORIZED"
 
 
+class Forbidden(ApiError):
+    """Authenticated, but the role or the city scope does not allow it (401 would invite a re-login)."""
+
+    status, code = 403, "FORBIDDEN"
+
+
 def envelope(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": {"code": code, "message": message}})
 

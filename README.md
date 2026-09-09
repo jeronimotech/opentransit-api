@@ -109,17 +109,47 @@ the VM): `docker compose --profile full up -d` runs Postgres, `otp` (for `CITY`,
 | `GET …/alerts`, `GET …/health` | realtime & health |
 | `GET …/ondemand/providers`, `GET …/ondemand/estimate`, `GET …/ondemand/handoff` | taxi / ride-hailing quotes and hand-off links (v1.4) |
 | `GET …/plan?onDemand=true` | direct ride + taxi-to-stop combos next to transit (v1.4) |
-| `POST /v1/admin/cities/{city}/ingest-static`, `…/purge` | admin (`X-Admin-Token`) |
+| `POST /v1/admin/cities/{city}/ingest-static`, `…/purge` | admin (named account, or the machine credential) |
 | `GET …/curbs`, `GET …/curbs/nearby`, `GET …/zones` | kerb regulation and policy zones, resolved against the city clock (v1.6) |
 | `GET …/cds/curbs/*`, `GET …/mds/policies`, `GET …/mds/geographies` | verbatim CDS 1.1.0 / MDS 2.1.0 for operators (v1.6) |
-| `GET /v1/admin/me`, `GET/PUT/DELETE …/admin/cities/{city}/config`, `…/config/history` | runtime-editable fares, client config, links, services (`X-Admin-Token`) |
+| `GET /v1/admin/me`, `GET/PUT/DELETE …/admin/cities/{city}/config`, `…/config/history` | runtime-editable fares, client config, links, services |
+| `POST /v1/admin/auth/login`, `…/logout`, `GET …/auth/me` | operator sign-in with an email and a password (v1.11) |
+| `GET/POST /v1/admin/users`, `PATCH …/users/{id}`, `POST …/users/{id}/disable` | account management, owners only (v1.11) |
 
 Full schema and examples: [`docs/API.md`](docs/API.md). Errors are always
 `{"error": {"code": "…", "message": "…"}}`.
 
+### Who may administer
+
+Operators have **named accounts**: an email, a password hashed with argon2id, a role and a city scope.
+Create the first one on a fresh database — nobody can sign in to create it, so it comes from a shell:
+
+```bash
+python scripts/admin_user.py create-owner luis@example.com --name "Luis"   # prompts for the password
+python scripts/admin_user.py create ana@example.com --role admin --cities bogota
+python scripts/admin_user.py list
+```
+
+`ADMIN_BOOTSTRAP_EMAIL` + `ADMIN_BOOTSTRAP_PASSWORD` do the same thing at start-up for a platform where
+you cannot open a shell; the seed refuses to run once any account exists, so it is safe to leave set.
+
+| Role | May |
+|---|---|
+| `viewer` | read the configuration and the analytics of its cities |
+| `admin` | also edit the city configuration, ingest, purge |
+| `owner` | also create, edit and disable accounts |
+
+A user is scoped to specific cities or (an empty scope) to all of them. Both the role and the scope are
+enforced on every admin route, not only in the UI. Sign-in returns a session token, valid for
+`ADMIN_SESSION_HOURS`; only its sha256 is stored, and it is revoked on sign-out, on disable, and whenever
+the account's password, role or city scope changes.
+
+`ADMIN_TOKEN` survives as a **machine credential** for CI and scripts (`make ingest`, the deploy runbook):
+it still works as `X-Admin-Token`, has the `admin` role over every city, can never manage accounts, and its
+every use is logged. Set `ADMIN_TOKEN_ENABLED=false` to switch it off once nothing automated needs it.
+
 ### Editing fares and client config without a redeploy
 
-Set `ADMIN_TOKEN` in `.env` (generate it with `openssl rand -hex 32`; the admin web UI sends it as `X-Admin-Token`). Never commit the real value — `.env` is git-ignored.
 `PUT /v1/admin/cities/{city}/config` deep-merges an override over the city YAML for `fares`, `config`,
 `links`, `services` and `branding.primaryColor`; it is validated, stored in Postgres with a history, and
 applied in memory at once — `/plan` estimates fares with the new values on the next request, and
