@@ -12,9 +12,9 @@ argon2-cffi==25.1.0
 # v1.12 sign in with Google / Microsoft: id_token signature + claim validation. Hand-rolling JWT
 # verification is the classic way to ship an authentication bypass, so this is a library, pinned,
 # with the `crypto` extra for the RSA keys both providers publish.
-PyJWT[crypto]==2.10.1
-holidays==0.103
+PyJWT[crypto]==2.13.0
+holidays==0.104
 # v2.0 conversational assistant: one SDK per provider (DeepSeek speaks the OpenAI shape)
 anthropic==1.4.0
-openai==3.8.0
+openai==3.10.0
 google-genai==2.22.0
