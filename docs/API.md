@@ -324,6 +324,16 @@ still needs `scripts/otp-updaters.py <city>` + an OTP restart (documented in the
 `otp/<city>/router-config.json` (`network` = YAML `network`, url = `gbfs_url`); `scripts/otp-native.sh serve`
 runs it automatically. `--check` fails when the file is stale (used by CI).
 
+## v1.6.1 — PIM as the curb source (implemented 2026-09-14)
+
+`open_mobility.cds.curbs.source: pim` mirrors one provider's `curbs` layer from Bogotá's PIM partner API
+(`url` = API base, `provider_id`, `credentials: {clientId, clientSecret}` env-interpolated and masked in admin,
+`refresh_minutes`, `timeout_seconds`). Zones are replaced on each refresh; policies are carried over, with a
+placeholder ("Zona de parqueo pago", `parking` for `car`) for every policy id PIM references but does not publish.
+The normalised curb view gains `totalSpaces`, `occupied`, `occupancyRate` next to `availableSpaces` /
+`availabilityTime`; `/health` reports the last mirror attempt under `openMobility.cds.sourceStatus`. Measured facts
+and the reasons behind the cadence and timeout are in `CONTRACT-mds-cds.md` ("PIM as the curb source").
+
 ## v1.2.1 — rental-aware planning (implemented 2026-09-04)
 
 - **One OTP query per rental mode.** OTP 2.9 allows at most two street modes per leg and every rental mode must be paired with WALK, so `modes=TRANSIT,WALK,BIKE_RENTAL,SCOOTER_RENTAL` is executed as separate searches (`WALK+BICYCLE_RENTAL`, `WALK+SCOOTER_RENTAL`) and merged, instead of failing.
