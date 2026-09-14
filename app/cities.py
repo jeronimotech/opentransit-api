@@ -380,10 +380,17 @@ class Mobility(BaseModel):
 
 # ── v1.6 · Open Mobility Foundation: CDS 1.1.0 curbs + MDS 2.1.0 policy/geography ──
 class CdsCurbsCfg(BaseModel):
-    """Where the curb inventory comes from: our own admin-edited copy, or a third-party CDS Curbs feed."""
-    source: Literal["local", "url"] = "local"
-    url: str | None = None
+    """Where the curb inventory comes from: our own admin-edited copy (`local`), a third-party CDS Curbs
+    document (`url`), or Bogotá's PIM partner API (`pim`: client-credentials JWT, one GeoJSON `curbs`
+    layer per provider, occupancy on every zone)."""
+    source: Literal["local", "url", "pim"] = "local"
+    url: str | None = None              # url: the document · pim: the API base, /partners/v1 is appended
+    provider_id: str | None = None      # pim: whose `curbs` layer (ZPP — Zonas de Parqueo Pago in Bogotá)
     refresh_minutes: int = 60
+    # PIM answers a full layer in about a minute even when it is empty; the 30 s a document fetch gets
+    # would never succeed. Measured 2026-09-14: 819 zones in 53 s, a 4 km bbox in 67 s.
+    timeout_seconds: int = 120
+    credentials: dict[str, str] = {}    # pim: clientId / clientSecret — never public, masked in admin
 
 
 class CdsEventsProvider(BaseModel):
@@ -706,9 +713,14 @@ class City(BaseModel):
 
     def open_mobility_public(self, *, admin: bool = False) -> dict:
         om = self.open_mobility
+        curbs = {"source": om.cds.curbs.source, "url": om.cds.curbs.url,
+                 "providerId": om.cds.curbs.provider_id,
+                 "refreshMinutes": om.cds.curbs.refresh_minutes,
+                 "timeoutSeconds": om.cds.curbs.timeout_seconds}
+        if admin:
+            curbs["credentials"] = dict(om.cds.curbs.credentials)   # the router masks them before replying
         cds = {"enabled": om.cds.enabled,
-               "curbs": {"source": om.cds.curbs.source, "url": om.cds.curbs.url,
-                         "refreshMinutes": om.cds.curbs.refresh_minutes},
+               "curbs": curbs,
                "publish": om.cds.publish,
                "rateCurrency": self.rate_currency(),
                "rateMinorUnits": om.cds.rate_minor_units,

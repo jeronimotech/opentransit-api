@@ -22,6 +22,7 @@ import datetime as dt
 import hashlib
 import json
 import logging
+import time
 import uuid
 from collections.abc import Iterable
 from typing import Any, Protocol
@@ -452,6 +453,11 @@ def curb_public(zone: dict, policies: dict[str, dict], when: dt.datetime, city: 
         "length": zone.get("length"),
         "width": zone.get("width"),
         "availableSpaces": zone.get("available_spaces"),
+        # PIM publishes the whole picture, not just the free count; CDS has no field for these, so they
+        # ride on the zone as extras (the verbatim endpoint echoes them, this view names them).
+        "totalSpaces": zone.get("total_spaces"),
+        "occupied": zone.get("occupied"),
+        "occupancyRate": zone.get("occupancy_rate"),
         "available": zone.get("available"),
         "availableSpaceLengths": zone.get("available_space_lengths"),
         "availabilityTime": (lambda t: t.isoformat() if t else None)(from_ms(zone.get("availability_time"))),
@@ -897,6 +903,137 @@ async def refresh_from_url(store: OpenMobilityStore, city: City, url: str, *, ki
         return await store.put_curbs(city.id, zones, policies, replace=True)
     policies, geographies = parse_mds_documents(doc)
     return await store.put_mds(city.id, policies, geographies, replace=True)
+
+
+# ------------------------------------------------------------------ PIM (SDM Bogotá partner API)
+PIM_TOKEN_MARGIN_SECONDS = 120
+PIM_PLACEHOLDER_POLICY_NAME = "Zona de parqueo pago"
+
+
+class PimClient:
+    """Bogotá's PIM partner API: `POST /partners/v1/auth/token` (client credentials → 30-minute JWT), then
+    `GET /partners/v1/providers/{id}/{layer}` as GeoJSON. The token is cached until shortly before it
+    expires; a 401 on a layer is not retried here — the next refresh gets a fresh one."""
+
+    def __init__(self, base_url: str, client_id: str | None, client_secret: str | None, *,
+                 timeout: float = 120, transport: httpx.AsyncBaseTransport | None = None) -> None:
+        if not base_url:
+            raise OpenMobilityError("pim: `url` (the API base) is required")
+        if not client_id or not client_secret:
+            raise OpenMobilityError("pim: clientId and clientSecret credentials are required")
+        self.base = base_url.rstrip("/")
+        self._id, self._secret = client_id, client_secret
+        self._cli = httpx.AsyncClient(timeout=timeout, follow_redirects=True, transport=transport,
+                                      headers={"User-Agent": "opentransit-api (+pim)"})
+        self._token: str | None = None
+        self._token_until: float = 0.0
+
+    async def aclose(self) -> None:
+        await self._cli.aclose()
+
+    async def token(self) -> str:
+        now = time.monotonic()
+        if self._token and now < self._token_until:
+            return self._token
+        r = await self._cli.post(f"{self.base}/partners/v1/auth/token",
+                                 json={"client_id": self._id, "client_secret": self._secret})
+        if r.status_code == 401:
+            raise OpenMobilityError("pim: credentials rejected (401)")
+        r.raise_for_status()
+        body = r.json()
+        self._token = body["access_token"]
+        self._token_until = now + max(60, int(body.get("expires_in") or 1800) - PIM_TOKEN_MARGIN_SECONDS)
+        return self._token
+
+    async def layer(self, provider_id: str, layer: str, **params: Any) -> dict:
+        tok = await self.token()
+        r = await self._cli.get(f"{self.base}/partners/v1/providers/{provider_id}/{layer}", params=params,
+                                headers={"Authorization": f"Bearer {tok}",
+                                         "Accept": "application/geo+json, application/json"})
+        r.raise_for_status()
+        doc = r.json()
+        if not isinstance(doc, dict) or doc.get("type") != "FeatureCollection":
+            raise OpenMobilityError(f"pim: {layer} is not a GeoJSON FeatureCollection")
+        return doc
+
+
+def _pim_ms(value: Any) -> int | None:
+    if not value:
+        return None
+    try:
+        return ms(dt.datetime.fromisoformat(str(value).replace("Z", "+00:00")))
+    except ValueError:
+        return None
+
+
+def pim_curbs_to_cds(fc: dict, *, known_policy_ids: set[str] | None = None,
+                     placeholder_name: str = PIM_PLACEHOLDER_POLICY_NAME) -> tuple[list[dict], list[dict], int]:
+    """PIM's `curbs` layer → CDS curb zones, plus one **placeholder policy** per policy id the layer
+    references but PIM does not publish (it has no `policies` layer yet — on its roadmap). The placeholder
+    says the one thing that is true of every ZPP kerb, that cars may park there for a fee, without inventing
+    hours or rates; a real policy already stored under that id is left alone. Returns
+    (zones, new_policies, placeholders)."""
+    known = set(known_policy_ids or ())
+    zones: list[dict] = []
+    new_policies: list[dict] = []
+    for i, feat in enumerate(fc.get("features") or []):
+        props = dict(feat.get("properties") or {})
+        geom = feat.get("geometry")
+        if not geom:
+            continue
+        raw_id = str(props.get("curb_zone_id") or feat.get("id") or props.get("name") or f"pim-{i}")
+        zid = ensure_uuid(raw_id, seed=raw_id)
+        pids = [ensure_uuid(str(x), seed=str(x)) for x in (props.get("curb_policy_ids") or [])]
+        for pid in pids:
+            if pid not in known:
+                known.add(pid)
+                new_policies.append(_norm_policy({"curb_policy_id": pid, "name": placeholder_name, "priority": 2,
+                                                  "rules": [{"activity": "parking", "user_classes": ["car"]}],
+                                                  "time_spans": []}, seed=pid))
+        avail = props.get("available_spaces")
+        zone = {
+            "curb_zone_id": zid,
+            "name": props.get("name"),
+            "street_name": props.get("street"),
+            "geometry": geom,
+            "curb_policy_ids": pids,
+            "length": props.get("length_cm"),          # CDS `length` is centimetres, the unit PIM uses
+            "available_spaces": avail,
+            "available": (int(avail) > 0) if isinstance(avail, (int, float)) else None,
+            "availability_time": _pim_ms(props.get("last_updated")),
+            "total_spaces": props.get("total_spaces"),
+            "occupied": props.get("occupied"),
+            "occupancy_rate": props.get("occupancy_rate"),
+            "external_id": feat.get("id"),
+        }
+        zones.append(_norm_zone({k: v for k, v in zone.items() if v is not None or k == "availability_time"},
+                                seed=raw_id))
+    return zones, new_policies, len(new_policies)
+
+
+async def refresh_from_pim(store: OpenMobilityStore, city: City, cfg: Any, *,
+                           transport: httpx.AsyncBaseTransport | None = None) -> dict:
+    """Mirror one provider's `curbs` layer from PIM into our inventory. Zones are replaced wholesale
+    (a kerb PIM stops publishing disappears); policies are carried over, so a real policy loaded through
+    the admin survives and only the ids nobody has described get placeholders."""
+    if not cfg.provider_id:
+        raise OpenMobilityError("pim: `provider_id` is required")
+    creds = cfg.credentials or {}
+    cli = PimClient(cfg.url or "", creds.get("clientId"), creds.get("clientSecret"), timeout=cfg.timeout_seconds,
+                    transport=transport)
+    try:
+        fc = await cli.layer(cfg.provider_id, "curbs", limit=10000)
+    finally:
+        await cli.aclose()
+    _, existing = await store.curbs(city.id)
+    zones, new_policies, placeholders = pim_curbs_to_cds(
+        fc, known_policy_ids={str(p["curb_policy_id"]) for p in existing})
+    referenced = {pid for z in zones for pid in z["curb_policy_ids"]}
+    kept = [p for p in existing if str(p["curb_policy_id"]) in referenced]
+    result = await store.put_curbs(city.id, zones, kept + new_policies, replace=True)
+    kept_placeholders = sum(1 for p in kept if p.get("name") == PIM_PLACEHOLDER_POLICY_NAME)
+    return {**result, "placeholderPolicies": placeholders + kept_placeholders,
+            "numberMatched": fc.get("numberMatched")}
 
 
 # ------------------------------------------------------------------ spec envelopes

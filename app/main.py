@@ -21,7 +21,7 @@ from .gtfs_static import ingest, load_route_index, load_service_index
 from .logging_setup import setup_logging
 from .normalize import set_feed_flags
 from .oidc import OidcService, PgOidcStateStore, configured_providers
-from .openmobility import PgOpenMobilityStore, refresh_from_url
+from .openmobility import PgOpenMobilityStore, refresh_from_pim, refresh_from_url
 from .otp import OtpClient
 from .routers import (
     admin,
@@ -136,9 +136,16 @@ def _om_sources(rt) -> list[tuple[str, str, int]]:
     out = []
     if om.cds.enabled and om.cds.curbs.source == "url" and om.cds.curbs.url:
         out.append(("cds", om.cds.curbs.url, om.cds.curbs.refresh_minutes))
+    if om.cds.enabled and om.cds.curbs.source == "pim" and om.cds.curbs.url and om.cds.curbs.provider_id:
+        out.append(("pim", om.cds.curbs.url, om.cds.curbs.refresh_minutes))
     if om.mds.enabled and om.mds.authority_url:
         out.append(("mds", om.mds.authority_url, om.mds.refresh_minutes))
     return out
+
+
+def _utc_iso() -> str:
+    import datetime as _dt
+    return _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 async def _open_mobility_loop(app: FastAPI, stop: asyncio.Event) -> None:
@@ -152,12 +159,20 @@ async def _open_mobility_loop(app: FastAPI, stop: asyncio.Event) -> None:
                 key = (rt.city.id, kind)
                 if now - last.get(key, -1e9) < minutes * 60:
                     continue
+                status = app.state.openmobility_sources.setdefault(rt.city.id, {})
                 try:
-                    result = await refresh_from_url(store, rt.city, url, kind=kind)
+                    if kind == "pim":
+                        result = await refresh_from_pim(store, rt.city, rt.city.open_mobility.cds.curbs)
+                    else:
+                        result = await refresh_from_url(store, rt.city, url, kind=kind)
                     last[key] = now
+                    status[kind] = {"ok": True, "at": _utc_iso(), "error": None, **result}
                     log.info("[%s] %s refreshed from %s: %s", rt.city.id, kind.upper(), url, result)
-                except Exception:  # noqa: BLE001
+                except Exception as e:  # noqa: BLE001
                     last[key] = now
+                    # the message, never the URL's credentials or a token: a 401 says enough
+                    status[kind] = {**status.get(kind, {}), "ok": False, "at": _utc_iso(),
+                                    "error": f"{type(e).__name__}: {e}"[:200]}
                     log.exception("[%s] could not refresh %s from %s", rt.city.id, kind.upper(), url)
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=300)
@@ -207,6 +222,7 @@ async def lifespan(app: FastAPI):
     if app.state.oidc.providers:
         log.info("provider sign-in enabled: %s", ", ".join(sorted(app.state.oidc.providers)))
     app.state.openmobility_store = PgOpenMobilityStore()
+    app.state.openmobility_sources = {}     # city id -> {kind -> last refresh status}, for /health
     await load_overrides(app.state.config_store, app.state.cities)
     stop = asyncio.Event()
     tasks: list[asyncio.Task] = []

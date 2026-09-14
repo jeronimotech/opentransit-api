@@ -2,6 +2,7 @@
 import datetime as dt
 import json
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -22,7 +23,9 @@ from app.openmobility import (
     next_change,
     parse_curbs_document,
     parse_mds_documents,
+    pim_curbs_to_cds,
     price_label,
+    refresh_from_pim,
     spans_active,
     time_span_active,
     zones_public,
@@ -252,7 +255,8 @@ async def test_curbs_bbox_filter_and_disabled_city(bogota: City):
         r = await c.get("/v1/cities/bogota/curbs", params={"bbox": "-74.049,4.676,-74.048,4.677"})
         assert r.status_code == 200 and [z["name"] for z in r.json()["curbs"]] == [ZONE_93["name"]]
 
-    rt.city = bogota                                        # open mobility off
+    # open mobility off: Bogotá's YAML ships with CDS on (PIM), so the off state is an explicit override
+    rt.city = effective_city(bogota, {"openMobility": {"cds": {"enabled": False}, "mds": {"enabled": False}}})
     async with _client(app) as c:
         r = await c.get("/v1/cities/bogota/curbs")
         assert r.status_code == 404 and r.json()["error"]["code"] == "OPEN_MOBILITY_DISABLED"
@@ -447,7 +451,10 @@ async def test_config_validation_bounds(bogota: City):
     app, _, _ = _app(bogota)
     async with _client(app) as c:
         cases = [
-            ({"cds": {"enabled": True, "curbs": {"source": "url"}}}, "curbs.url"),
+            ({"cds": {"enabled": True, "curbs": {"source": "url", "url": None}}}, "curbs.url"),
+            ({"cds": {"enabled": True, "curbs": {"source": "pim", "url": None}}}, "curbs.url"),
+            ({"cds": {"enabled": True, "curbs": {"source": "pim", "url": "https://pim.test", "providerId": None}}},
+             "providerId"),
             ({"cds": {"rateMinorUnits": 0}}, "rateMinorUnits"),
             ({"mds": {"providers": [{"id": "a", "name": "A", "baseUrl": "http://x.example"}]}}, "https"),
             ({"mds": {"providers": [{"id": "a", "name": "A", "baseUrl": "https://x.example",
@@ -511,3 +518,112 @@ def test_city_now_honours_the_at_override(bogota: City):
     when = city_now(bogota, "2026-09-08T12:00:00-05:00")
     assert when.hour == 12 and str(when.tzinfo) == "America/Bogota"
     assert ms(when) == int(when.timestamp() * 1000)
+
+
+# ------------------------------------------------------------------ PIM (SDM Bogotá) as the curb source
+# Two kerbs exactly as PIM's `curbs` layer returned them on 2026-09-14 (ids, keys and units verbatim).
+PIM_CURBS = {
+    "type": "FeatureCollection", "numberMatched": 2, "numberReturned": 2,
+    "features": [
+        {"type": "Feature", "id": "006b51b3-aca8-53e2-9266-5b5943fde9e4",
+         "geometry": {"type": "LineString", "coordinates": [[-74.0479, 4.7221], [-74.0475, 4.7223]]},
+         "properties": {"name": "Und1431", "street": "DG 115ADG 115AAC 116", "length_cm": 5400,
+                        "curb_zone_id": "006b51b3-aca8-53e2-9266-5b5943fde9e4", "geometry_type": "LineString",
+                        "curb_policy_ids": ["11f15a8f-f82f-52f6-baf8-f2fd5c17edfb"],
+                        "total_spaces": 13, "available_spaces": 12, "occupied": 1, "occupancy_rate": 0.0769,
+                        "last_updated": "2026-09-14T16:58:39+00:00"}},
+        {"type": "Feature", "id": "00dfc2a3-e95b-5b69-8990-7c7d3e956d57",
+         "geometry": {"type": "LineString", "coordinates": [[-74.0662, 4.6231], [-74.0659, 4.6233]]},
+         "properties": {"name": "Und1021", "street": "KR 34AC 19CL 19A", "length_cm": 4800,
+                        "curb_zone_id": "00dfc2a3-e95b-5b69-8990-7c7d3e956d57", "geometry_type": "LineString",
+                        "curb_policy_ids": ["bf06a73f-a48a-5a73-918c-2b11f9d23467"],
+                        "total_spaces": 13, "available_spaces": 0, "occupied": 13, "occupancy_rate": 1.0,
+                        "last_updated": "2026-09-14T16:58:39+00:00"}},
+    ],
+}
+
+
+def test_pim_curbs_become_cds_zones_with_placeholder_policies():
+    """PIM references policies it does not publish. The zone must still be usable, so each unknown id gets
+    the one policy that is true of every ZPP kerb — cars may park for a fee — and nothing invented."""
+    zones, policies, placeholders = pim_curbs_to_cds(PIM_CURBS)
+    assert len(zones) == 2 and placeholders == 2 and len(policies) == 2
+    z = zones[0]
+    assert z["curb_zone_id"] == "006b51b3-aca8-53e2-9266-5b5943fde9e4"   # PIM's ids are UUIDs: kept as-is
+    assert z["street_name"] == "DG 115ADG 115AAC 116" and z["length"] == 5400
+    assert z["available_spaces"] == 12 and z["available"] is True and z["total_spaces"] == 13
+    assert z["availability_time"] == ms(dt.datetime(2026, 9, 14, 16, 58, 39, tzinfo=dt.UTC))
+    assert zones[1]["available"] is False                                   # 0 free spaces
+    pol = policies[0]
+    assert pol["curb_policy_id"] == "11f15a8f-f82f-52f6-baf8-f2fd5c17edfb"
+    assert pol["rules"] == [{"activity": "parking", "user_classes": ["car"]}] and pol["time_spans"] == []
+    # a policy someone already described is not overwritten with a placeholder
+    _, again, n = pim_curbs_to_cds(PIM_CURBS, known_policy_ids={"11f15a8f-f82f-52f6-baf8-f2fd5c17edfb"})
+    assert n == 1 and [p["curb_policy_id"] for p in again] == ["bf06a73f-a48a-5a73-918c-2b11f9d23467"]
+
+
+def _pim_transport(calls: list[str]) -> httpx.MockTransport:
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(f"{req.method} {req.url.path}")
+        if req.url.path == "/partners/v1/auth/token":
+            body = json.loads(req.content)
+            if body != {"client_id": "pk_test", "client_secret": "sk_test"}:
+                return httpx.Response(401, json={"detail": "invalid"})
+            return httpx.Response(200, json={"access_token": "jwt-1", "token_type": "bearer",
+                                             "expires_in": 1800, "scope": "read:providers read:supply"})
+        if req.url.path == "/partners/v1/providers/zpp-1/curbs":
+            assert req.headers["authorization"] == "Bearer jwt-1"
+            assert req.url.params["limit"] == "10000"
+            return httpx.Response(200, json=PIM_CURBS)
+        return httpx.Response(404, json={"statusCode": 404})
+    return httpx.MockTransport(handler)
+
+
+async def test_refresh_from_pim_mirrors_the_layer_and_keeps_real_policies(bogota: City):
+    city = _city(bogota, curbs={"source": "pim", "url": "https://pim.test", "providerId": "zpp-1",
+                                "credentials": {"clientId": "pk_test", "clientSecret": "sk_test"}})
+    store = MemoryOpenMobilityStore()
+    # an admin already described one of the two policies for real
+    real = dict(PAID_PARKING, curb_policy_id="11f15a8f-f82f-52f6-baf8-f2fd5c17edfb")
+    await store.put_curbs("bogota", [], [real], replace=True)
+
+    calls: list[str] = []
+    result = await refresh_from_pim(store, city, city.open_mobility.cds.curbs, transport=_pim_transport(calls))
+    assert calls == ["POST /partners/v1/auth/token", "GET /partners/v1/providers/zpp-1/curbs"]
+    assert result["zones"] == 2 and result["placeholderPolicies"] == 1 and result["numberMatched"] == 2
+
+    zones, policies = await store.curbs("bogota")
+    by_id = {p["curb_policy_id"]: p for p in policies}
+    assert by_id["11f15a8f-f82f-52f6-baf8-f2fd5c17edfb"]["name"] == "Parqueo pago"        # kept
+    assert by_id["bf06a73f-a48a-5a73-918c-2b11f9d23467"]["name"] == "Zona de parqueo pago"  # placeholder
+    # the normalised view carries the occupancy PIM publishes
+    pub = curb_public(zones[0], by_id, city_now(city), city)
+    assert pub["availableSpaces"] == 12 and pub["totalSpaces"] == 13 and pub["occupancyRate"] == 0.0769
+    assert pub["available"] is True and pub["availabilityTime"].startswith("2026-09-14T16:58:39")
+
+
+async def test_refresh_from_pim_refuses_bad_credentials(bogota: City):
+    from app.openmobility import OpenMobilityError
+    city = _city(bogota, curbs={"source": "pim", "url": "https://pim.test", "providerId": "zpp-1",
+                                "credentials": {"clientId": "pk_test", "clientSecret": "wrong"}})
+    with pytest.raises(OpenMobilityError) as e:
+        await refresh_from_pim(MemoryOpenMobilityStore(), city, city.open_mobility.cds.curbs,
+                               transport=_pim_transport([]))
+    assert "401" in str(e.value) and "wrong" not in str(e.value)
+
+
+async def test_pim_credentials_are_masked_in_admin_and_absent_in_public(bogota: City):
+    city = _city(bogota, curbs={"source": "pim", "url": "https://pim.test", "providerId": "zpp-1",
+                                "credentials": {"clientId": "pk_test", "clientSecret": "sk_secret_value"}})
+    app, _, _ = _app(city)
+    async with _client(app) as c:
+        pub = (await c.get("/v1/cities/bogota")).text
+        assert "sk_secret_value" not in pub and "credentials" not in pub
+        assert (await c.get("/v1/cities/bogota")).json()["openMobility"]["cds"]["curbs"]["providerId"] == "zpp-1"
+        adm = (await c.get("/v1/admin/cities/bogota/config", headers=TOKEN)).text
+        assert "sk_secret_value" not in adm and "pk_test" not in adm
+        # echoing the mask back keeps the stored secret; a new value replaces it
+        r = await c.put("/v1/admin/cities/bogota/config", headers=TOKEN, json={
+            "openMobility": {"cds": {"curbs": {"credentials": {"clientId": "pk_test", "clientSecret": "••••••••"}}}}})
+        assert r.status_code == 200
+        assert "sk_secret_value" not in r.text

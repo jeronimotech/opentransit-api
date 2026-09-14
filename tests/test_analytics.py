@@ -26,7 +26,11 @@ from app.rt import RTCache
 from app.runtime import CityRuntime
 
 H = {"X-Admin-Token": "test-token"}
-T0 = dt.datetime(2026, 9, 6, 15, 7, 42, tzinfo=dt.UTC)      # 10:07 local (Bogotá)
+# Two days ago at 10:07 local (Bogotá), not a fixed date: ingestion drops any event more than a week from
+# its own clock as an implausible timestamp, so a calendar date here is a test that stops passing on its own.
+T0 = (dt.datetime.now(dt.UTC) - dt.timedelta(days=2)).replace(hour=15, minute=7, second=42, microsecond=0)
+# the reporting window the tests query: comfortably around T0 and the "day two" events some tests add
+Q = f"?from={(T0 - dt.timedelta(days=5)).date()}&to={(T0 + dt.timedelta(days=4)).date()}"
 
 
 def _batch(events: list[dict], session="sess-aaaaaaaa", cohort="coh-bbbbbbbb", platform="ios") -> dict:
@@ -82,7 +86,7 @@ def test_geohash_roundtrip_and_cell_size():
 
 
 def test_bucket_floors_to_five_minutes_utc():
-    assert bucket(T0) == dt.datetime(2026, 9, 6, 15, 5, tzinfo=dt.UTC)
+    assert bucket(T0) == T0.replace(minute=5, second=0)
     local = dt.datetime(2026, 9, 6, 10, 9, 59, tzinfo=ZoneInfo("America/Bogota"))
     assert bucket(local) == dt.datetime(2026, 9, 6, 15, 5, tzinfo=dt.UTC)
 
@@ -131,7 +135,7 @@ async def test_prepare_rows_drops_unknown_props_and_never_stores_coordinates(bog
     assert addr["props"].get("label") is None and addr["props"].get("resultId") is None   # addresses: never
     assert addr["gh7"] and station["props"]["label"] == "Portal Norte"
     assert fav["props"].get("label") is None                                                # only home/work
-    assert plan["at_bucket"] == dt.datetime(2026, 9, 6, 15, 5, tzinfo=dt.UTC)
+    assert plan["at_bucket"] == T0.replace(minute=5, second=0)
     assert plan["session_hash"] != "sess-aaaaaaaa" and len(plan["session_hash"]) == 64
 
 
@@ -188,7 +192,7 @@ async def test_rollup_is_idempotent_and_matches_manual_aggregation(bogota: City)
     tz = ZoneInfo(bogota.timezone)
     manual = aggregate(store.rows, tz)
     funnel = manual["agg_funnel_daily"][0]
-    assert funnel["day"] == dt.date(2026, 9, 6) and funnel["sessions"] == 6 and funnel["plan_requests"] == 6
+    assert funnel["day"] == T0.date() and funnel["sessions"] == 6 and funnel["plan_requests"] == 6
     assert funnel["go_completions"] == 3
     assert manual["agg_od_hourly"][0]["n"] == 6 and manual["agg_od_hourly"][0]["hour"].hour == 10   # local hour
     assert {r["mode_set"]: r for r in manual["agg_mode_daily"]}["TRANSIT+WALK"]["requests"] == 6
@@ -212,7 +216,7 @@ async def test_endpoints_apply_k_threshold_and_export(bogota: City):
             r = await c.post("/v1/cities/bogota/events", json=_batch(evs, session=sid, cohort=f"coh-{sid[-8:]}"))
             assert r.status_code == 202 and r.json()["rejected"] == []
         assert (await c.post("/v1/admin/cities/bogota/analytics/rollup", headers=H)).status_code == 200
-        q = "?from=2026-09-01&to=2026-09-10"
+        q = Q
         od = (await c.get(f"/v1/admin/cities/bogota/analytics/od{q}", headers=H)).json()
         assert od["pairs"] == [] and od["cells"]["features"] == [] and od["kThreshold"] == 5
         assert (await c.get(f"/v1/admin/cities/bogota/analytics/searches{q}", headers=H)).json()["items"] == []
@@ -243,8 +247,9 @@ async def test_endpoints_apply_k_threshold_and_export(bogota: City):
         assert s["kpis"] == s["totals"] and set(s["topModes"][0]) == {"modeSet", "requests", "selects"}
         assert s["topRoutes"][0]["routeId"] == "bogota:12873" and s["topStops"][0]["stopId"] == "bogota:2000"
         hrs = (await c.get(f"/v1/admin/cities/bogota/analytics/hours{q}", headers=H)).json()
-        assert hrs["planRequests"][dt.date(2026, 9, 6).weekday()][10] == 6
-        assert hrs["rows"] == [{"weekday": "sun", "hour": 10, "planRequests": 6}]
+        assert hrs["planRequests"][T0.date().weekday()][10] == 6      # 15:07 UTC is 10:07 in Bogotá
+        weekday = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[T0.date().weekday()]
+        assert hrs["rows"] == [{"weekday": weekday, "hour": 10, "planRequests": 6}]
         for body in (od, fun, hrs, s, srch, prov):
             assert all("_" not in k for k in _keys(body)), body
         csv_r = await c.get(f"/v1/admin/cities/bogota/analytics/export.csv{q}&dataset=modes", headers=H)
@@ -253,7 +258,8 @@ async def test_endpoints_apply_k_threshold_and_export(bogota: City):
         assert lines[0] == "modeSet,requests,selects"
         assert "TRANSIT+WALK,6,0" in lines and "BUS+WALK,0,6" in lines      # requested vs. actually used
         assert (await c.get(f"/v1/admin/cities/bogota/analytics/summary{q}")).status_code == 401
-        assert (await c.get("/v1/admin/cities/bogota/analytics/summary?from=2026-09-10&to=2026-09-01",
+        backwards = f"?from={(T0 + dt.timedelta(days=4)).date()}&to={(T0 - dt.timedelta(days=5)).date()}"
+        assert (await c.get(f"/v1/admin/cities/bogota/analytics/summary{backwards}",
                             headers=H)).status_code == 422
 
 
@@ -327,7 +333,7 @@ async def test_one_person_never_publishes_their_own_cell(bogota: City):
             await c.post("/v1/cities/bogota/events",
                          json=_batch(evs, session=sid, cohort="coh-the-same-one"))
         assert (await c.post("/v1/admin/cities/bogota/analytics/rollup", headers=H)).status_code == 200
-        q = "?from=2026-09-01&to=2026-09-10"
+        q = Q
         od = (await c.get(f"/v1/admin/cities/bogota/analytics/od{q}", headers=H)).json()
         assert od["pairs"] == [], "one device cleared the threshold by repeating itself"
         assert od["cells"]["features"] == []
@@ -354,7 +360,6 @@ async def test_a_day_below_the_threshold_contributes_nothing(bogota: City):
         for sid, evs in day2:
             await c.post("/v1/cities/bogota/events", json=_batch(evs, session=sid, cohort="coh-lonely"))
         await c.post("/v1/admin/cities/bogota/analytics/rollup", headers=H)
-        od = (await c.get("/v1/admin/cities/bogota/analytics/od?from=2026-09-01&to=2026-09-10",
-                          headers=H)).json()
+        od = (await c.get(f"/v1/admin/cities/bogota/analytics/od{Q}", headers=H)).json()
         # Day one's five survive; day two's four are dropped rather than added on top.
         assert len(od["pairs"]) == 1 and od["pairs"][0]["n"] == 5

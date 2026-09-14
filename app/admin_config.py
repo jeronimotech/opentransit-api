@@ -327,9 +327,12 @@ class MobilityCfg(_Strict):
 
 # ---- v1.6 open mobility (CDS curbs + MDS policy/geography)
 class CdsCurbsSourceCfg(_Strict):
-    source: Literal["local", "url"] = "local"
+    source: Literal["local", "url", "pim"] = "local"
     url: str | None = None
+    providerId: str | None = Field(None, max_length=80)
     refreshMinutes: int = Field(60, ge=5, le=1440)
+    timeoutSeconds: int = Field(120, ge=10, le=300)
+    credentials: dict[str, str] = {}
 
     _v = field_validator("url")(_https)
 
@@ -621,8 +624,15 @@ def validate_sections(sections: dict) -> dict:
 
 
 def _validate_open_mobility(om: dict) -> None:
-    if om["cds"]["curbs"]["source"] == "url" and not om["cds"]["curbs"]["url"]:
+    curbs = om["cds"]["curbs"]
+    if curbs["source"] == "url" and not curbs["url"]:
         raise ApiError("openMobility.cds.curbs.url: required when source is 'url'", status=422)
+    if curbs["source"] == "pim":
+        if not curbs["url"]:
+            raise ApiError("openMobility.cds.curbs.url: the PIM API base is required when source is 'pim'",
+                           status=422)
+        if not curbs.get("providerId"):
+            raise ApiError("openMobility.cds.curbs.providerId: required when source is 'pim'", status=422)
     eids = [p["id"] for p in om["cds"]["events"]["providers"]]
     if len(eids) != len(set(eids)):
         raise ApiError("openMobility.cds.events.providers: duplicate provider id", status=422)
@@ -789,7 +799,10 @@ def build_city(base: City, sections: dict) -> City:
         cds=Cds(enabled=cds_cfg["enabled"], publish=cds_cfg["publish"],
                 rate_currency=cds_cfg["rateCurrency"], rate_minor_units=cds_cfg["rateMinorUnits"],
                 curbs=CdsCurbsCfg(source=cds_cfg["curbs"]["source"], url=cds_cfg["curbs"]["url"],
-                                  refresh_minutes=cds_cfg["curbs"]["refreshMinutes"]),
+                                  provider_id=cds_cfg["curbs"].get("providerId"),
+                                  refresh_minutes=cds_cfg["curbs"]["refreshMinutes"],
+                                  timeout_seconds=cds_cfg["curbs"].get("timeoutSeconds", 120),
+                                  credentials=dict(cds_cfg["curbs"].get("credentials") or {})),
                 events=CdsEventsCfg(accept=cds_cfg["events"]["accept"],
                                     providers=[CdsEventsProvider(id=p["id"], name=p["name"],
                                                                  token_hash=p.get("tokenHash"))

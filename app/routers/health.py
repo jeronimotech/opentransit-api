@@ -44,9 +44,13 @@ async def city_health(request: Request, rt: CityRuntime = Depends(city_runtime))
 
 async def _open_mobility_health(request: Request, rt: CityRuntime) -> dict:
     om = rt.city.open_mobility
+    sources = getattr(request.app.state, "openmobility_sources", {}) or {}
     body = {"enabled": rt.city.open_mobility_enabled(),
             "cds": {"enabled": om.cds.enabled, "publishing": om.cds.enabled and om.cds.publish,
-                    "source": om.cds.curbs.source},
+                    "source": om.cds.curbs.source,
+                    # last mirror attempt for a `url`/`pim` source: when, ok, error message, counts
+                    "sourceStatus": (sources.get(rt.city.id) or {}).get(
+                        "pim" if om.cds.curbs.source == "pim" else "cds")},
             "mds": {"enabled": om.mds.enabled, "publishingPolicy": om.mds.enabled and om.mds.publish_policy,
                     "version": om.mds.version, "providers": len(om.mds.providers)}}
     store = getattr(request.app.state, "openmobility_store", None)

@@ -99,15 +99,21 @@ def apply_credential_rules(items: list, stored_for) -> None:
 
 
 def unmask_open_mobility_patch(patch: dict | None, city: City) -> dict | None:
-    """Same rules for `openMobility.mds.providers[]`."""
-    if not patch or not isinstance(patch.get("mds"), dict):
-        return patch
-    providers = patch["mds"].get("providers")
-    if not isinstance(providers, list):
+    """Same rules for `openMobility.mds.providers[]` and for the single `openMobility.cds.curbs` source
+    (its PIM client id / secret)."""
+    if not patch:
         return patch
     out = copy.deepcopy(patch)
-    known = {p.id: dict(p.credentials) for p in city.open_mobility.mds.providers}
-    apply_credential_rules(out["mds"]["providers"], known.get)
+    providers = (out.get("mds") or {}).get("providers") if isinstance(out.get("mds"), dict) else None
+    if isinstance(providers, list):
+        known = {p.id: dict(p.credentials) for p in city.open_mobility.mds.providers}
+        apply_credential_rules(providers, known.get)
+    curbs = (out.get("cds") or {}).get("curbs") if isinstance(out.get("cds"), dict) else None
+    if isinstance(curbs, dict):
+        wrapped = [{"id": "curbs", **curbs}]
+        apply_credential_rules(wrapped, lambda _: dict(city.open_mobility.cds.curbs.credentials))
+        if "credentials" in wrapped[0]:
+            curbs["credentials"] = wrapped[0]["credentials"]
     return out
 
 
