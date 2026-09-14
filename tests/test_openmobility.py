@@ -484,6 +484,15 @@ async def test_public_city_and_health_expose_the_flag(bogota: City):
         h = await _open_mobility_health(app, rt)
         assert h["enabled"] is True and h["cds"]["curbZones"] == 2 and h["cds"]["publishing"] is True
 
+    # the mirror status has to survive the response model, or /health silently drops it (it did)
+    from app.models import OpenMobilityCdsHealth
+    app.state.openmobility_sources = {"bogota": {"pim": {"ok": True, "at": "2026-09-14T20:51:25Z", "error": None,
+                                                         "zones": 819, "placeholderPolicies": 52}}}
+    rt.city = _city(bogota, curbs={"source": "pim", "url": "https://pim.test", "providerId": "zpp-1"})
+    h = await _open_mobility_health(app, rt)
+    out = OpenMobilityCdsHealth.model_validate(h["cds"]).model_dump(by_alias=True)
+    assert out["sourceStatus"]["ok"] is True and out["sourceStatus"]["zones"] == 819
+
 
 async def _open_mobility_health(app: FastAPI, rt: CityRuntime) -> dict:
     from app.routers.health import _open_mobility_health as fn

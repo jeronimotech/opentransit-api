@@ -535,6 +535,8 @@ class OpenMobilityCdsHealth(Out):
     curb_policies: int = 0
     source: str = "local"
     last_updated_at: str | None = None
+    # last mirror attempt for a url/pim source: {ok, at, error, zones, policies, placeholderPolicies, numberMatched}
+    source_status: dict | None = None
 
 
 class OpenMobilityMdsHealth(Out):
