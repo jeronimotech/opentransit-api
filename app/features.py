@@ -19,13 +19,13 @@ from .cities import City
 _LABELS = {"es": ("Pasaje", "Transbordo"), "en": ("Fare", "Transfer")}
 
 
-def estimate_fare(city: City, legs: list[dict], locale: str = "es") -> dict | None:
+def estimate_fare(city: City, legs: list[dict], locale: str = "es", *, parking: dict | None = None) -> dict | None:
     """Flat-fare estimate: first boarding pays `base`; later boardings inside the transfer window pay
     `transfer` (up to `max_transfers` of them), anything else pays `base` again and restarts the window."""
     f = city.fares
     rentals = [lg for lg in legs if lg.get("rental") and (lg["rental"].get("priceEstimate") or {}).get("amount")]
     ondemand = [lg for lg in legs if lg.get("onDemand")]
-    if f is None and not rentals and not ondemand:
+    if f is None and not rentals and not ondemand and not (parking and parking.get("fee")):
         return None
     lbl_fare, lbl_transfer = _LABELS.get(locale, _LABELS["es"])
     transit = [lg for lg in legs if lg.get("transit")] if f is not None else []
@@ -82,6 +82,16 @@ def estimate_fare(city: City, legs: list[dict], locale: str = "es") -> dict | No
         else:
             breakdown.append({"label": rec.get("name") or "Taxi", "amount": None, "route": None, "kind": "ondemand"})
             note = in_app
+    # v1.6 park & ride: the parking fee for the planned dwell, estimated from the zone's own rates
+    if parking and parking.get("fee") and parking["fee"].get("amount") is not None:
+        fee = parking["fee"]
+        total += float(fee["amount"])
+        currency = currency or fee.get("currency")
+        dwell = fee.get("dwellHours")
+        hours = f"{int(dwell)} h" if dwell and float(dwell).is_integer() else (f"{dwell} h" if dwell else "")
+        word = "Parking" if (locale or "es").startswith("en") else "Parqueo"
+        breakdown.append({"label": f"{word} · {parking.get('name') or ''}" + (f" ({hours})" if hours else ""),
+                          "amount": fee["amount"], "route": None, "kind": "parking"})
     return {"amount": _num(total), "currency": currency or "COP", "estimated": True,
             "breakdown": [{**b, "amount": _num(b["amount"]) if b["amount"] is not None else None} for b in breakdown],
             "note": note}

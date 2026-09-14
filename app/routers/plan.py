@@ -20,6 +20,7 @@ from ..models import ForecastResponse, PlanResponse
 from ..normalize import apply_endpoint_names, enrich_rental, plan_from_otp
 from ..ondemand import attach_to_plan, haversine_m, is_ondemand_leg
 from ..otp import PLAN_QUERY
+from ..parkride import attach_park_ride, merge_park_ride
 from ..runtime import CityRuntime, city_runtime
 
 router = APIRouter(tags=["planning"])
@@ -263,6 +264,8 @@ async def plan(
     modes: str | None = Query(None, description="comma list: TRANSIT,WALK,BUS,RAIL,SUBWAY,TRAM,CABLE_CAR,BICYCLE,"
                                                 "BIKE_RENTAL,SCOOTER_RENTAL,ONDEMAND"),
     onDemand: bool = Query(False, description="add taxi / ride-hailing options (direct + first/last mile)"),
+    parkAndRide: bool = Query(False, description="v1.6: drive to a paid parking zone next to a station, then transit "
+                                                  "(needs the city's curb inventory and park_ride.enabled)"),
     wheelchair: bool = False,
     numItineraries: int = Query(5, ge=1, le=10),
     maxWalkDistance: int = Query(1500, ge=100, le=10000),
@@ -321,6 +324,20 @@ async def plan(
                                             access_extra=["CAR_DROP_OFF"]))
             searches.append(build_variables(**common, street=base_street, num=n, walk_reluctance=reluctance,
                                             egress_extra=["CAR_PICKUP"]))
+    # v1.6 park & ride: the same CAR_DROP_OFF search the taxi combos use; the parking zone is chosen afterwards
+    # from the curb inventory. Shares the search when on-demand already asked for it.
+    pr_cfg = city.open_mobility.park_ride
+    park_ride = bool(parkAndRide and transit and pr_cfg.enabled and city.open_mobility_enabled()
+                     and city.open_mobility.cds.enabled)
+    pr_index: int | None = None
+    if park_ride:
+        if on_demand and policy.first_last_mile:
+            direct_ride = haversine_m(fromLat, fromLon, toLat, toLon) <= policy.max_direct_distance_km * 1000
+            pr_index = od_start + (1 if direct_ride else 0)      # the CAR_DROP_OFF search sits after the direct one
+        else:
+            pr_index = len(searches)
+            searches.append(build_variables(**common, street=base_street, num=max(4, numItineraries),
+                                            walk_reluctance=reluctance, access_extra=["CAR_DROP_OFF"]))
     # Names: the caller's label wins; otherwise a reverse geocode runs concurrently with the plan and is
     # only used if it comes back within a short budget, so it never adds latency to the itinerary search.
     results = await asyncio.gather(
@@ -332,6 +349,9 @@ async def plan(
     dest = {"name": toName or rev_to, "lat": toLat, "lon": toLon}
     plans = [plan_from_otp(city, d, origin, dest, rt.otp.version, locale, rt.rental_prices()) for d in datas]
     plan_out = plans[0]
+    pr_plan = plans[pr_index] if pr_index is not None else None
+    if pr_index is not None and pr_index >= od_start and not (on_demand and policy.first_last_mile):
+        plans = plans[:pr_index] + plans[pr_index + 1:]      # not an on-demand search: keep it out of that merge
     base_plans, od_plans = plans[:od_start], plans[od_start:]
     if len(base_plans) > 1:
         plan_out["itineraries"] = merge_plans(base_plans[0]["itineraries"],
@@ -342,7 +362,19 @@ async def plan(
         plan_out["itineraries"] = merge_ondemand(plan_out["itineraries"], [p["itineraries"] for p in od_plans],
                                                  numItineraries, max_feeder_m=policy.max_feeder_km * 1000,
                                                  show_when_transit_faster=policy.show_when_transit_faster)
-    if len(plans) > 1:
+    if pr_plan is not None:
+        import copy as _copy
+        store = getattr(request.app.state, "openmobility_store", None)
+        zones, policies = (await store.curbs(city.id)) if store is not None else ([], [])
+        for it in plan_out["itineraries"]:
+            it.setdefault("source", "primary")
+        park_its = attach_park_ride(city, _copy.deepcopy(pr_plan["itineraries"]), zones, policies,
+                                    when=when, locale=locale)
+        plan_out["itineraries"] = merge_park_ride(plan_out["itineraries"], park_its, numItineraries)
+        if parkAndRide and not park_its:
+            plan_out["warnings"].append("PARK_RIDE_NO_PARKING: no legal parking zone with spaces near a stop "
+                                        "within walking distance")
+    if len(plans) > 1 or pr_plan is not None:
         plan_out["warnings"] = [w for w in plan_out["warnings"]
                                 if not (w.startswith("NO_ITINERARIES") and plan_out["itineraries"])]
     plan_out["warnings"] = mode_warnings + plan_out["warnings"]

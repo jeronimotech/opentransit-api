@@ -179,13 +179,14 @@ class Leg(Out):
     rental: RentalInfo | None = None
     on_demand: LegOnDemand | None = None     # v1.4: taxi / ride-hailing options for a CAR leg
     duration_factor: float | None = None     # traffic factor applied to a CAR leg's duration (v1.4)
+    park_ride: bool = False                  # v1.6: your own car, driven to the itinerary's parking zone
 
 
 class FareItem(Out):
     label: str
     amount: float | None = None              # None: the provider only shows the price in its own app
     route: str | None = None
-    kind: Literal["transit", "rental", "ondemand"] = "transit"
+    kind: Literal["transit", "rental", "ondemand", "parking"] = "transit"
 
 
 class Fare(Out):
@@ -194,6 +195,31 @@ class Fare(Out):
     estimated: bool = True
     breakdown: list[FareItem] = []
     note: str | None = None                  # e.g. "Precio en la app" when a line has no amount
+
+
+class ParkingFee(Out):
+    amount: float
+    currency: str
+    dwell_hours: float
+    estimated: bool = True
+
+
+class ParkingInfo(Out):
+    """Where a park & ride itinerary leaves the car: a CDS curb zone with what we know of it right now."""
+    curb_zone_id: str
+    name: str | None = None
+    street_name: str | None = None
+    lat: float
+    lon: float
+    available_spaces: int | None = None
+    total_spaces: int | None = None
+    availability_time: str | None = None
+    price_label: str | None = None
+    why_legal: str | None = None
+    allowed_until: str | None = None         # the next change of the winning policy (e.g. hours end 22:00)
+    fee: ParkingFee | None = None
+    walk_meters: int = 0
+    walk_seconds: int = 0
 
 
 class Itinerary(Out):
@@ -209,7 +235,8 @@ class Itinerary(Out):
     accessible: bool | None = None
     rental_legs: int = 0
     modes_used: list[str] = []
-    source: Literal["primary", "rental", "ondemand"] = "primary"   # diagnostic: which search produced it
+    source: Literal["primary", "rental", "ondemand", "parkride"] = "primary"   # which search produced it
+    parking: ParkingInfo | None = None        # v1.6: park & ride
     legs: list[Leg]
 
 

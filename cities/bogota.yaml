@@ -254,7 +254,9 @@ open_mobility:
     rate_minor_units: 1          # whole pesos, city-wide (PIM's centavos are converted at ingestion)
     events: { accept: false, providers: [] }
   mds: { enabled: false }
-  park_ride: { enabled: false, max_drive_km: 25.0, max_walk_meters: 600, default_dwell_hours: 8.0 }
+  # Park & ride: drive to a ZPP zone next to a station, walk, ride. 600 m is a real walk with a bag; 8 h is
+  # a working day, which is what the fee estimate on the card assumes (the zone's own rates, tiered).
+  park_ride: { enabled: true, max_drive_km: 25.0, max_walk_meters: 600, default_dwell_hours: 8.0 }
 
 landing:
   enabled: true

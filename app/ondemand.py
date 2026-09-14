@@ -333,7 +333,8 @@ def recommended(quotes: list[dict]) -> str | None:
 
 # ------------------------------------------------------------------ plan decoration
 def is_ondemand_leg(leg: dict) -> bool:
-    return leg.get("mode") == "CAR" and not leg.get("transit") and not leg.get("rental")
+    # a park & ride car leg is your own car: no taxi quotes on it
+    return leg.get("mode") == "CAR" and not leg.get("transit") and not leg.get("rental") and not leg.get("parkRide")
 
 
 def attach_to_plan(city: City, plan: dict, *, when: dt.datetime, base_url: str, locale: str = "es") -> dict:
