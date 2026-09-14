@@ -295,9 +295,10 @@ _PICKUP_ACTIVITIES = ("stopping", "loading", "unloading", "parking")
 # Directional on purpose: a taxi may use a general car bay, but a private car may NOT use a taxi-only bay.
 # Widening these would make us tell someone they can stop where they cannot, which is worse than silence.
 _USER_CLASS_SYNONYMS = {
-    "car": {"car", "combustion", "electric", "autonomous"},
-    "rideshare": {"rideshare", "car", "combustion", "electric", "autonomous"},
-    "taxi": {"taxi", "car", "combustion", "electric"},
+    # `automobile` is what Bogotá's PIM writes for a car; CDS itself lists `car`
+    "car": {"car", "automobile", "combustion", "electric", "autonomous"},
+    "rideshare": {"rideshare", "car", "automobile", "combustion", "electric", "autonomous"},
+    "taxi": {"taxi", "car", "automobile", "combustion", "electric"},
     "delivery": {"delivery", "van", "truck", "cargo_bicycle"},
     "disabled": {"disabled", "accessible"},
     "bicycle": {"bicycle", "cargo_bicycle", "electric_assist", "human"},
@@ -314,7 +315,7 @@ def format_amount(minor: float, currency: str, minor_units: int, locale: str) ->
     """A CDS `rate` is an integer in the smallest denomination of the local currency; `minor_units` says how
     many of those make one unit (COP quotes whole pesos -> 1; USD/EUR quote cents -> 100)."""
     value = minor / minor_units if minor_units else minor
-    if minor_units == 1:
+    if minor_units == 1 or float(value).is_integer():
         body = f"{int(round(value)):,}".replace(",", ".")
     else:
         body = f"{value:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
@@ -329,6 +330,7 @@ def price_label(rules: list[dict], city: City, locale: str | None = None) -> str
     currency = city.rate_currency()
     minor = city.open_mobility.cds.rate_minor_units or 1
     units = _RATE_UNIT_EN if (locale or "es").startswith("en") else _RATE_UNIT_ES
+    en = (locale or "es").startswith("en")
     parts: list[str] = []
     for r in rules:
         for rate in r.get("rate") or []:
@@ -336,14 +338,19 @@ def price_label(rules: list[dict], city: City, locale: str | None = None) -> str
             if amount is None:
                 continue
             if amount == 0:
-                parts.append("Gratis" if not (locale or "es").startswith("en") else "Free")
+                parts.append("Free" if en else "Gratis")
                 continue
             unit = units.get(rate.get("rate_unit", "hour"), rate.get("rate_unit", "hour"))
             chunk = f"{format_amount(amount, currency, minor, locale)} / {unit}"
             fee = rate.get("maximum_fee")
             if fee:
-                cap = "máx" if not (locale or "es").startswith("en") else "max"
-                chunk += f" ({cap} {format_amount(fee, currency, minor, locale)})"
+                chunk += f" ({'max' if en else 'máx'} {format_amount(fee, currency, minor, locale)})"
+            # A tiered rate (CDS `interval_start` in minutes: 0–120 at one price, then another) reads as
+            # "$ 6.600 / hora · desde 2 h $ 9.900 / hora", not as two prices for the same hour.
+            start = rate.get("interval_start")
+            if isinstance(start, (int, float)) and start > 0:
+                after = (f"{int(start // 60)} h" if start % 60 == 0 else f"{int(start)} min")
+                chunk = f"{'from' if en else 'desde'} {after} {chunk}"
             parts.append(chunk)
     stay = next(((r.get("max_stay"), r.get("max_stay_unit") or "minute") for r in rules if r.get("max_stay")),
                 None)
@@ -945,16 +952,23 @@ class PimClient:
         self._token_until = now + max(60, int(body.get("expires_in") or 1800) - PIM_TOKEN_MARGIN_SECONDS)
         return self._token
 
-    async def layer(self, provider_id: str, layer: str, **params: Any) -> dict:
+    async def layer(self, provider_id: str, layer: str, *, etag: str | None = None,
+                    **params: Any) -> tuple[dict | None, str | None]:
+        """(FeatureCollection, ETag). The collection is None on a 304 — PIM's ETag is by content, so an
+        unchanged layer costs one round trip and no parsing."""
         tok = await self.token()
+        headers = {"Authorization": f"Bearer {tok}", "Accept": "application/geo+json, application/json"}
+        if etag:
+            headers["If-None-Match"] = etag
         r = await self._cli.get(f"{self.base}/partners/v1/providers/{provider_id}/{layer}", params=params,
-                                headers={"Authorization": f"Bearer {tok}",
-                                         "Accept": "application/geo+json, application/json"})
+                                headers=headers)
+        if r.status_code == 304:
+            return None, etag
         r.raise_for_status()
         doc = r.json()
         if not isinstance(doc, dict) or doc.get("type") != "FeatureCollection":
             raise OpenMobilityError(f"pim: {layer} is not a GeoJSON FeatureCollection")
-        return doc
+        return doc, r.headers.get("ETag")
 
 
 def _pim_ms(value: Any) -> int | None:
@@ -964,6 +978,82 @@ def _pim_ms(value: Any) -> int | None:
         return ms(dt.datetime.fromisoformat(str(value).replace("Z", "+00:00")))
     except ValueError:
         return None
+
+
+def _pim_span(span: dict) -> dict:
+    """PIM writes `start_time`/`end_time`; CDS 1.1.0 says `time_of_day_start`/`time_of_day_end`. The
+    `designated_period: operating_hours` PIM adds is what the hours already say, so it is dropped rather
+    than shown to a rider as a word."""
+    out: dict = {}
+    if span.get("days_of_week"):
+        out["days_of_week"] = list(span["days_of_week"])
+    if span.get("start_time") or span.get("time_of_day_start"):
+        out["time_of_day_start"] = str(span.get("start_time") or span.get("time_of_day_start"))[:5]
+    if span.get("end_time") or span.get("time_of_day_end"):
+        out["time_of_day_end"] = str(span.get("end_time") or span.get("time_of_day_end"))[:5]
+    for k in ("days_of_month", "weeks_of_month", "months", "start_date", "end_date"):
+        if span.get(k) is not None:
+            out[k] = span[k]
+    period = span.get("designated_period")
+    if period and str(period).lower() != "operating_hours":
+        out["designated_period"] = period
+        if span.get("designated_period_except"):
+            out["designated_period_except"] = True
+    return out
+
+
+_MONEY_KEYS = ("rate", "maximum_fee", "increment_amount")
+
+
+def _scale_money(rules: list[dict], scale: float) -> None:
+    """Rewrite a rule's amounts from the source's smallest unit to the city's (in place, integers kept)."""
+    if scale == 1:
+        return
+    for r in rules:
+        for rate in r.get("rate") or []:
+            for k in _MONEY_KEYS:
+                if isinstance(rate.get(k), (int, float)):
+                    rate[k] = int(round(rate[k] * scale))
+
+
+def pim_policies_to_cds(fc: dict, *, rate_scale: float = 1.0) -> list[dict]:
+    """PIM's `policies` layer (non-geographic: `geometry: null`, the policy in `properties`) → CDS policies.
+    PIM puts the time spans on each rule; CDS 1.1.0 puts them on the policy, which is what our evaluator
+    reads, so the rules' spans are lifted to the policy (deduplicated — every rule of a policy carries the
+    same ones). Amounts are integers in the smallest unit; `rate_scale` converts the source's unit (PIM:
+    centavos) to the city's, so 660000 becomes 6600 pesos."""
+    out: list[dict] = []
+    for feat in fc.get("features") or []:
+        props = dict(feat.get("properties") or {})
+        rules = [copy.deepcopy(r) for r in (props.get("rules") or []) if isinstance(r, dict)]
+        if not rules:
+            continue
+        _scale_money(rules, rate_scale)
+        spans: list[dict] = []
+        for r in rules:
+            for sp in r.get("time_spans") or []:
+                cds = _pim_span(sp)
+                if cds and cds not in spans:
+                    spans.append(cds)
+            r.pop("time_spans", None)
+            # CDS has no `rule_id`; harmless, but keep the object spec-shaped
+            r.pop("rule_id", None)
+            r.pop("no_return", None)
+        pol = {
+            "curb_policy_id": props.get("curb_policy_id"),
+            "name": props.get("name"),
+            "description": props.get("description"),
+            "priority": props.get("priority") if props.get("priority") is not None else 1,
+            "rules": rules,
+            "time_spans": [dict(sp) for sp in (props.get("time_spans") or [])] or spans,
+        }
+        for k in ("published_date", "start_date", "end_date", "last_updated_date"):
+            v = _pim_ms(props.get(k if k != "last_updated_date" else "last_updated"))
+            if v is not None:
+                pol[k] = v
+        pol = {k: v for k, v in pol.items() if v is not None}
+        out.append(_norm_policy(pol, seed=str(pol.get("curb_policy_id") or pol.get("name"))))
+    return out
 
 
 def pim_curbs_to_cds(fc: dict, *, known_policy_ids: set[str] | None = None,
@@ -1011,29 +1101,50 @@ def pim_curbs_to_cds(fc: dict, *, known_policy_ids: set[str] | None = None,
     return zones, new_policies, len(new_policies)
 
 
-async def refresh_from_pim(store: OpenMobilityStore, city: City, cfg: Any, *,
+async def refresh_from_pim(store: OpenMobilityStore, city: City, cfg: Any, *, etags: dict | None = None,
                            transport: httpx.AsyncBaseTransport | None = None) -> dict:
-    """Mirror one provider's `curbs` layer from PIM into our inventory. Zones are replaced wholesale
-    (a kerb PIM stops publishing disappears); policies are carried over, so a real policy loaded through
-    the admin survives and only the ids nobody has described get placeholders."""
+    """Mirror one provider's `policies` and `curbs` layers from PIM into our inventory.
+
+    Policies come first so every id a kerb references resolves to the real rule; only an id PIM still does
+    not describe gets a placeholder, and a policy loaded through the admin under an id PIM does not publish
+    is kept. Zones are replaced wholesale (a kerb PIM stops publishing disappears). `etags` is a mutable
+    cache per layer: PIM's ETag is by content, so an unchanged layer is a 304 and nothing is rewritten."""
     if not cfg.provider_id:
         raise OpenMobilityError("pim: `provider_id` is required")
     creds = cfg.credentials or {}
+    etags = etags if etags is not None else {}
     cli = PimClient(cfg.url or "", creds.get("clientId"), creds.get("clientSecret"), timeout=cfg.timeout_seconds,
                     transport=transport)
     try:
-        fc = await cli.layer(cfg.provider_id, "curbs", limit=10000)
+        pol_fc, pol_etag = await cli.layer(cfg.provider_id, "policies", etag=etags.get("policies"))
+        curb_fc, curb_etag = await cli.layer(cfg.provider_id, "curbs", etag=etags.get("curbs"), limit=10000)
     finally:
         await cli.aclose()
-    _, existing = await store.curbs(city.id)
-    zones, new_policies, placeholders = pim_curbs_to_cds(
-        fc, known_policy_ids={str(p["curb_policy_id"]) for p in existing})
+    if pol_fc is None and curb_fc is None:
+        return {"unchanged": True, "zones": None, "policies": None, "placeholderPolicies": None,
+                "numberMatched": None}
+    zones_now, existing = await store.curbs(city.id)
+    by_id = {str(p["curb_policy_id"]): p for p in existing}
+    if pol_fc is not None:
+        # source unit → city unit: PIM's centavos (100) into Bogotá's pesos (1) is a ÷100
+        scale = (city.open_mobility.cds.rate_minor_units or 1) / (cfg.rate_minor_units or 1)
+        for pol in pim_policies_to_cds(pol_fc, rate_scale=scale):
+            by_id[str(pol["curb_policy_id"])] = pol          # PIM's word beats a placeholder or a stale copy
+        etags["policies"] = pol_etag
+    if curb_fc is None:
+        zones, placeholders = zones_now, 0
+    else:
+        zones, new_policies, placeholders = pim_curbs_to_cds(curb_fc, known_policy_ids=set(by_id))
+        for pol in new_policies:
+            by_id[str(pol["curb_policy_id"])] = pol
+        etags["curbs"] = curb_etag
     referenced = {pid for z in zones for pid in z["curb_policy_ids"]}
-    kept = [p for p in existing if str(p["curb_policy_id"]) in referenced]
-    result = await store.put_curbs(city.id, zones, kept + new_policies, replace=True)
-    kept_placeholders = sum(1 for p in kept if p.get("name") == PIM_PLACEHOLDER_POLICY_NAME)
-    return {**result, "placeholderPolicies": placeholders + kept_placeholders,
-            "numberMatched": fc.get("numberMatched")}
+    policies = [p for pid, p in by_id.items() if pid in referenced]
+    result = await store.put_curbs(city.id, zones, policies, replace=True)
+    kept_placeholders = sum(1 for p in policies if p.get("name") == PIM_PLACEHOLDER_POLICY_NAME)
+    return {**result, "placeholderPolicies": kept_placeholders,
+            "numberMatched": (curb_fc or {}).get("numberMatched") if curb_fc else len(zones),
+            "unchanged": False}
 
 
 # ------------------------------------------------------------------ spec envelopes

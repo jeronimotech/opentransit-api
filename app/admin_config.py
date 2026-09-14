@@ -333,6 +333,7 @@ class CdsCurbsSourceCfg(_Strict):
     refreshMinutes: int = Field(60, ge=5, le=1440)
     timeoutSeconds: int = Field(120, ge=10, le=300)
     credentials: dict[str, str] = {}
+    rateMinorUnits: int = Field(1, ge=1, le=1000)
 
     _v = field_validator("url")(_https)
 
@@ -802,7 +803,8 @@ def build_city(base: City, sections: dict) -> City:
                                   provider_id=cds_cfg["curbs"].get("providerId"),
                                   refresh_minutes=cds_cfg["curbs"]["refreshMinutes"],
                                   timeout_seconds=cds_cfg["curbs"].get("timeoutSeconds", 120),
-                                  credentials=dict(cds_cfg["curbs"].get("credentials") or {})),
+                                  credentials=dict(cds_cfg["curbs"].get("credentials") or {}),
+                                  rate_minor_units=cds_cfg["curbs"].get("rateMinorUnits", 1)),
                 events=CdsEventsCfg(accept=cds_cfg["events"]["accept"],
                                     providers=[CdsEventsProvider(id=p["id"], name=p["name"],
                                                                  token_hash=p.get("tokenHash"))

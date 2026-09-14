@@ -162,7 +162,9 @@ async def _open_mobility_loop(app: FastAPI, stop: asyncio.Event) -> None:
                 status = app.state.openmobility_sources.setdefault(rt.city.id, {})
                 try:
                     if kind == "pim":
-                        result = await refresh_from_pim(store, rt.city, rt.city.open_mobility.cds.curbs)
+                        etags = app.state.openmobility_etags.setdefault(rt.city.id, {})
+                        result = await refresh_from_pim(store, rt.city, rt.city.open_mobility.cds.curbs,
+                                                        etags=etags)
                     else:
                         result = await refresh_from_url(store, rt.city, url, kind=kind)
                     last[key] = now
@@ -223,6 +225,7 @@ async def lifespan(app: FastAPI):
         log.info("provider sign-in enabled: %s", ", ".join(sorted(app.state.oidc.providers)))
     app.state.openmobility_store = PgOpenMobilityStore()
     app.state.openmobility_sources = {}     # city id -> {kind -> last refresh status}, for /health
+    app.state.openmobility_etags = {}       # city id -> {layer -> ETag}: PIM answers 304 when unchanged
     await load_overrides(app.state.config_store, app.state.cities)
     stop = asyncio.Event()
     tasks: list[asyncio.Task] = []

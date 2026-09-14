@@ -24,6 +24,7 @@ from app.openmobility import (
     parse_curbs_document,
     parse_mds_documents,
     pim_curbs_to_cds,
+    pim_policies_to_cds,
     price_label,
     refresh_from_pim,
     spans_active,
@@ -552,6 +553,73 @@ PIM_CURBS = {
 }
 
 
+# One policy exactly as PIM's `policies` layer returned it on 2026-09-14 (rates in centavos, spans on the rules).
+PIM_POLICIES = {
+    "type": "FeatureCollection", "numberMatched": 1, "numberReturned": 1,
+    "features": [
+        {"type": "Feature", "id": "11f15a8f-f82f-52f6-baf8-f2fd5c17edfb", "geometry": None,
+         "properties": {
+             "curb_policy_id": "11f15a8f-f82f-52f6-baf8-f2fd5c17edfb", "name": "Und1431 · Horario#1",
+             "description": None, "priority": 100, "time_spans": None,
+             "published_date": "2026-03-28T01:20:48+00:00", "start_date": "2026-03-28T01:20:48+00:00",
+             "end_date": None, "last_updated": "2026-09-14T01:20:48+00:00",
+             "rules": [
+                 {"rule_id": "35ad4d49-c10d-5121-a885-63554da98751", "activity": "parking", "max_stay": None,
+                  "no_return": None, "user_classes": ["automobile"],
+                  "rate": [{"rate": 660000, "rate_unit": "hour", "interval_start": 0, "interval_end": 120,
+                            "increment_amount": 110000, "increment_duration": 10, "rate_unit_period": "rolling"},
+                           {"rate": 990000, "rate_unit": "hour", "interval_start": 120, "interval_end": None,
+                            "increment_amount": 165000, "increment_duration": 10, "rate_unit_period": "rolling"}],
+                  "time_spans": [{"start_time": "06:00", "end_time": "22:00", "designated_period": "operating_hours",
+                                  "days_of_week": ["mon", "tue", "wed", "thu", "fri"]},
+                                 {"start_time": "06:00", "end_time": "22:00", "designated_period": "operating_hours",
+                                  "days_of_week": ["sat", "sun"]}]},
+                 {"rule_id": "9cf6bff2-acdf-585a-a6b1-79ba83d08f7f", "activity": "parking", "max_stay": None,
+                  "no_return": None, "user_classes": ["motorcycle"],
+                  "rate": [{"rate": 510000, "rate_unit": "hour", "interval_start": 0, "interval_end": 120,
+                            "increment_amount": 85000, "increment_duration": 10, "rate_unit_period": "rolling"}],
+                  "time_spans": [{"start_time": "06:00", "end_time": "22:00", "designated_period": "operating_hours",
+                                  "days_of_week": ["mon", "tue", "wed", "thu", "fri"]},
+                                 {"start_time": "06:00", "end_time": "22:00", "designated_period": "operating_hours",
+                                  "days_of_week": ["sat", "sun"]}]}]}},
+    ],
+}
+
+
+def test_pim_policies_become_cds_policies_the_evaluator_can_read(bogota: City):
+    """PIM puts hours on each rule and calls a car an automobile; our evaluator reads hours on the policy
+    and is asked about `car`. Both have to meet, or every ZPP kerb answers "unknown" to a driver."""
+    pols = pim_policies_to_cds(PIM_POLICIES, rate_scale=1 / 100)   # PIM's centavos → Bogotá's pesos
+    assert len(pols) == 1
+    pol = pols[0]
+    assert pol["curb_policy_id"] == "11f15a8f-f82f-52f6-baf8-f2fd5c17edfb" and pol["priority"] == 100
+    # the rules' identical spans are lifted once each, in CDS's own key names, without the noise word
+    assert pol["time_spans"] == [
+        {"days_of_week": ["mon", "tue", "wed", "thu", "fri"], "time_of_day_start": "06:00", "time_of_day_end": "22:00"},
+        {"days_of_week": ["sat", "sun"], "time_of_day_start": "06:00", "time_of_day_end": "22:00"}]
+    assert all("time_spans" not in r and "rule_id" not in r for r in pol["rules"])
+    assert pol["rules"][0]["user_classes"] == ["automobile"]
+    assert [x["rate"] for x in pol["rules"][0]["rate"]] == [6600, 9900]
+    assert pol["rules"][0]["rate"][0]["increment_amount"] == 1100       # every amount, not just `rate`
+    assert PIM_POLICIES["features"][0]["properties"]["rules"][0]["rate"][0]["rate"] == 660000   # input untouched
+    assert pol["published_date"] == ms(dt.datetime(2026, 3, 28, 1, 20, 48, tzinfo=dt.UTC))
+
+    city = _city(bogota)
+    by_id = {pol["curb_policy_id"]: pol}
+    zones, _, _ = pim_curbs_to_cds(PIM_CURBS, known_policy_ids=set(by_id))
+    weekday_10 = _bog(2026, 9, 15, 10)            # Tuesday
+    view = curb_public(zones[0], by_id, weekday_10, city, user_class="car")
+    assert view["allowed"] is True, view["whyLegal"]
+    # pesos like every other Bogotá policy, and the second tier says when it starts
+    assert view["priceLabel"] == "$ 6.600 / hora · desde 2 h $ 9.900 / hora"
+    assert "06:00–22:00" in view["whyLegal"] and "operating_hours" not in view["whyLegal"]
+    # a motorcycle gets its own, cheaper rule; a bicycle is not addressed at all
+    assert curb_public(zones[0], by_id, weekday_10, city, user_class="motorcycle")["priceLabel"] == "$ 5.100 / hora"
+    assert curb_public(zones[0], by_id, weekday_10, city, user_class="bicycle")["allowed"] is None
+    # outside the hours nothing applies: not forbidden, simply not a paid bay right now
+    assert curb_public(zones[0], by_id, _bog(2026, 9, 15, 23), city, user_class="car")["allowed"] is None
+
+
 def test_pim_curbs_become_cds_zones_with_placeholder_policies():
     """PIM references policies it does not publish. The zone must still be usable, so each unknown id gets
     the one policy that is true of every ZPP kerb — cars may park for a fee — and nothing invented."""
@@ -571,25 +639,36 @@ def test_pim_curbs_become_cds_zones_with_placeholder_policies():
     assert n == 1 and [p["curb_policy_id"] for p in again] == ["bf06a73f-a48a-5a73-918c-2b11f9d23467"]
 
 
-def _pim_transport(calls: list[str]) -> httpx.MockTransport:
+def _pim_transport(calls: list[str], *, policies: dict | None = None) -> httpx.MockTransport:
+    """PIM as it behaves after its 2026-09-14 fixes: content ETags, 304 on If-None-Match, a policies layer.
+    `policies=None` plays the older API that had no such layer (404)."""
     def handler(req: httpx.Request) -> httpx.Response:
-        calls.append(f"{req.method} {req.url.path}")
+        calls.append(f"{req.method} {req.url.path}" + (" (304)" if req.headers.get("if-none-match") else ""))
         if req.url.path == "/partners/v1/auth/token":
             body = json.loads(req.content)
             if body != {"client_id": "pk_test", "client_secret": "sk_test"}:
                 return httpx.Response(401, json={"detail": "invalid"})
             return httpx.Response(200, json={"access_token": "jwt-1", "token_type": "bearer",
                                              "expires_in": 1800, "scope": "read:providers read:supply"})
+        assert req.headers["authorization"] == "Bearer jwt-1"
         if req.url.path == "/partners/v1/providers/zpp-1/curbs":
-            assert req.headers["authorization"] == "Bearer jwt-1"
             assert req.url.params["limit"] == "10000"
-            return httpx.Response(200, json=PIM_CURBS)
+            if req.headers.get("if-none-match") == '"curbs-v1"':
+                return httpx.Response(304)
+            return httpx.Response(200, json=PIM_CURBS, headers={"ETag": '"curbs-v1"'})
+        if req.url.path == "/partners/v1/providers/zpp-1/policies":
+            if policies is None:
+                return httpx.Response(404, json={"statusCode": 404})
+            if req.headers.get("if-none-match") == '"pol-v1"':
+                return httpx.Response(304)
+            return httpx.Response(200, json=policies, headers={"ETag": '"pol-v1"'})
         return httpx.Response(404, json={"statusCode": 404})
     return httpx.MockTransport(handler)
 
 
 async def test_refresh_from_pim_mirrors_the_layer_and_keeps_real_policies(bogota: City):
     city = _city(bogota, curbs={"source": "pim", "url": "https://pim.test", "providerId": "zpp-1",
+                                "rateMinorUnits": 100,
                                 "credentials": {"clientId": "pk_test", "clientSecret": "sk_test"}})
     store = MemoryOpenMobilityStore()
     # an admin already described one of the two policies for real
@@ -597,14 +676,29 @@ async def test_refresh_from_pim_mirrors_the_layer_and_keeps_real_policies(bogota
     await store.put_curbs("bogota", [], [real], replace=True)
 
     calls: list[str] = []
-    result = await refresh_from_pim(store, city, city.open_mobility.cds.curbs, transport=_pim_transport(calls))
-    assert calls == ["POST /partners/v1/auth/token", "GET /partners/v1/providers/zpp-1/curbs"]
+    etags: dict = {}
+    result = await refresh_from_pim(store, city, city.open_mobility.cds.curbs, etags=etags,
+                                    transport=_pim_transport(calls, policies=PIM_POLICIES))
+    assert calls == ["POST /partners/v1/auth/token", "GET /partners/v1/providers/zpp-1/policies",
+                     "GET /partners/v1/providers/zpp-1/curbs"]
+    # PIM describes one of the two ids; the admin's older copy of it is superseded, the other is a placeholder
     assert result["zones"] == 2 and result["placeholderPolicies"] == 1 and result["numberMatched"] == 2
+    assert etags == {"policies": '"pol-v1"', "curbs": '"curbs-v1"'}
 
     zones, policies = await store.curbs("bogota")
     by_id = {p["curb_policy_id"]: p for p in policies}
-    assert by_id["11f15a8f-f82f-52f6-baf8-f2fd5c17edfb"]["name"] == "Parqueo pago"        # kept
+    assert by_id["11f15a8f-f82f-52f6-baf8-f2fd5c17edfb"]["name"] == "Und1431 · Horario#1"   # PIM's word
+    assert by_id["11f15a8f-f82f-52f6-baf8-f2fd5c17edfb"]["rules"][0]["rate"][0]["rate"] == 6600  # in pesos
     assert by_id["bf06a73f-a48a-5a73-918c-2b11f9d23467"]["name"] == "Zona de parqueo pago"  # placeholder
+
+    # nothing changed upstream: two 304s, no rewrite, and the inventory is exactly as it was
+    calls.clear()
+    again = await refresh_from_pim(store, city, city.open_mobility.cds.curbs, etags=etags,
+                                   transport=_pim_transport(calls, policies=PIM_POLICIES))
+    assert again["unchanged"] is True
+    assert calls == ["POST /partners/v1/auth/token", "GET /partners/v1/providers/zpp-1/policies (304)",
+                     "GET /partners/v1/providers/zpp-1/curbs (304)"]
+    assert (await store.curbs("bogota"))[0] == zones
     # the normalised view carries the occupancy PIM publishes
     pub = curb_public(zones[0], by_id, city_now(city), city)
     assert pub["availableSpaces"] == 12 and pub["totalSpaces"] == 13 and pub["occupancyRate"] == 0.0769

@@ -326,10 +326,12 @@ runs it automatically. `--check` fails when the file is stale (used by CI).
 
 ## v1.6.1 — PIM as the curb source (implemented 2026-09-14)
 
-`open_mobility.cds.curbs.source: pim` mirrors one provider's `curbs` layer from Bogotá's PIM partner API
-(`url` = API base, `provider_id`, `credentials: {clientId, clientSecret}` env-interpolated and masked in admin,
-`refresh_minutes`, `timeout_seconds`). Zones are replaced on each refresh; policies are carried over, with a
-placeholder ("Zona de parqueo pago", `parking` for `car`) for every policy id PIM references but does not publish.
+`open_mobility.cds.curbs.source: pim` mirrors one provider's `policies` and `curbs` layers from Bogotá's PIM partner
+API (`url` = API base, `provider_id`, `credentials: {clientId, clientSecret}` env-interpolated and masked in admin,
+`refresh_minutes`, `timeout_seconds`, `rate_minor_units` = the unit the source quotes in, converted to the city's).
+An unchanged layer is a `304` (content ETag) and is not rewritten. Zones are replaced on each refresh; policies are
+carried over, with a placeholder ("Zona de parqueo pago", `parking` for `car`) only for a policy id PIM does not
+describe. Tiered rates render as "$ 9.000 / hora · desde 2 h $ 13.500 / hora".
 The normalised curb view gains `totalSpaces`, `occupied`, `occupancyRate` next to `availableSpaces` /
 `availabilityTime`; `/health` reports the last mirror attempt under `openMobility.cds.sourceStatus`. Measured facts
 and the reasons behind the cadence and timeout are in `CONTRACT-mds-cds.md` ("PIM as the curb source").

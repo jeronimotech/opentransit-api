@@ -234,23 +234,24 @@ mobility:
 # Screenshots are the web app's own live captures (docs/screenshots on jeronimotech/opentransit-web main).
 # ── v1.6 · open mobility. The curb inventory is Bogotá's paid on-street parking (ZPP — Zonas de Parqueo
 # Pago), mirrored from PIM, the Secretaría de Movilidad's micromobility platform (partner API, read-only
-# scopes). Verified 2026-09-14: 819 kerbs with occupancy; the `segments` layer (10 949 spaces) never answers,
-# so it is not read; PIM publishes no `policies` layer yet, so each referenced policy gets a placeholder
-# ("Zona de parqueo pago", cars may park) until PIM ships them. Occupancy in DEV is not live: the median
-# `last_updated` was 2.5 h old, so the mirror runs every 15 min rather than pretending to be realtime.
+# scopes). Verified 2026-09-14: 819 kerbs with occupancy and 63 policies with hours and rates (integers in
+# centavos, converted to pesos at ingestion). The `segments` layer (per-space, 1 101 in a 4 km bbox in ~2 s) is not
+# read yet. Occupancy in DEV is not live — the median `last_updated` was 2.5 h old — so the mirror runs every
+# 15 min and skips the rewrite when PIM's content ETag says nothing changed.
 open_mobility:
   cds:
     enabled: true
     publish: false
     curbs:
       source: pim
-      url: https://app-api-mds-dev.azurewebsites.net    # the APIM gateway in PIM's guide 404s on /auth/token
+      url: https://apim-pim-mds-dev.azure-api.net       # the gateway; the direct app-api-mds-dev host also works
       provider_id: ae86d0c3-fe7e-4eda-b57d-7f8232b71fd8 # "ZPP — Zonas de Parqueo Pago"
       refresh_minutes: 15
       timeout_seconds: 120
+      rate_minor_units: 100    # PIM quotes centavos: 660000 is $ 6.600 an hour
       credentials: { clientId: "${PIM_CLIENT_ID:-}", clientSecret: "${PIM_CLIENT_SECRET:-}" }
     rate_currency: COP
-    rate_minor_units: 1
+    rate_minor_units: 1          # whole pesos, city-wide (PIM's centavos are converted at ingestion)
     events: { accept: false, providers: [] }
   mds: { enabled: false }
   park_ride: { enabled: false, max_drive_km: 25.0, max_walk_meters: 600, default_dwell_hours: 8.0 }

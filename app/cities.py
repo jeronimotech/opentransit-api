@@ -391,6 +391,10 @@ class CdsCurbsCfg(BaseModel):
     # would never succeed. Measured 2026-09-14: 819 zones in 53 s, a 4 km bbox in 67 s.
     timeout_seconds: int = 120
     credentials: dict[str, str] = {}    # pim: clientId / clientSecret — never public, masked in admin
+    # The smallest unit the *source* quotes rates in. PIM writes centavos (660000 = $ 6.600) while Bogotá's
+    # inventory is whole pesos, so amounts are converted at ingestion to the city's `rate_minor_units` and
+    # every policy in the store — PIM's or an admin's — reads the same way.
+    rate_minor_units: int = 1
 
 
 class CdsEventsProvider(BaseModel):
@@ -716,7 +720,8 @@ class City(BaseModel):
         curbs = {"source": om.cds.curbs.source, "url": om.cds.curbs.url,
                  "providerId": om.cds.curbs.provider_id,
                  "refreshMinutes": om.cds.curbs.refresh_minutes,
-                 "timeoutSeconds": om.cds.curbs.timeout_seconds}
+                 "timeoutSeconds": om.cds.curbs.timeout_seconds,
+                 "rateMinorUnits": om.cds.curbs.rate_minor_units}
         if admin:
             curbs["credentials"] = dict(om.cds.curbs.credentials)   # the router masks them before replying
         cds = {"enabled": om.cds.enabled,
