@@ -35,6 +35,66 @@ otp:
 
 geocoder:
   photon_url: https://photon.komoot.io   # null disables Photon (GTFS stops only)
+  # v2.2: Bogotá's cadastral geocoder (IDECA / Catastro Distrital) for addresses and intersections —
+  # "Cra 10 # 15-22 Sur", "Calle 127 con Carrera 7" — which OSM does not know. Names stay with Photon.
+  ideca:
+    enabled: true
+    url: https://catalogopmb.catastrobogota.gov.co/PMBWeb/web/api
+    api_key: ${IDECA_API_KEY:-}
+    # named avenues the geocoder only knows by their nomenclature
+    aliases:
+      "avenida boyacá": "AK 72"
+      "avenida boyaca": "AK 72"
+      "av boyacá": "AK 72"
+      "av boyaca": "AK 72"
+      "av. boyacá": "AK 72"
+      "av. boyaca": "AK 72"
+      "autopista norte": "AK 45"
+      "autonorte": "AK 45"
+      "auto norte": "AK 45"
+      "avenida ciudad de cali": "AK 86"
+      "avenida cali": "AK 86"
+      "av cali": "AK 86"
+      "av. cali": "AK 86"
+      "avenida nqs": "AK 30"
+      "nqs": "AK 30"
+      "avenida ciudad de quito": "AK 30"
+      "avenida caracas": "KR 14"
+      "av caracas": "KR 14"
+      "av. caracas": "KR 14"
+      "avenida 68": "AK 68"
+      "av 68": "AK 68"
+      "av. 68": "AK 68"
+      "avenida el dorado": "AC 26"
+      "av el dorado": "AC 26"
+      "avenida eldorado": "AC 26"
+      "avenida la esperanza": "AC 24"
+      "avenida esperanza": "AC 24"
+      "av esperanza": "AC 24"
+      "avenida de las américas": "AC 9"
+      "avenida de las americas": "AC 9"
+      "avenida las américas": "AC 9"
+      "avenida las americas": "AC 9"
+      "av américas": "AC 9"
+      "av americas": "AC 9"
+      "avenida chile": "AC 72"
+      "av chile": "AC 72"
+      "avenida jiménez": "AC 13"
+      "avenida jimenez": "AC 13"
+      "avenida primero de mayo": "AC 22 SUR"
+      "avenida primera de mayo": "AC 22 SUR"
+      "av primero de mayo": "AC 22 SUR"
+      "avenida suba": "AV SUBA"
+      "av suba": "AV SUBA"
+      "avenida séptima": "KR 7"
+      "avenida septima": "KR 7"
+      "carrera séptima": "KR 7"
+      "carrera septima": "KR 7"
+      "avenida décima": "KR 10"
+      "avenida decima": "KR 10"
+      "avenida calle 80": "AC 80"
+      "calle 80": "AC 80"
+      "avenida 1 de mayo": "AC 22 SUR"
 
 # agency_id -> component. Component drives colors/icons in the apps.
 agencies:

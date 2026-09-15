@@ -75,6 +75,7 @@ class Settings(BaseSettings):
 
     OTP_TIMEOUT_S: float = 25.0
     PHOTON_TIMEOUT_S: float = 4.0
+    IDECA_TIMEOUT_S: float = 4.0
     # Public Photon instances reject requests carrying a library's default User-Agent
     # (python-httpx/... gets a 403). Always identify the deployment.
     GEOCODER_USER_AGENT: str = "opentransit-api (+https://github.com/jeronimotech/opentransit-api)"

@@ -49,15 +49,14 @@ from .cities import (
     TaxiSurchargeWhen,
     TaxiTariff,
     TaxiZone,
-    UpdateUrls,
-)
+    UpdateUrls, Geocoder, IdecaGeocoder)
 from .db import pool
 from .errors import ApiError
 from .ondemand import PLACEHOLDER, is_masked, mask_credentials, mask_value
 
 log = logging.getLogger("ot.admin_config")
 
-EDITABLE = ("fares", "config", "links", "services", "branding", "mobility", "openMobility", "landing")
+EDITABLE = ("fares", "config", "links", "services", "branding", "mobility", "openMobility", "landing", "geocoder")
 SERVICE_ICONS = ("card", "report", "help", "link", "bike", "parking", "taxi", "ticket", "info", "map")
 LANDING_ICONS = ("route", "live", "board", "bike", "open", "alert", "accessibility", "favorites", "offline", "map",
                  "ticket", "info")
@@ -151,6 +150,33 @@ class UpdateUrlsCfg(_Strict):
     android: str | None = None
 
     _v = field_validator("ios", "android")(_update_url)
+
+
+class IdecaCfg(_Strict):
+    """v2.2 IDECA address geocoder. `apiKey` follows the assistant's rules: masked on read, an omitted or
+    echoed-back key keeps the stored one."""
+    enabled: bool = False
+    url: str = Field("https://catalogopmb.catastrobogota.gov.co/PMBWeb/web/api", max_length=300)
+    apiKey: str | None = Field(None, max_length=200)
+    aliases: dict[str, str] = {}
+
+    @field_validator("aliases")
+    @classmethod
+    def _aliases(cls, v: dict[str, str]) -> dict[str, str]:
+        if len(v) > 200:
+            raise ValueError("at most 200 aliases")
+        out = {}
+        for k, val in v.items():
+            k2, v2 = str(k).strip().lower(), str(val).strip()
+            if not k2 or not v2 or len(k2) > 60 or len(v2) > 40:
+                raise ValueError("alias names up to 60 characters, values up to 40")
+            out[k2] = v2
+        return out
+
+
+class GeocoderCfg(_Strict):
+    photonUrl: str | None = Field(None, max_length=300)
+    ideca: IdecaCfg = IdecaCfg()
 
 
 class ConfigCfg(_Strict):
@@ -561,6 +587,7 @@ class ConfigPatch(BaseModel):
     mobility: dict[str, Any] | None = None
     openMobility: dict[str, Any] | None = None
     landing: dict[str, Any] | None = None
+    geocoder: dict[str, Any] | None = None
     note: str | None = Field(None, max_length=300)
     updatedBy: str | None = Field(None, max_length=120)
 
@@ -589,7 +616,8 @@ def yaml_sections(base: City) -> dict:
             "branding": {"primaryColor": pub["branding"]["primaryColor"]},
             "mobility": base.mobility_public(admin=True),      # credentials included (masked by describe())
             "openMobility": base.open_mobility_public(admin=True),
-            "landing": base.landing.public()}
+            "landing": base.landing.public(),
+            "geocoder": base.geocoder.admin()}
 
 
 def _validate(section: str, model: type[BaseModel], value: Any) -> dict:
@@ -612,7 +640,10 @@ def validate_sections(sections: dict) -> dict:
                  "branding": _validate("branding", BrandingCfg, sections.get("branding") or {}),
                  "mobility": _validate("mobility", MobilityCfg, sections.get("mobility") or {}),
                  "openMobility": _validate("openMobility", OpenMobilityCfg, sections.get("openMobility") or {}),
-                 "landing": _validate("landing", LandingCfg, sections.get("landing") or {})}
+                 "landing": _validate("landing", LandingCfg, sections.get("landing") or {}),
+                 "geocoder": _validate("geocoder", GeocoderCfg, sections.get("geocoder") or {})}
+    if out["geocoder"]["ideca"]["enabled"] and not out["geocoder"]["ideca"]["url"]:
+        raise ApiError("geocoder.ideca.url: required when enabled", status=422)
     ids = [s["id"] for s in out["services"]]
     if len(ids) != len(set(ids)):
         raise ApiError("services: duplicate service id", status=422)
@@ -694,11 +725,31 @@ def _assistant(a: dict) -> AssistantConfig:
 
 
 def mask_secrets(data):
-    """Every secret an admin payload can carry: the on-demand / MDS credentials plus the assistant's key."""
+    """Every secret an admin payload can carry: the on-demand / MDS credentials, the assistant's key and
+    the IDECA geocoder's key."""
     out = mask_credentials(data)
     cfg = out.get("config") if isinstance(out, dict) else None
     if isinstance(cfg, dict) and isinstance(cfg.get("assistant"), dict):
         cfg["assistant"]["apiKey"] = mask_value(cfg["assistant"].get("apiKey"))
+    geo = out.get("geocoder") if isinstance(out, dict) else None
+    if isinstance(geo, dict) and isinstance(geo.get("ideca"), dict):
+        geo["ideca"]["apiKey"] = mask_value(geo["ideca"].get("apiKey"))
+    return out
+
+
+def unmask_geocoder_patch(patch: dict | None, city: City, base: City) -> dict | None:
+    """`geocoder.ideca.apiKey`, by the same rules as the assistant's key (see `unmask_assistant_patch`)."""
+    if not patch or not isinstance(patch.get("ideca"), dict):
+        return patch
+    out = copy.deepcopy(patch)
+    sent = out["ideca"].get("apiKey")
+    if "apiKey" not in out["ideca"] or not is_masked(sent):
+        return out
+    stored = city.geocoder.ideca.api_key
+    if not stored or stored == base.geocoder.ideca.api_key:
+        del out["ideca"]["apiKey"]
+    else:
+        out["ideca"]["apiKey"] = stored
     return out
 
 
@@ -826,6 +877,10 @@ def build_city(base: City, sections: dict) -> City:
     upd["features"] = upd["features"].model_copy(
         update={"open_mobility": cds_cfg["enabled"] or mds_cfg["enabled"]})
     upd["landing"] = Landing.model_validate(sections["landing"])
+    g = sections["geocoder"]
+    upd["geocoder"] = Geocoder(photon_url=g["photonUrl"],
+                               ideca=IdecaGeocoder(enabled=g["ideca"]["enabled"], url=g["ideca"]["url"],
+                                                   api_key=g["ideca"]["apiKey"], aliases=g["ideca"]["aliases"]))
     return base.model_copy(update=upd)
 
 

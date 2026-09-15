@@ -47,6 +47,77 @@ def looks_like_address(q: str) -> bool:
     return bool(_HOUSE_NUMBER.search(q or ""))
 
 
+# Bogotá's street words, as people type them. "Calle 127 con Carrera 7" is an intersection, and just as
+# much an address as a house number: the cadastral geocoder resolves both.
+_WAY = r"(?:cl|cll|calle|ac|kr|kra|cra|cr|carrera|ak|dg|diag|diagonal|tv|tr|transv|transversal|av|avenida|avda|autopista|autonorte|nqs)"
+_WAY_WORD = re.compile(rf"\b{_WAY}\b", re.I)
+_JOIN = re.compile(r"\b(?:con|esquina)\b", re.I)
+
+
+def looks_like_intersection(q: str) -> bool:
+    """A street word, then "con"/"esquina", then a number: "Calle 127 con Carrera 7", "Avenida Boyacá con
+    Calle 80", "Autopista Norte con 170". Not "Clínica Shaio con urgencias"."""
+    m = _JOIN.search(q or "")
+    if not m:
+        return False
+    before, after = q[:m.start()], q[m.end():]
+    return bool(_WAY_WORD.search(before)) and bool(re.search(r"\d", after))
+
+
+_ABBREV = [
+    (re.compile(r"\b(?:avenida|av|avda)\.?\s*(?:calle|cl|cll)\.?\b", re.I), "AC"),
+    (re.compile(r"\b(?:avenida|av|avda)\.?\s*(?:carrera|cra|kr|kra|cr)\.?\b", re.I), "AK"),
+    (re.compile(r"\b(?:calle|cll|cl)\.?(?=\s*\d)", re.I), "CL"),
+    (re.compile(r"\b(?:carrera|cra|kra|cr|kr)\.?(?=\s*\d)", re.I), "KR"),
+    (re.compile(r"\b(?:diagonal|diag|dg)\.?(?=\s*\d)", re.I), "DG"),
+    (re.compile(r"\b(?:transversal|transv|tv|tr)\.?(?=\s*\d)", re.I), "TV"),
+    (re.compile(r"\b(?:n[o°º]?|num|numero|número)\.?\s*(?=\d)", re.I), "# "),
+    (re.compile(r"\b(?:con|esquina)\b", re.I), "#"),
+    (re.compile(r"\bsur\b", re.I), "SUR"),
+    (re.compile(r"\beste\b", re.I), "ESTE"),
+]
+
+
+def normalize_bogota_address(q: str, aliases: dict[str, str] | None = None) -> str:
+    """The query as the cadastral geocoder likes it: named avenues replaced by their nomenclature
+    ("avenida boyacá" → "AK 72", from the city's alias table), street words abbreviated, "No."/"con"
+    turned into the "#" the service parses. Returns the input unchanged when nothing applies."""
+    out = " ".join((q or "").split())
+    low = out.lower()
+    for name, code in sorted((aliases or {}).items(), key=lambda kv: -len(kv[0])):
+        idx = low.find(name)
+        if idx >= 0:
+            out = out[:idx] + code + out[idx + len(name):]
+            low = out.lower()
+    for rx, rep in _ABBREV:
+        out = rx.sub(rep, out)
+    out = re.sub(r"\s*#\s*", " # ", out)
+    out = re.sub(r"\s*-\s*", "-", out)
+    return " ".join(out.split())
+
+
+_WAY_WORDS = {"CL": "Calle", "KR": "Carrera", "AC": "Avenida Calle", "AK": "Avenida Carrera", "DG": "Diagonal",
+              "TV": "Transversal", "AV": "Avenida"}
+
+
+def pretty_bogota_address(dirtrad: str) -> str:
+    """Catastro's canonical form back into what a person reads: "KR 10 15 22 S" → "Carrera 10 # 15-22 Sur"."""
+    parts = (dirtrad or "").split()
+    if len(parts) < 2:
+        return dirtrad or ""
+    way = _WAY_WORDS.get(parts[0].upper(), parts[0])
+    rest = parts[1:]
+    suffix = ""
+    if rest and rest[-1].upper() in ("S", "SUR", "E", "ESTE"):
+        suffix = " Sur" if rest[-1].upper().startswith("S") else " Este"
+        rest = rest[:-1]
+    if len(rest) >= 3:
+        return f"{way} {rest[0]} # {rest[1]}-{rest[2]}{suffix}"
+    if len(rest) == 2:
+        return f"{way} {rest[0]} # {rest[1]}{suffix}"
+    return f"{way} {rest[0]}{suffix}"
+
+
 def _geocoder_headers() -> dict:
     return {"User-Agent": settings().GEOCODER_USER_AGENT}
 
@@ -78,17 +149,36 @@ class _ProviderHealth:
 
 
 photon_health = _ProviderHealth()
+ideca_health = _ProviderHealth()
+
+
+def _query_words(qn: str) -> list[str]:
+    return [w for w in qn.split() if len(w) >= 3 or w.isdigit()]
+
+
+def _coverage(name: str, words: list[str]) -> float:
+    """Share of the query's words that start a word of the name. "Hospital San Ignacio" covers 1/3 of the
+    station "Hospital" and 3/3 of "Hospital Universitario San Ignacio"."""
+    if not words:
+        return 1.0
+    parts = name.split()
+    return sum(1 for w in words if any(p.startswith(w) for p in parts)) / len(words)
 
 
 def rank_results(results: list[dict], q: str, lat: float | None = None, lon: float | None = None) -> list[dict]:
-    """With a user position: GTFS stops/stations within NEARBY_M first (closest first), then stations, then
-    other GTFS matches (exact/prefix/word, busier first), then Photon. Without one: stations first."""
+    """Addresses first when the query is one (IDECA's cadastral point, then Photon's street), then GTFS
+    stops within NEARBY_M of the user that actually match every word of the query, then exact names, then
+    names covering the whole query (a stop before a place), then stations, then partial GTFS matches,
+    then the rest of Photon. A name search used to be lost to a partial stop: "Clínica Shaio" returned
+    the stop "Clínica del Niño" above the hospital itself, "Hospital San Ignacio" the station "Hospital"."""
     qn = normalize_name(q)
     have_pos = lat is not None and lon is not None
     named_query = " " in qn.strip()
+    words = _query_words(qn)
     # "Calle 85 #12-30" is not a request for the station named "Calle 34". When the query
-    # carries a house number the address IS the answer, so it outranks every stop.
-    address_query = looks_like_address(q)
+    # carries a house number or is an intersection the address IS the answer, so it outranks every stop.
+    address_query = looks_like_address(q) or looks_like_intersection(q)
+    source_rank = {"ideca": 0, "gtfs": 1, "photon": 2}
 
     def dist(r: dict) -> float | None:
         if not have_pos or r.get("lat") is None:
@@ -100,20 +190,26 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
         exact = name == qn
         prefix = name.startswith(qn)
         word = any(w.startswith(qn) for w in name.split())
+        full = exact or _coverage(name, words) >= 1.0
         d = dist(r)
-        near = r["source"] == "gtfs" and d is not None and d <= NEARBY_M
+        # a nearby stop is the answer only when it is what was asked for, not a namesake
+        near = r["source"] == "gtfs" and d is not None and d <= NEARBY_M and (full or not named_query)
         r["distanceMeters"] = int(round(d)) if d is not None else None
-        # A one-word query is a category search ("portal", "calle") where the
-        # station is the useful answer. A multi-word query is a name search, and
-        # there an exact match IS the answer: "Parque de la 93" used to return
-        # the station "Parque" first, and the assistant planned from the wrong
-        # place because of it.
-        addr_hit = address_query and r["source"] == "photon" and r["type"] in ("address", "street")
+        addr_hit = address_query and (r["source"] == "ideca" or
+                                      (r["source"] == "photon" and r["type"] in ("address", "street")))
+        # A one-word query is a category search ("portal", "calle") where the station is the useful
+        # answer. A multi-word query is a name search, and there an exact match IS the answer, and a name
+        # that covers every word beats a stop that shares one of them.
+        tier = (0 if addr_hit else
+                1 if near else
+                2 if (exact and named_query) else
+                3 if (full and named_query) else
+                4 if (r["type"] == "station" or (exact and r["source"] != "gtfs")) else
+                5 if r["source"] == "gtfs" else 6)
         return (
-            0 if addr_hit else
-            1 if near else 2 if (exact and named_query) else 3 if r["type"] == "station"
-            else 4 if r["source"] == "gtfs" else 5,
+            tier,
             d if near else 0,
+            source_rank.get(r["source"], 3) if tier in (0, 3, 4) else 0,
             0 if exact else 1 if prefix else 2 if word else 3,
             -(r.get("_nRoutes") or 0),
             len(name),
@@ -201,16 +297,64 @@ async def search_photon(city: City, q: str, lat: float | None, lon: float | None
     return out
 
 
+def ideca_result(data: dict) -> dict | None:
+    """One geocoder answer → a search result. `dirtrad` is the address Catastro resolved (it may differ from
+    what was typed: "Cll 170 # 50-10" resolves to "CL 181 50 10"), `nomseccat`/`localidad` name the
+    neighbourhood and district for the label."""
+    try:
+        lat = float(data.get("latitude") or data.get("yinput"))
+        lon = float(data.get("longitude") or data.get("xinput"))
+    except (TypeError, ValueError):
+        return None
+    if not lat or not lon:
+        return None
+    dirtrad = str(data.get("dirtrad") or data.get("diraprox") or "").strip()
+    if not dirtrad:
+        return None
+    where = [str(x).strip().title() for x in (data.get("nomseccat"), data.get("localidad")) if x]
+    approx = "aprox" in str(data.get("tipo_direccion") or "").lower()
+    label = " · ".join(where) or None
+    if approx and label:
+        label += " · aprox."
+    return {"id": f"ideca:{dirtrad.replace(' ', '_')}", "name": pretty_bogota_address(dirtrad), "label": label,
+            "lat": lat, "lon": lon, "type": "address", "stopId": None, "component": None, "source": "ideca"}
+
+
+async def search_ideca(city: City, q: str, transport: httpx.AsyncBaseTransport | None = None) -> list[dict]:
+    """Bogotá's cadastral geocoder, asked only for queries that look like an address or an intersection.
+    Failures degrade to Photon + stops, counted in `ideca_health` so they are not invisible."""
+    cfg = city.geocoder.ideca
+    if not cfg.active or not (looks_like_address(q) or looks_like_intersection(q)):
+        return []
+    query = normalize_bogota_address(q, cfg.aliases)
+    try:
+        async with httpx.AsyncClient(timeout=settings().IDECA_TIMEOUT_S, headers=_geocoder_headers(),
+                                     transport=transport) as cli:
+            r = await cli.get(cfg.url, params={"cmd": "geocodificar", "apikey": cfg.api_key, "query": query})
+            r.raise_for_status()
+            body = r.json().get("response") or {}
+        ideca_health.record_ok()
+    except Exception as e:  # noqa: BLE001
+        ideca_health.record_failure(e)
+        log.error("[%s] ideca geocode failed (exact addresses unavailable): %s", city.id, e)
+        return []
+    if not body.get("success"):
+        return []          # not an address Catastro knows; Photon and the stops still answer
+    res = ideca_result(body.get("data") or {})
+    return [res] if res else []
+
+
 async def geocode(city: City, q: str, lat: float | None, lon: float | None, limit: int,
                   locale: str | None = None) -> list[dict]:
     import asyncio
     # Over-fetch from both sources: ranking and street collapsing need candidates to choose
     # from. Asking Photon for exactly `limit` once returned the Calle 85 segment 6 km from
     # the user because the nearer one never made it into the response.
-    stops, photon = await asyncio.gather(search_stops(city, q, lat, lon, limit, locale),
-                                         search_photon(city, q, lat, lon, max(limit * 3, 15)))
+    stops, photon, ideca = await asyncio.gather(search_stops(city, q, lat, lon, limit, locale),
+                                                search_photon(city, q, lat, lon, max(limit * 3, 15)),
+                                                search_ideca(city, q))
     seen, merged = set(), []
-    for r in rank_results(_collapse_streets(city, photon, lat, lon) + stops, q, lat, lon):
+    for r in rank_results(ideca + _collapse_streets(city, photon, lat, lon) + stops, q, lat, lon):
         k = (round(r["lat"] or 0, 4), round(r["lon"] or 0, 4), normalize_name(r["name"]))
         if k in seen:
             continue

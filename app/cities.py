@@ -60,8 +60,33 @@ class Otp(BaseModel):
     feed_id: str
 
 
+class IdecaGeocoder(BaseModel):
+    """Bogotá's official address geocoder (IDECA / Catastro Distrital, `cmd=geocodificar`). It resolves the
+    city's own nomenclature — "Cra 10 # 15-22 Sur", "Calle 127 con Carrera 7" — to the cadastral point,
+    which OSM cannot. Addresses only: names of places and neighbourhoods stay with Photon and the stops.
+    `api_key` is a secret: masked on read by the admin layer, never in a public payload."""
+    enabled: bool = False
+    url: str = "https://catalogopmb.catastrobogota.gov.co/PMBWeb/web/api"
+    api_key: str | None = None
+    # named avenues → the nomenclature the geocoder understands ("avenida boyacá" → "AK 72")
+    aliases: dict[str, str] = {}
+
+    @property
+    def active(self) -> bool:
+        return self.enabled and bool(self.url) and bool(self.api_key)
+
+    def admin(self) -> dict:
+        return {"enabled": self.enabled, "url": self.url, "apiKey": self.api_key, "aliases": dict(self.aliases)}
+
+
 class Geocoder(BaseModel):
     photon_url: str | None = "https://photon.komoot.io"
+    ideca: IdecaGeocoder = IdecaGeocoder()
+
+    def admin(self) -> dict:
+        """Everything the panel edits, camelCase. The IDECA key is real here and masked by the admin layer
+        just before it leaves the process — a payload built by this method must never reach a client."""
+        return {"photonUrl": self.photon_url, "ideca": self.ideca.admin()}
 
 
 class AgencyCfg(BaseModel):

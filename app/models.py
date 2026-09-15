@@ -263,7 +263,7 @@ class GeocodeResult(Out):
     type: Literal["station", "stop", "address", "poi", "street", "place"]
     stop_id: str | None = None
     component: str | None = None
-    source: Literal["gtfs", "photon"]
+    source: Literal["gtfs", "photon", "ideca"]
     distance_meters: int | None = None
 
 

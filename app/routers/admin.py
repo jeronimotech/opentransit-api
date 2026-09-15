@@ -31,7 +31,7 @@ from ..admin_config import (
     describe,
     effective_city,
     mask_secrets,
-    unmask_assistant_patch,
+    unmask_assistant_patch, unmask_geocoder_patch,
 )
 from ..config import settings
 from ..errors import ApiError, Forbidden, Unauthorized
@@ -392,6 +392,8 @@ async def put_config(patch: ConfigPatch, request: Request, rt: CityRuntime = Dep
         sections["openMobility"] = unmask_open_mobility_patch(sections["openMobility"], rt.city)
     if sections.get("config"):
         sections["config"] = unmask_assistant_patch(sections["config"], rt.city, rt.base_city or rt.city)
+    if sections.get("geocoder"):
+        sections["geocoder"] = unmask_geocoder_patch(sections["geocoder"], rt.city, rt.base_city or rt.city)
     new_override = deep_merge(rt.override or {}, sections)
     effective_city(rt.base_city or rt.city, new_override)          # raises 422 with the field path
     # Who signed in beats whatever the client typed: the audit trail is only worth reading if it is true.
