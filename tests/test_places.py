@@ -195,4 +195,4 @@ def test_the_neighbourhood_beats_the_stop_named_like_it_and_the_far_photon_names
 def test_admin_sections_carry_the_areas(bogota: City):
     secs = yaml_sections(bogota)
     assert set(secs["geocoder"]["areas"]) >= {"enabled", "barriosUrl", "localidadesUrl", "refreshDays"}
-    assert "catastrobogota" in json.dumps(secs["geocoder"]["areas"])
+    assert "places-bogota/bogota-barrios.geojson" in json.dumps(secs["geocoder"]["areas"])
