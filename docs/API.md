@@ -827,3 +827,24 @@ are short by design because the cards carry the detail.
 * Spend is metered per city per day from the provider's reported token usage and refused hard when the
   budget is gone. An unknown model prices at 0 rather than blocking a city; `chat/health` reports
   `startedAt` so an operator can tell a partial counter (the meter is in memory) from a full day.
+
+
+## v2.3 — scheduled trips: pushes for iPhone reminders (implemented 2026-09-15)
+
+Scheduled trips live on the phone (see the mobile app): the API only helps an iPhone wake up. Android needs
+none of this (WorkManager runs the refresh and the alert poll itself).
+
+- `PUT /v1/cities/{city}/push/devices` body `{"token": "<hex APNs token>", "platform": "ios", "env": "prod"|"sandbox",
+  "locale": "es", "wakeAt": ["2026-09-16T11:32:00Z", …], "routes": ["bogota:G30", …]}` → `202 {"accepted": true,
+  "serverPush": true|false, "wakes": n, "routes": n}`. Idempotent (re-register with the full current lists).
+  `wakeAt` = the instants the phone wants a **silent** push (`content-available`, `kind: "tripRefresh"`) — twenty
+  minutes before each scheduled trip leaves, at most 64, within 8 days; `routes` = the routes it follows for
+  **alert pushes** (`kind: "routeAlert"`, `alertId`, `routeIds`, `location: "/{city}/alerts"`, at most 6 per device
+  per day, never the same alert twice). Nothing else is accepted: no account, no position, no trip.
+- `DELETE /v1/cities/{city}/push/devices/{token}` → 204.
+- Off by default: `config.push.reminders` (admin switch) plus APNs credentials from the environment (`APNS_KEY_ID`,
+  `APNS_TEAM_ID`, `APNS_KEY_P8` — an *APNs* key from the developer portal, not the App Store Connect one). While
+  either is missing the endpoint answers `serverPush: false` and stores nothing; `city.config.push.reminders`
+  (public) tells the app whether to register at all. `/health.push` = `{reminders, ok, at, error, sent, failed,
+  lastError, devices, withWakes, withRoutes}`.
+- Tokens APNs reports as `BadDeviceToken` / `Unregistered` are deleted at once.

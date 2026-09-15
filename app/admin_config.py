@@ -121,8 +121,9 @@ class ShareCfg(_Strict):
 
 
 class PushCfg(_Strict):
-    """Only the switch is editable here; APNs credentials come from the environment, never from the panel."""
+    """Only the switches are editable here; APNs credentials come from the environment, never from the panel."""
     enabled: bool = False
+    reminders: bool = False
 
 
 class AssistantCfg(_Strict):
@@ -806,7 +807,8 @@ def build_city(base: City, sections: dict) -> City:
                                                 ttl_minutes=c["share"]["ttlMinutes"],
                                                 max_ttl_minutes=c["share"]["maxTtlMinutes"]),
                               # APNs credentials come from the environment: the panel only flips the switch
-                              push=base.config.push.model_copy(update={"enabled": c["push"]["enabled"]}),
+                              push=base.config.push.model_copy(update={"enabled": c["push"]["enabled"],
+                                                                       "reminders": c["push"].get("reminders", False)}),
                               assistant=_assistant(c["assistant"]))
     upd["links"] = Links(**sections["links"])
     upd["services"] = [ServiceTile(**s) for s in sections["services"]]

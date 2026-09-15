@@ -599,6 +599,19 @@ class GeocoderHealth(GeocoderProviderHealth):
     areas: dict | None = None
 
 
+class PushHealth(Out):
+    reminders: bool = False
+    ok: bool | None = None
+    at: str | None = None
+    error: str | None = None
+    sent: int | None = None
+    failed: int | None = None
+    last_error: str | None = None
+    devices: int | None = None
+    with_wakes: int | None = None
+    with_routes: int | None = None
+
+
 class CityHealth(Out):
     static: StaticHealth
     realtime: RealtimeHealth
@@ -608,6 +621,7 @@ class CityHealth(Out):
     analytics: AnalyticsHealth = AnalyticsHealth()
     open_mobility: OpenMobilityHealth = OpenMobilityHealth()
     geocoder: GeocoderHealth = GeocoderHealth()
+    push: PushHealth | None = None
 
 
 # ------------------------------------------------------------------ v1.2 shared vehicles (GBFS)

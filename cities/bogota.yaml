@@ -136,6 +136,15 @@ fares:
 
 # Remote-configurable client behaviour (read by web and mobile on start-up).
 config:
+  # v2.3 scheduled-trip reminders on iPhone: a silent wake-up twenty minutes before leaving and alert
+  # pushes for followed routes. Needs an APNs key (developer portal → Keys → APNs) in the environment.
+  push:
+    reminders: true
+    apns:
+      key_id: ${APNS_KEY_ID:-}
+      team_id: ${APNS_TEAM_ID:-6DTDJCKC8X}
+      bundle_id: com.jeronimotech.opentransit
+      key_p8: ${APNS_KEY_P8:-}
   vehicle_poll_seconds: 15
   departures_refresh_seconds: 20
   features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }

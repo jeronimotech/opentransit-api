@@ -437,3 +437,20 @@ CREATE TABLE IF NOT EXISTS place_area (
 );
 CREATE INDEX IF NOT EXISTS place_area_name_trgm ON place_area USING gin (name_norm gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS place_area_geom ON place_area USING gist (geom);
+
+-- v2.3 scheduled-trip reminders. An anonymous APNs token, the instants it asked to be woken at (the
+-- live re-plan twenty minutes before leaving — never the trip itself), and the routes it follows for
+-- alert pushes. Nothing here names a person or a place; a token that APNs reports gone is deleted.
+CREATE TABLE IF NOT EXISTS push_device (
+  token          TEXT PRIMARY KEY,
+  platform       TEXT NOT NULL,                 -- ios
+  env            TEXT NOT NULL DEFAULT 'prod',  -- prod | sandbox (debug builds)
+  city           TEXT NOT NULL,
+  locale         TEXT NOT NULL DEFAULT 'es',
+  wake_at        JSONB NOT NULL DEFAULT '[]',   -- ISO instants, UTC
+  routes         JSONB NOT NULL DEFAULT '[]',   -- route ids
+  alerts_sent    JSONB NOT NULL DEFAULT '[]',   -- alert ids already pushed
+  last_seen      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS push_device_city ON push_device (city);

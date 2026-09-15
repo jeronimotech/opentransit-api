@@ -1,7 +1,8 @@
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
 asyncpg==0.31.0
-httpx==0.28.1
+# v2.3 scheduled-trip reminders: APNs is HTTP/2 only
+httpx[http2]==0.28.1
 gtfs-realtime-bindings==2.2.0
 protobuf==7.36.1
 pydantic==2.13.5

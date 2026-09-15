@@ -182,17 +182,42 @@ class ShareConfig(BaseModel):
 
 
 class ApnsConfig(BaseModel):
-    """Credentials for Live Activity pushes. Empty by default: the app updates its own activity locally."""
+    """APNs token authentication (an "Apple Push Notifications service" key from the developer portal —
+    not the App Store Connect API key). `key_p8` is the key's PEM content, from the environment; `key_path`
+    a file with it. Empty by default: the app updates its own Live Activity locally and reminders stay
+    on the device."""
     key_id: str | None = None
     team_id: str | None = None
     bundle_id: str | None = None
     key_path: str | None = None
+    key_p8: str | None = None
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.key_id and self.team_id and self.bundle_id and (self.key_p8 or self.key_path))
+
+    def private_key(self) -> str | None:
+        if self.key_p8:
+            return self.key_p8.replace("\\n", "\n")
+        if self.key_path:
+            try:
+                return Path(self.key_path).read_text()
+            except OSError:
+                return None
+        return None
 
 
 class PushConfig(BaseModel):
-    """Optional server-driven Live Activity updates (v1.7 A4). Disabled means the client drives them."""
+    """Optional server-driven Live Activity updates (v1.7 A4). Disabled means the client drives them.
+    v2.3 `reminders`: the silent wake-up that lets an iPhone re-plan a scheduled trip twenty minutes
+    before leaving, and alert pushes for the routes a device follows — anonymous device tokens only."""
     enabled: bool = False
+    reminders: bool = False
     apns: ApnsConfig = ApnsConfig()
+
+    @property
+    def reminders_active(self) -> bool:
+        return self.reminders and self.apns.configured
 
 
 class AssistantConfig(BaseModel):
@@ -840,7 +865,9 @@ class City(BaseModel):
                        "share": {"enabled": self.config.share.enabled,
                                  "ttlMinutes": self.config.share.ttl_minutes},
                        # credentials never leave the server; clients only need to know who drives the activity
-                       "push": {"enabled": self.config.push.enabled},
+                       "push": {"enabled": self.config.push.enabled,
+                                # v2.3: whether an iPhone should register for the silent trip refresh
+                                "reminders": self.config.push.reminders_active},
                        "assistant": self.config.assistant.public()},
             "links": self.links.model_dump(),
             "services": [s.model_dump() for s in self.services],

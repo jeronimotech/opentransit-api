@@ -25,6 +25,7 @@ from .oidc import OidcService, PgOidcStateStore, configured_providers
 from .openmobility import PgOpenMobilityStore, refresh_from_pim, refresh_from_url
 from . import geocode as geocode_mod
 from .places import PgGeocodeCache, PgPlaceAreaStore, refresh_place_areas
+from .push import ApnsClient, PgPushDeviceStore, push_alerts, push_wakes
 from .otp import OtpClient
 from .routers import (
     admin,
@@ -42,6 +43,7 @@ from .routers import (
     pois,
     rental,
     routes,
+    push,
     share,
     stops,
     vehicles,
@@ -183,6 +185,56 @@ async def _open_mobility_loop(app: FastAPI, stop: asyncio.Event) -> None:
             await asyncio.wait_for(stop.wait(), timeout=300)
 
 
+def _apns_for(rt) -> ApnsClient | None:
+    cfg = rt.city.config.push
+    if not cfg.reminders_active:
+        return None
+    key = cfg.apns.private_key()
+    if not key:
+        return None
+    return ApnsClient(key_id=cfg.apns.key_id, team_id=cfg.apns.team_id, private_key=key, bundle_id=cfg.apns.bundle_id)
+
+
+async def _push_loop(app: FastAPI, stop: asyncio.Event) -> None:
+    """Every minute: the silent wake-ups that are due, and alert pushes for newly active alerts on the
+    routes devices follow. A failing APNs never takes the API down."""
+    store = app.state.push_devices
+    clients: dict[str, ApnsClient] = {}
+    seen: dict[str, set[str]] = {}
+    counts: dict[str, dict[str, int]] = {}
+    day = ""
+    while not stop.is_set():
+        today = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d")
+        if today != day:
+            counts.clear()
+            day = today
+        for rt in app.state.cities.values():
+            cid = rt.city.id
+            client = clients.get(cid) or _apns_for(rt)
+            if client is None:
+                continue
+            clients[cid] = client
+            status = app.state.push_status.setdefault(cid, {})
+            try:
+                now = dt.datetime.now(dt.UTC)
+                woke = await push_wakes(store, client, cid, now)
+                names = {rid: (r.get("short_name") or r.get("shortName") or rid) for rid, r in rt.rt.route_index.items()}
+                alerts = rt.rt.active_alerts()
+                pushed = await push_alerts(store, client, cid, alerts, names, seen.setdefault(cid, set()),
+                                           counts.setdefault(cid, {}))
+                status.update({"ok": True, "at": _utc_iso(), "error": None, "sent": client.sent, "failed": client.failed,
+                               "lastError": client.last_error})
+                if woke or pushed:
+                    log.info("[%s] push: %d wake-up(s), %d alert(s)", cid, woke, pushed)
+            except Exception as e:  # noqa: BLE001
+                status.update({"ok": False, "at": _utc_iso(), "error": f"{type(e).__name__}: {e}"[:200]})
+                log.exception("[%s] push pass failed", cid)
+        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=60)
+    for c in clients.values():
+        await c.aclose()
+
+
 async def _place_areas_loop(app: FastAPI, stop: asyncio.Event) -> None:
     """Mirror each city's named areas (barrios, localidades) from its open ArcGIS layers: at start when
     the mirror is missing or older than `refresh_days`, then daily checks. Never takes the API down."""
@@ -257,6 +309,8 @@ async def lifespan(app: FastAPI):
     app.state.openmobility_sources = {}     # city id -> {kind -> last refresh status}, for /health
     app.state.openmobility_etags = {}       # city id -> {layer -> ETag}: PIM answers 304 when unchanged
     geocode_mod.use_stores(geocode_cache=PgGeocodeCache(), area_store=PgPlaceAreaStore())
+    app.state.push_devices = PgPushDeviceStore()
+    app.state.push_status = {}              # city id -> last push pass, for /health
     app.state.place_areas_status = {}       # city id -> last mirror status, for /health
     await load_overrides(app.state.config_store, app.state.cities)
     stop = asyncio.Event()
@@ -281,6 +335,8 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(_open_mobility_loop(app, stop), name="openmobility"))
     if cfg.ENABLE_STATIC_INGEST and any(rt.city.geocoder.areas.active for rt in app.state.cities.values()):
         tasks.append(asyncio.create_task(_place_areas_loop(app, stop), name="places"))
+    if cfg.ENABLE_RT_POLLERS and any(rt.city.config.push.reminders_active for rt in app.state.cities.values()):
+        tasks.append(asyncio.create_task(_push_loop(app, stop), name="push"))
     log.info("opentransit-api %s up · %d cities · %d background tasks", __version__, len(registry), len(tasks))
     try:
         yield
@@ -314,7 +370,7 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
     for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, ondemand,
-              landing, analytics, openmobility, share, watch, chat, admin):
+              landing, analytics, openmobility, share, push, watch, chat, admin):
         app.include_router(r.router)
 
     @app.get("/", include_in_schema=False)

@@ -37,6 +37,10 @@ async def city_health(request: Request, rt: CityRuntime = Depends(city_runtime))
                      "routerCar": (await rt.car_router().probe(rt.city)) if rt.city.on_demand_providers() else None},
         "analytics": {"enabled": rt.city.config.analytics.enabled, **(await _analytics_health(request, rt))},
         "openMobility": await _open_mobility_health(request, rt),
+        "push": {"reminders": rt.city.config.push.reminders_active,
+                 **(getattr(request.app.state, "push_status", {}).get(rt.city.id) or {}),
+                 **(await _quiet(request.app.state.push_devices.stats(rt.city.id))
+                    if getattr(request.app.state, "push_devices", None) is not None else {})},
         "geocoder": {"enabled": bool(rt.city.geocoder.photon_url) or rt.city.geocoder.ideca.active,
                      "provider": "photon" if rt.city.geocoder.photon_url else None,
                      **photon_health.snapshot(),
