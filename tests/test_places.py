@@ -196,3 +196,16 @@ def test_admin_sections_carry_the_areas(bogota: City):
     secs = yaml_sections(bogota)
     assert set(secs["geocoder"]["areas"]) >= {"enabled", "barriosUrl", "localidadesUrl", "refreshDays"}
     assert "places-bogota/bogota-barrios.geojson" in json.dumps(secs["geocoder"]["areas"])
+
+
+def test_a_rider_far_from_the_city_still_gets_its_neighbourhoods():
+    """Seen from the app with the simulator in California: "Cedritos" listed five stops before the barrio,
+    because the namesake rule measured from the user only."""
+    stop = {"name": "Br. Cedritos del Sur II", "type": "stop", "source": "gtfs", "_nRoutes": 3, "lat": 4.57, "lon": -74.13}
+    barrio = {"name": "Cedritos", "type": "place", "source": "catastro", "lat": 4.72, "lon": -74.03}
+    out = rank_results([stop, barrio], "Cedritos", 37.77, -122.42, city_center=(4.6534, -74.0836))
+    assert out[0]["source"] == "catastro"
+    # ...while a namesake far from both the user and the city still is not the answer
+    faca = {"name": "Chicó", "type": "place", "source": "photon", "lat": 4.81, "lon": -74.35}
+    near = {"name": "Br. Chicó Norte", "type": "stop", "source": "gtfs", "_nRoutes": 3, "lat": 4.67, "lon": -74.05}
+    assert rank_results([faca, near], "Chicó", 37.77, -122.42, city_center=(4.6534, -74.0836))[0]["source"] == "gtfs"

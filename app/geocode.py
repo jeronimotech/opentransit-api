@@ -208,8 +208,9 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
     # carries a house number or is an intersection the address IS the answer, so it outranks every stop.
     address_query = looks_like_address(q) or looks_like_intersection(q)
     source_rank = {"ideca": 0, "gtfs": 1, "catastro": 2, "photon": 3}
-    # the point an exact place must be near to count as *this* city's: the user, else the city centre
-    ref = (lat, lon) if have_pos else (city_center[0], city_center[1]) if city_center else None
+    # an exact place counts as *this* city's when it is near the user OR near the city centre: a rider
+    # planning from abroad (or a simulator in California) must still get the city's own neighbourhoods
+    refs = [r for r in ((lat, lon) if have_pos else None, city_center) if r is not None]
 
     def dist(r: dict) -> float | None:
         if not have_pos or r.get("lat") is None:
@@ -231,8 +232,8 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
         # A one-word query is a category search ("portal", "calle") where the station is the useful
         # answer. A multi-word query is a name search, and there an exact match IS the answer, and a name
         # that covers every word beats a stop that shares one of them.
-        in_city = (ref is None or r.get("lat") is None or
-                   haversine_m(ref[0], ref[1], r["lat"], r["lon"]) <= EXACT_PLACE_MAX_M)
+        in_city = (not refs or r.get("lat") is None or
+                   any(haversine_m(a, b, r["lat"], r["lon"]) <= EXACT_PLACE_MAX_M for a, b in refs))
         tier = (0 if addr_hit else
                 1 if near else
                 2 if (exact and named_query and (r["source"] == "gtfs" or in_city)) else
