@@ -115,3 +115,10 @@ def test_the_stop_noun_follows_the_reader_not_the_developer():
     # An unknown language falls back rather than failing a search.
     assert stop_noun("stop", "pt-BR") == "Parada"
     assert stop_noun("stop", None) == "Parada"
+
+
+def test_a_short_page_keeps_its_stops():
+    ranked = [_stop("Br. Chicó Norte"), _stop("Br. Chicó Oriental"), _place("Chicó", typ="place"),
+              _place("Chico 92", typ="address"), _place("Chico Sur", typ="place")]
+    out = _reserve_place_slots(ranked, 3)
+    assert [r["source"] for r in out] == ["gtfs", "gtfs", "photon"]

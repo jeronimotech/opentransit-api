@@ -436,7 +436,8 @@ def _reserve_place_slots(ranked: list[dict], limit: int) -> list[dict]:
     all of which sort above any Photon result, so plain truncation returns stops only and
     the user can never pick an address to walk or cycle to."""
     head = ranked[:limit]
-    quota = min(MIN_PLACE_SLOTS, limit)
+    # never more than half a short page: a limit of 3 must not become three places and no stop
+    quota = min(MIN_PLACE_SLOTS, max(1, limit // 2))
     places_in_head = sum(1 for r in head if r["source"] != "gtfs")
     missing = quota - places_in_head
     if missing <= 0:
