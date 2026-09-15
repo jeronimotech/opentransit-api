@@ -272,9 +272,8 @@ def merge_direct(chosen: list[dict], direct_searches: list[list[dict]], num: int
     cap = num + len(direct_searches)
     for it in picks:
         while len(chosen) >= cap:
-            idx = next((i for i in range(len(chosen) - 1, 0, -1)
-                        if chosen[i].get("source") == "primary" and not chosen[i].get("rentalLegs")
-                        and any(lg.get("transit") for lg in chosen[i].get("legs") or [])), None)
+            # the worst-ranked primary result, never the first; rental and taxi picks earned their place
+            idx = next((i for i in range(len(chosen) - 1, 0, -1) if chosen[i].get("source") == "primary"), None)
             if idx is None:
                 break
             chosen.pop(idx)

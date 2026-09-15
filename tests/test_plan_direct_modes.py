@@ -117,3 +117,17 @@ def test_merge_direct_adds_the_shortest_new_ride_and_never_drops_the_best_transi
     assert sum(1 for it in out if "BICYCLE" in it["modesUsed"]) == 1          # the same ride twice is one
     assert out[0]["id"] == "it-0" and len(out) <= n + 2
     assert transit[0]["legs"][0]["startTime"] in [it["legs"][0]["startTime"] for it in out]   # best transit kept
+
+
+def test_merge_direct_makes_room_even_when_every_transit_result_used_a_rental_bike():
+    """A short page (3) full of rental-access itineraries lost the own-bike ride on production."""
+    def it(i, source, rental):
+        return {"id": f"it-{i}", "source": source, "rentalLegs": [1] if rental else [], "modesUsed": ["BUS"],
+                "legs": [{"mode": "BUS", "transit": True, "startTime": f"2026-09-08T10:{i:02d}", "from": {"stopId": f"s{i}"}, "to": {}}],
+                "endTime": f"2026-09-08T11:{i:02d}:00", "durationSeconds": 3000 + i}
+    chosen = [it(0, "primary", True), it(1, "rental", True), it(2, "primary", True), it(3, "primary", True), it(4, "rental", True)]
+    bike = [{"id": "b", "legs": [{"mode": "BICYCLE", "transit": False, "startTime": "2026-09-08T10:00", "from": {}, "to": {}}],
+             "endTime": "2026-09-08T10:40:00", "durationSeconds": 2400, "rentalLegs": [], "modesUsed": ["BICYCLE"]}]
+    out = merge_direct(chosen, [bike], num=3)
+    assert any("BICYCLE" in o["modesUsed"] for o in out) and len(out) == 4
+    assert out[0]["modesUsed"] == ["BICYCLE"] and sum(1 for o in out if o["source"] == "rental") == 2
