@@ -263,7 +263,7 @@ class GeocodeResult(Out):
     type: Literal["station", "stop", "address", "poi", "street", "place"]
     stop_id: str | None = None
     component: str | None = None
-    source: Literal["gtfs", "photon", "ideca"]
+    source: Literal["gtfs", "photon", "ideca", "catastro"]
     distance_meters: int | None = None
 
 
@@ -594,6 +594,9 @@ class GeocoderHealth(GeocoderProviderHealth):
     provider: str | None = None
     # v2.2: the city's cadastral geocoder, when configured
     ideca: GeocoderProviderHealth | None = None
+    # v2.2: cached IDECA answers, and the named areas mirrored from the city's cadastre
+    cache: dict | None = None
+    areas: dict | None = None
 
 
 class CityHealth(Out):

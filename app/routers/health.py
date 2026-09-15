@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 
 from ..db import pool
+from .. import geocode as geocode_mod
 from ..geocode import ideca_health, photon_health
 from ..models import CityHealth
 from ..rt import iso
@@ -39,8 +40,20 @@ async def city_health(request: Request, rt: CityRuntime = Depends(city_runtime))
         "geocoder": {"enabled": bool(rt.city.geocoder.photon_url) or rt.city.geocoder.ideca.active,
                      "provider": "photon" if rt.city.geocoder.photon_url else None,
                      **photon_health.snapshot(),
-                     "ideca": {"enabled": rt.city.geocoder.ideca.active, **ideca_health.snapshot()}},
+                     "ideca": {"enabled": rt.city.geocoder.ideca.active, **ideca_health.snapshot()},
+                     "cache": await _quiet(geocode_mod.cache.stats(rt.city.id)),
+                     "areas": {"enabled": rt.city.geocoder.areas.active,
+                               **(getattr(request.app.state, "place_areas_status", {}).get(rt.city.id) or {}),
+                               **(await _quiet(geocode_mod.areas.stats(rt.city.id)) or {})}},
     }
+
+
+async def _quiet(coro):
+    """A stats query that fails must not take /health down with it."""
+    try:
+        return await coro
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"{type(e).__name__}: {e}"[:120]}
 
 
 async def _open_mobility_health(request: Request, rt: CityRuntime) -> dict:

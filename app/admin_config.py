@@ -49,7 +49,7 @@ from .cities import (
     TaxiSurchargeWhen,
     TaxiTariff,
     TaxiZone,
-    UpdateUrls, Geocoder, IdecaGeocoder)
+    UpdateUrls, Geocoder, IdecaGeocoder, PlaceAreas)
 from .db import pool
 from .errors import ApiError
 from .ondemand import PLACEHOLDER, is_masked, mask_credentials, mask_value
@@ -174,9 +174,21 @@ class IdecaCfg(_Strict):
         return out
 
 
+class PlaceAreasCfg(_Strict):
+    enabled: bool = False
+    barriosUrl: str | None = Field(None, max_length=300)
+    barriosNameField: str = Field("SCANOMBRE", max_length=40)
+    barriosCodeField: str = Field("SCACODIGO", max_length=40)
+    localidadesUrl: str | None = Field(None, max_length=300)
+    localidadesNameField: str = Field("LOCNOMBRE", max_length=40)
+    localidadesCodeField: str = Field("LOCCODIGO", max_length=40)
+    refreshDays: int = Field(30, ge=1, le=365)
+
+
 class GeocoderCfg(_Strict):
     photonUrl: str | None = Field(None, max_length=300)
     ideca: IdecaCfg = IdecaCfg()
+    areas: PlaceAreasCfg = PlaceAreasCfg()
 
 
 class ConfigCfg(_Strict):
@@ -644,6 +656,8 @@ def validate_sections(sections: dict) -> dict:
                  "geocoder": _validate("geocoder", GeocoderCfg, sections.get("geocoder") or {})}
     if out["geocoder"]["ideca"]["enabled"] and not out["geocoder"]["ideca"]["url"]:
         raise ApiError("geocoder.ideca.url: required when enabled", status=422)
+    if out["geocoder"]["areas"]["enabled"] and not out["geocoder"]["areas"]["barriosUrl"]:
+        raise ApiError("geocoder.areas.barriosUrl: required when enabled", status=422)
     ids = [s["id"] for s in out["services"]]
     if len(ids) != len(set(ids)):
         raise ApiError("services: duplicate service id", status=422)
@@ -878,9 +892,17 @@ def build_city(base: City, sections: dict) -> City:
         update={"open_mobility": cds_cfg["enabled"] or mds_cfg["enabled"]})
     upd["landing"] = Landing.model_validate(sections["landing"])
     g = sections["geocoder"]
+    a = g["areas"]
     upd["geocoder"] = Geocoder(photon_url=g["photonUrl"],
                                ideca=IdecaGeocoder(enabled=g["ideca"]["enabled"], url=g["ideca"]["url"],
-                                                   api_key=g["ideca"]["apiKey"], aliases=g["ideca"]["aliases"]))
+                                                   api_key=g["ideca"]["apiKey"], aliases=g["ideca"]["aliases"]),
+                               areas=PlaceAreas(enabled=a["enabled"], barrios_url=a["barriosUrl"],
+                                                barrios_name_field=a["barriosNameField"],
+                                                barrios_code_field=a["barriosCodeField"],
+                                                localidades_url=a["localidadesUrl"],
+                                                localidades_name_field=a["localidadesNameField"],
+                                                localidades_code_field=a["localidadesCodeField"],
+                                                refresh_days=a["refreshDays"]))
     return base.model_copy(update=upd)
 
 

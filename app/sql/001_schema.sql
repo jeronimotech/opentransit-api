@@ -407,3 +407,33 @@ CREATE TABLE IF NOT EXISTS admin_oidc_state (
   expires_at    TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS admin_oidc_state_expiry ON admin_oidc_state (expires_at);
+
+-- v2.2 geocoder. Every answer the city's cadastral geocoder (IDECA) gave us, by normalised query: the
+-- addresses people look up repeat, so the cache answers most of them without a call and keeps answering
+-- when the upstream is down. `result` NULL = the upstream said "not an address it knows".
+CREATE TABLE IF NOT EXISTS geocode_cache (
+  city           TEXT NOT NULL,
+  query_norm     TEXT NOT NULL,
+  result         JSONB,
+  hits           INTEGER NOT NULL DEFAULT 1,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (city, query_norm)
+);
+
+-- Named areas from the city's cadastre (Bogotá: 1 231 "sectores catastrales" = barrios, 20 localidades),
+-- so a neighbourhood name resolves to the neighbourhood and not to a stop named like it.
+CREATE TABLE IF NOT EXISTS place_area (
+  city           TEXT NOT NULL,
+  kind           TEXT NOT NULL,                 -- barrio | localidad
+  code           TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  name_norm      TEXT NOT NULL,
+  parent_name    TEXT,                          -- a barrio's localidad, from the polygons
+  geom           GEOMETRY(MULTIPOLYGON, 4326) NOT NULL,
+  centroid       GEOMETRY(POINT, 4326) NOT NULL,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (city, kind, code)
+);
+CREATE INDEX IF NOT EXISTS place_area_name_trgm ON place_area USING gin (name_norm gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS place_area_geom ON place_area USING gist (geom);

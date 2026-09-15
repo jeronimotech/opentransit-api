@@ -95,6 +95,13 @@ geocoder:
       "avenida calle 80": "AC 80"
       "calle 80": "AC 80"
       "avenida 1 de mayo": "AC 22 SUR"
+  # Named areas from Catastro's reference map (Datos Abiertos Bogotá): 1 231 sectores catastrales (barrios)
+  # and the 20 localidades, mirrored monthly. "Chicó" is then the neighbourhood, not a stop named like it.
+  areas:
+    enabled: true
+    barrios_url: https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/Mapa_Referencia/MapServer/37
+    localidades_url: https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/Mapa_Referencia/MapServer/48
+    refresh_days: 30
 
 # agency_id -> component. Component drives colors/icons in the apps.
 agencies:

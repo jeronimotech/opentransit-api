@@ -11,6 +11,14 @@ from .db import pool
 from .geo import haversine_m
 from .gtfs_static import normalize_name
 from .normalize import stop_from_db
+from .places import (
+    GeocodeCache,
+    MemoryGeocodeCache,
+    MemoryPlaceAreaStore,
+    PlaceAreaStore,
+    cache_fresh,
+    search_areas,
+)
 
 log = logging.getLogger("ot.geocode")
 
@@ -153,6 +161,19 @@ class _ProviderHealth:
 photon_health = _ProviderHealth()
 ideca_health = _ProviderHealth()
 
+# Process-wide stores, swapped for the Postgres ones at start-up (main.py). The in-memory defaults
+# make tests and a database-less dev server work unchanged.
+cache: GeocodeCache = MemoryGeocodeCache()
+areas: PlaceAreaStore = MemoryPlaceAreaStore()
+
+
+def use_stores(*, geocode_cache: GeocodeCache | None = None, area_store: PlaceAreaStore | None = None) -> None:
+    global cache, areas
+    if geocode_cache is not None:
+        cache = geocode_cache
+    if area_store is not None:
+        areas = area_store
+
 
 def _query_words(qn: str) -> list[str]:
     return [w for w in qn.split() if len(w) >= 3 or w.isdigit()]
@@ -186,7 +207,7 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
     # "Calle 85 #12-30" is not a request for the station named "Calle 34". When the query
     # carries a house number or is an intersection the address IS the answer, so it outranks every stop.
     address_query = looks_like_address(q) or looks_like_intersection(q)
-    source_rank = {"ideca": 0, "gtfs": 1, "photon": 2}
+    source_rank = {"ideca": 0, "gtfs": 1, "catastro": 2, "photon": 3}
     # the point an exact place must be near to count as *this* city's: the user, else the city centre
     ref = (lat, lon) if have_pos else (city_center[0], city_center[1]) if city_center else None
 
@@ -339,6 +360,12 @@ async def search_ideca(city: City, q: str, transport: httpx.AsyncBaseTransport |
     if not cfg.active or not (looks_like_address(q) or looks_like_intersection(q)):
         return []
     query = normalize_bogota_address(q, cfg.aliases)
+    key = query.lower()
+    # The cache first: the same doors get looked up again and again, and Catastro's answer does not
+    # change. A stale entry is still the fallback when the upstream fails.
+    found, cached, age = await cache.get(city.id, key)
+    if cache_fresh(found, cached, age):
+        return [cached] if cached else []
     try:
         async with httpx.AsyncClient(timeout=settings().IDECA_TIMEOUT_S, headers=_geocoder_headers(),
                                      transport=transport) as cli:
@@ -349,11 +376,13 @@ async def search_ideca(city: City, q: str, transport: httpx.AsyncBaseTransport |
     except Exception as e:  # noqa: BLE001
         ideca_health.record_failure(e)
         log.error("[%s] ideca geocode failed (exact addresses unavailable): %s", city.id, e)
-        return []
-    if not body.get("success"):
-        return []          # not an address Catastro knows; Photon and the stops still answer
-    res = ideca_result(body.get("data") or {})
-    return [res] if res else []
+        return [cached] if found and cached else []
+    res = ideca_result(body.get("data") or {}) if body.get("success") else None
+    try:
+        await cache.put(city.id, key, res)
+    except Exception as e:  # noqa: BLE001
+        log.error("[%s] geocode cache write failed: %s", city.id, e)
+    return [res] if res else []       # a miss: not an address Catastro knows; Photon and the stops still answer
 
 
 async def geocode(city: City, q: str, lat: float | None, lon: float | None, limit: int,
@@ -362,11 +391,12 @@ async def geocode(city: City, q: str, lat: float | None, lon: float | None, limi
     # Over-fetch from both sources: ranking and street collapsing need candidates to choose
     # from. Asking Photon for exactly `limit` once returned the Calle 85 segment 6 km from
     # the user because the nearer one never made it into the response.
-    stops, photon, ideca = await asyncio.gather(search_stops(city, q, lat, lon, limit, locale),
-                                                search_photon(city, q, lat, lon, max(limit * 3, 15)),
-                                                search_ideca(city, q))
+    stops, photon, ideca, named = await asyncio.gather(search_stops(city, q, lat, lon, limit, locale),
+                                                       search_photon(city, q, lat, lon, max(limit * 3, 15)),
+                                                       search_ideca(city, q),
+                                                       search_areas(areas, city, q, 5, locale))
     seen, merged = set(), []
-    for r in rank_results(ideca + _collapse_streets(city, photon, lat, lon) + stops, q, lat, lon,
+    for r in rank_results(ideca + named + _collapse_streets(city, photon, lat, lon) + stops, q, lat, lon,
                           city_center=(city.center.lat, city.center.lon)):
         k = (round(r["lat"] or 0, 4), round(r["lon"] or 0, 4), normalize_name(r["name"]))
         if k in seen:

@@ -1,4 +1,5 @@
 import asyncio
+import datetime as dt
 import contextlib
 import logging
 
@@ -22,6 +23,8 @@ from .logging_setup import setup_logging
 from .normalize import set_feed_flags
 from .oidc import OidcService, PgOidcStateStore, configured_providers
 from .openmobility import PgOpenMobilityStore, refresh_from_pim, refresh_from_url
+from . import geocode as geocode_mod
+from .places import PgGeocodeCache, PgPlaceAreaStore, refresh_place_areas
 from .otp import OtpClient
 from .routers import (
     admin,
@@ -180,6 +183,33 @@ async def _open_mobility_loop(app: FastAPI, stop: asyncio.Event) -> None:
             await asyncio.wait_for(stop.wait(), timeout=300)
 
 
+async def _place_areas_loop(app: FastAPI, stop: asyncio.Event) -> None:
+    """Mirror each city's named areas (barrios, localidades) from its open ArcGIS layers: at start when
+    the mirror is missing or older than `refresh_days`, then daily checks. Never takes the API down."""
+    store = geocode_mod.areas
+    while not stop.is_set():
+        for rt in app.state.cities.values():
+            cfg = rt.city.geocoder.areas
+            if not cfg.active:
+                continue
+            status = app.state.place_areas_status.setdefault(rt.city.id, {})
+            try:
+                st = await store.stats(rt.city.id)
+                at = dt.datetime.fromisoformat(st["updatedAt"]) if st.get("updatedAt") else None
+                fresh = at is not None and (dt.datetime.now(dt.UTC) - at) < dt.timedelta(days=cfg.refresh_days)
+                if fresh and st.get("barrios"):
+                    status.update({"ok": True, **st})
+                    continue
+                result = await refresh_place_areas(store, rt.city, cfg)
+                status.update({"ok": True, "at": _utc_iso(), "error": None, **result})
+                log.info("[%s] place areas refreshed: %s", rt.city.id, result)
+            except Exception as e:  # noqa: BLE001
+                status.update({"ok": False, "at": _utc_iso(), "error": f"{type(e).__name__}: {e}"[:200]})
+                log.exception("[%s] could not refresh place areas", rt.city.id)
+        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=24 * 3600)
+
+
 async def _bootstrap_admin(store: PgAdminUserStore, cfg) -> None:
     """First owner on a fresh deployment. Refuses once any account exists, so the variables are safe
     to leave set; the password is read once here and never logged."""
@@ -226,6 +256,8 @@ async def lifespan(app: FastAPI):
     app.state.openmobility_store = PgOpenMobilityStore()
     app.state.openmobility_sources = {}     # city id -> {kind -> last refresh status}, for /health
     app.state.openmobility_etags = {}       # city id -> {layer -> ETag}: PIM answers 304 when unchanged
+    geocode_mod.use_stores(geocode_cache=PgGeocodeCache(), area_store=PgPlaceAreaStore())
+    app.state.place_areas_status = {}       # city id -> last mirror status, for /health
     await load_overrides(app.state.config_store, app.state.cities)
     stop = asyncio.Event()
     tasks: list[asyncio.Task] = []
@@ -247,6 +279,8 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(_analytics_loop(app, stop), name="analytics"))
     if cfg.ENABLE_RT_POLLERS and any(_om_sources(rt) for rt in app.state.cities.values()):
         tasks.append(asyncio.create_task(_open_mobility_loop(app, stop), name="openmobility"))
+    if cfg.ENABLE_STATIC_INGEST and any(rt.city.geocoder.areas.active for rt in app.state.cities.values()):
+        tasks.append(asyncio.create_task(_place_areas_loop(app, stop), name="places"))
     log.info("opentransit-api %s up · %d cities · %d background tasks", __version__, len(registry), len(tasks))
     try:
         yield

@@ -39,6 +39,8 @@ from ..gtfs_static import ingest, load_route_index, load_service_index
 from ..normalize import set_feed_flags
 from ..oidc import redirect_uri_for
 from ..ondemand import unmask_open_mobility_patch, unmask_patch
+from .. import geocode as geocode_mod
+from ..places import refresh_place_areas
 from ..runtime import CityRuntime, city_runtime
 
 log = logging.getLogger("ot.admin")
@@ -361,6 +363,15 @@ async def ingest_static(rt: CityRuntime = Depends(city_runtime), force: bool = F
     rt.services = await load_service_index(rt.city)
     set_feed_flags(rt.city.id, rt.services.flags)
     rt.static_ready = True
+    return result
+
+
+@router.post("/v1/admin/cities/{city}/ingest-places", dependencies=[Depends(require_editor)])
+async def ingest_places(request: Request, rt: CityRuntime = Depends(city_runtime)):
+    """Mirror the city's named areas (barrios, localidades) now, instead of waiting for the monthly refresh."""
+    result = await refresh_place_areas(geocode_mod.areas, rt.city)
+    request.app.state.place_areas_status.setdefault(rt.city.id, {}).update(
+        {"ok": True, "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"), "error": None, **result})
     return result
 
 

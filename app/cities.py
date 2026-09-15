@@ -79,14 +79,39 @@ class IdecaGeocoder(BaseModel):
         return {"enabled": self.enabled, "url": self.url, "apiKey": self.api_key, "aliases": dict(self.aliases)}
 
 
+class PlaceAreas(BaseModel):
+    """Named areas from the city's open data: ArcGIS feature layers (`.../MapServer/<id>`) of neighbourhood
+    and district polygons, mirrored into `place_area` and refreshed every `refresh_days`. A one-word
+    search like "Chicó" then resolves to the neighbourhood, with its district for the label."""
+    enabled: bool = False
+    barrios_url: str | None = None          # ArcGIS layer URL; polygons with a name field
+    barrios_name_field: str = "SCANOMBRE"
+    barrios_code_field: str = "SCACODIGO"
+    localidades_url: str | None = None
+    localidades_name_field: str = "LOCNOMBRE"
+    localidades_code_field: str = "LOCCODIGO"
+    refresh_days: int = 30
+
+    @property
+    def active(self) -> bool:
+        return self.enabled and bool(self.barrios_url)
+
+    def admin(self) -> dict:
+        return {"enabled": self.enabled, "barriosUrl": self.barrios_url, "barriosNameField": self.barrios_name_field,
+                "barriosCodeField": self.barrios_code_field, "localidadesUrl": self.localidades_url,
+                "localidadesNameField": self.localidades_name_field,
+                "localidadesCodeField": self.localidades_code_field, "refreshDays": self.refresh_days}
+
+
 class Geocoder(BaseModel):
     photon_url: str | None = "https://photon.komoot.io"
     ideca: IdecaGeocoder = IdecaGeocoder()
+    areas: PlaceAreas = PlaceAreas()
 
     def admin(self) -> dict:
         """Everything the panel edits, camelCase. The IDECA key is real here and masked by the admin layer
         just before it leaves the process — a payload built by this method must never reach a client."""
-        return {"photonUrl": self.photon_url, "ideca": self.ideca.admin()}
+        return {"photonUrl": self.photon_url, "ideca": self.ideca.admin(), "areas": self.areas.admin()}
 
 
 class AgencyCfg(BaseModel):
