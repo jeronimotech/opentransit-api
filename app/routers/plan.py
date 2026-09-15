@@ -73,6 +73,10 @@ def build_variables(*, from_lat: float, from_lon: float, to_lat: float, to_lon: 
         # carry ONE rental mode; the router runs one query per rental mode and merges (merge_plans).
         raise ValueError("at most one rental mode per OTP query")
     direct = [m for m in street if m in ("WALK", "BICYCLE", "CAR")] + rental
+    if len(direct) - len(rental) > 1:
+        # OTP 2.9 takes ONE plain street mode per direct search; "WALK,BICYCLE" made the whole query fail
+        # and the failure read as "no itineraries". The router runs one direct-only query per extra mode.
+        raise ValueError("one plain street mode per OTP query")
     if transit:
         # Access/egress stay on foot: feeds rarely declare bikes_allowed, and OTP then finds nothing.
         # A requested BICYCLE is offered as a direct (bike-only) alternative next to the transit options.
@@ -250,6 +254,39 @@ def merge_ondemand(chosen: list[dict], ondemand_searches: list[list[dict]], num:
     return chosen
 
 
+def merge_direct(chosen: list[dict], direct_searches: list[list[dict]], num: int) -> list[dict]:
+    """Add the direct-only itineraries (your own bike, your car) next to the transit ones: the shortest of
+    each search that is not already there, capped at `num + len(searches)` by dropping the worst-ranked
+    plain transit result, never the best one; sorted by arrival and re-numbered."""
+    seen = {_signature(it) for it in chosen}
+    picks: list[dict] = []
+    for search in direct_searches:
+        for it in sorted(search, key=lambda it: it.get("durationSeconds") or 0):
+            sig = _signature(it)
+            if sig in seen:
+                continue
+            seen.add(sig)
+            it["source"] = "primary"
+            picks.append(it)
+            break
+    cap = num + len(direct_searches)
+    for it in picks:
+        while len(chosen) >= cap:
+            idx = next((i for i in range(len(chosen) - 1, 0, -1)
+                        if chosen[i].get("source") == "primary" and not chosen[i].get("rentalLegs")
+                        and any(lg.get("transit") for lg in chosen[i].get("legs") or [])), None)
+            if idx is None:
+                break
+            chosen.pop(idx)
+        if len(chosen) >= cap:
+            break
+        chosen.append(it)
+    chosen.sort(key=lambda it: (it.get("endTime") or "", it.get("durationSeconds") or 0))
+    for i, it in enumerate(chosen):
+        it["id"] = f"it-{i}"
+    return chosen
+
+
 ONDEMAND_TOKEN = "ONDEMAND"
 
 
@@ -292,7 +329,12 @@ async def plan(
         raise ApiError(f"shared vehicles are not available in {city.name}", code="MODE_UNAVAILABLE")
     street, mode_warnings = resolve_rental_modes(street, rental_availability(rt))
     rental = [m for m in street if m in RENTAL_MODES]
-    base_street = [m for m in street if m not in RENTAL_MODES] or ["WALK"]
+    plain = [m for m in street if m not in RENTAL_MODES] or ["WALK"]
+    # OTP takes one plain street mode per direct search. With transit, access stays on foot (feeds rarely
+    # declare bikes_allowed) and each extra mode — your own bike, your car — becomes a direct-only search
+    # merged in afterwards; without transit, the first mode is the search and the rest ride along the same way.
+    base_street = ["WALK"] if (transit or "WALK" in plain) else [plain[0]]
+    extra_direct = [m for m in plain if m != base_street[0]]
     # OTP 2 has no hard walk cap; a longer allowed walk maps to a lower walking reluctance.
     reluctance = max(1.0, min(5.0, 2.0 * 1500 / maxWalkDistance))
     common = dict(from_lat=fromLat, from_lon=fromLon, to_lat=toLat, to_lon=toLon, when=when, arrive_by=arriveBy,
@@ -338,6 +380,9 @@ async def plan(
             pr_index = len(searches)
             searches.append(build_variables(**common, street=base_street, num=max(4, numItineraries),
                                             walk_reluctance=reluctance, access_extra=["CAR_DROP_OFF"]))
+    direct_start = len(searches)
+    for m in extra_direct:
+        searches.append(build_variables(**{**common, "transit": []}, street=[m], num=1, walk_reluctance=None))
     # Names: the caller's label wins; otherwise a reverse geocode runs concurrently with the plan and is
     # only used if it comes back within a short budget, so it never adds latency to the itinerary search.
     results = await asyncio.gather(
@@ -349,6 +394,7 @@ async def plan(
     dest = {"name": toName or rev_to, "lat": toLat, "lon": toLon}
     plans = [plan_from_otp(city, d, origin, dest, rt.otp.version, locale, rt.rental_prices()) for d in datas]
     plan_out = plans[0]
+    direct_plans, plans = plans[direct_start:], plans[:direct_start]
     pr_plan = plans[pr_index] if pr_index is not None else None
     if pr_index is not None and pr_index >= od_start and not (on_demand and policy.first_last_mile):
         plans = plans[:pr_index] + plans[pr_index + 1:]      # not an on-demand search: keep it out of that merge
@@ -374,7 +420,12 @@ async def plan(
         if parkAndRide and not park_its:
             plan_out["warnings"].append("PARK_RIDE_NO_PARKING: no legal parking zone with spaces near a stop "
                                         "within walking distance")
-    if len(plans) > 1 or pr_plan is not None:
+    if direct_plans:
+        for it in plan_out["itineraries"]:
+            it.setdefault("source", "primary")
+        plan_out["itineraries"] = merge_direct(plan_out["itineraries"],
+                                              [p["itineraries"] for p in direct_plans], numItineraries)
+    if len(plans) > 1 or pr_plan is not None or direct_plans:
         plan_out["warnings"] = [w for w in plan_out["warnings"]
                                 if not (w.startswith("NO_ITINERARIES") and plan_out["itineraries"])]
     plan_out["warnings"] = mode_warnings + plan_out["warnings"]

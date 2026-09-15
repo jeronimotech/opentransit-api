@@ -119,10 +119,12 @@ class OtpClient:
             body = r.json()
         except ValueError as e:
             raise RouterUnavailable("routing engine returned a non-JSON body") from e
-        if body.get("errors") and not body.get("data"):
+        if body.get("errors"):
             msg = body["errors"][0].get("message", "unknown error")
+            # data may still be present (a null plan next to the error): say so, or it reads as "no itineraries"
             log.warning("[%s] OTP GraphQL error: %s", self.city.id, msg)
-            raise RouterUnavailable(f"routing engine error: {msg}")
+            if not body.get("data"):
+                raise RouterUnavailable(f"routing engine error: {msg}")
         return body.get("data") or {}
 
     async def server_info(self) -> dict | None:
