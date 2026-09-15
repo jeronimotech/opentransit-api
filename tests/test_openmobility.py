@@ -1,4 +1,5 @@
 """v1.6 Open Mobility Foundation: CDS 1.1.0 curbs (paid parking first) and MDS 2.1.0 policy/geography."""
+import copy
 import datetime as dt
 import json
 
@@ -584,6 +585,34 @@ PIM_POLICIES = {
                                   "days_of_week": ["sat", "sun"]}]}]}},
     ],
 }
+
+
+def test_pim_declared_amount_unit_beats_the_configured_one():
+    """Since 2026-09-14 PIM says `currency: COP`, `amount_unit: cents` on every policy. That declaration
+    decides the conversion; the configured source unit is only for a policy that stays silent, and a
+    policy priced in another currency than the city's is dropped rather than shown as pesos."""
+    def with_props(**extra):
+        fc = copy.deepcopy(PIM_POLICIES)
+        fc["features"][0]["properties"].update(extra)
+        return fc
+    # declared cents into a city that quotes whole pesos: ÷100 even though the config said "already pesos"
+    pols = pim_policies_to_cds(with_props(currency="COP", amount_unit="cents"), rate_scale=1, city_minor_units=1,
+                               city_currency="COP")
+    assert [x["rate"] for x in pols[0]["rules"][0]["rate"]] == [6600, 9900]
+    # declared whole units: no conversion, whatever the fallback says
+    pols = pim_policies_to_cds(with_props(currency="COP", amount_unit="units"), rate_scale=1 / 100,
+                               city_minor_units=1, city_currency="COP")
+    assert pols[0]["rules"][0]["rate"][0]["rate"] == 660000
+    # nothing declared: the configured source unit applies, as before
+    pols = pim_policies_to_cds(with_props(), rate_scale=1 / 100, city_minor_units=1, city_currency="COP")
+    assert pols[0]["rules"][0]["rate"][0]["rate"] == 6600
+    # a city quoting cents keeps PIM's cents as they are
+    pols = pim_policies_to_cds(with_props(currency="USD", amount_unit="cents"), rate_scale=1, city_minor_units=100,
+                               city_currency="USD")
+    assert pols[0]["rules"][0]["rate"][0]["rate"] == 660000
+    # wrong money: dropped
+    assert pim_policies_to_cds(with_props(currency="USD", amount_unit="cents"), rate_scale=1, city_minor_units=1,
+                               city_currency="COP") == []
 
 
 def test_pim_policies_become_cds_policies_the_evaluator_can_read(bogota: City):

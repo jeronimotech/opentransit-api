@@ -1016,19 +1016,33 @@ def _scale_money(rules: list[dict], scale: float) -> None:
                     rate[k] = int(round(rate[k] * scale))
 
 
-def pim_policies_to_cds(fc: dict, *, rate_scale: float = 1.0) -> list[dict]:
+_PIM_AMOUNT_UNITS = {"cents": 100, "centavos": 100, "minor": 100, "units": 1, "major": 1, "pesos": 1}
+
+
+def pim_policies_to_cds(fc: dict, *, rate_scale: float = 1.0, city_minor_units: int | None = None,
+                        city_currency: str | None = None) -> list[dict]:
     """PIM's `policies` layer (non-geographic: `geometry: null`, the policy in `properties`) → CDS policies.
     PIM puts the time spans on each rule; CDS 1.1.0 puts them on the policy, which is what our evaluator
     reads, so the rules' spans are lifted to the policy (deduplicated — every rule of a policy carries the
-    same ones). Amounts are integers in the smallest unit; `rate_scale` converts the source's unit (PIM:
-    centavos) to the city's, so 660000 becomes 6600 pesos."""
+    same ones). Amounts are integers in the smallest unit. Since 2026-09-14 PIM declares that unit on the
+    policy (`currency: COP`, `amount_unit: cents`); when it does, that declaration decides the conversion
+    into the city's unit (`city_minor_units`), and `rate_scale` — the configured source unit — is only the
+    fallback for a policy that does not say. A policy in another currency than the city's is dropped: a
+    rider would otherwise read a price in the wrong money."""
     out: list[dict] = []
     for feat in fc.get("features") or []:
         props = dict(feat.get("properties") or {})
         rules = [copy.deepcopy(r) for r in (props.get("rules") or []) if isinstance(r, dict)]
         if not rules:
             continue
-        _scale_money(rules, rate_scale)
+        currency = str(props.get("currency") or "").upper() or None
+        if currency and city_currency and currency != city_currency.upper():
+            log.warning("pim policy %s priced in %s, city uses %s — skipped", props.get("curb_policy_id"),
+                        currency, city_currency)
+            continue
+        unit = _PIM_AMOUNT_UNITS.get(str(props.get("amount_unit") or "").lower())
+        scale = (city_minor_units or 1) / unit if unit and city_minor_units is not None else rate_scale
+        _scale_money(rules, scale)
         spans: list[dict] = []
         for r in rules:
             for sp in r.get("time_spans") or []:
@@ -1128,7 +1142,9 @@ async def refresh_from_pim(store: OpenMobilityStore, city: City, cfg: Any, *, et
     if pol_fc is not None:
         # source unit → city unit: PIM's centavos (100) into Bogotá's pesos (1) is a ÷100
         scale = (city.open_mobility.cds.rate_minor_units or 1) / (cfg.rate_minor_units or 1)
-        for pol in pim_policies_to_cds(pol_fc, rate_scale=scale):
+        for pol in pim_policies_to_cds(pol_fc, rate_scale=scale,
+                                       city_minor_units=city.open_mobility.cds.rate_minor_units or 1,
+                                       city_currency=city.rate_currency()):
             by_id[str(pol["curb_policy_id"])] = pol          # PIM's word beats a placeholder or a stale copy
         etags["policies"] = pol_etag
     if curb_fc is None:
