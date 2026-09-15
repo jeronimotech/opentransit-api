@@ -581,14 +581,19 @@ class OpenMobilityHealth(Out):
     mds: OpenMobilityMdsHealth = OpenMobilityMdsHealth()
 
 
-class GeocoderHealth(Out):
+class GeocoderProviderHealth(Out):
     enabled: bool = False
-    provider: str | None = None
     calls: int = 0
     failed: int = 0
     ok_rate: float | None = None
     last_error: str | None = None
     last_error_age_seconds: int | None = None
+
+
+class GeocoderHealth(GeocoderProviderHealth):
+    provider: str | None = None
+    # v2.2: the city's cadastral geocoder, when configured
+    ideca: GeocoderProviderHealth | None = None
 
 
 class CityHealth(Out):

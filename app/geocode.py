@@ -106,11 +106,13 @@ def pretty_bogota_address(dirtrad: str) -> str:
     if len(parts) < 2:
         return dirtrad or ""
     way = _WAY_WORDS.get(parts[0].upper(), parts[0])
-    rest = parts[1:]
-    suffix = ""
-    if rest and rest[-1].upper() in ("S", "SUR", "E", "ESTE"):
-        suffix = " Sur" if rest[-1].upper().startswith("S") else " Este"
-        rest = rest[:-1]
+    # Catastro writes the quadrant after the way it qualifies ("CL 63 S 24 17") or at the end ("KR 10 15 22 S")
+    rest, suffix = [], ""
+    for tok in parts[1:]:
+        if tok.upper() in ("S", "SUR", "E", "ESTE"):
+            suffix = " Sur" if tok.upper().startswith("S") else " Este"
+        else:
+            rest.append(tok)
     if len(rest) >= 3:
         return f"{way} {rest[0]} # {rest[1]}-{rest[2]}{suffix}"
     if len(rest) == 2:
@@ -165,7 +167,13 @@ def _coverage(name: str, words: list[str]) -> float:
     return sum(1 for w in words if any(p.startswith(w) for p in parts)) / len(words)
 
 
-def rank_results(results: list[dict], q: str, lat: float | None = None, lon: float | None = None) -> list[dict]:
+# An exact place name farther than this from the user (or the city centre) is a namesake elsewhere:
+# Photon's "Chicó" in Facatativá, 35 km from the Chicó a Bogotá rider means.
+EXACT_PLACE_MAX_M = 20_000
+
+
+def rank_results(results: list[dict], q: str, lat: float | None = None, lon: float | None = None,
+                 city_center: tuple[float, float] | None = None) -> list[dict]:
     """Addresses first when the query is one (IDECA's cadastral point, then Photon's street), then GTFS
     stops within NEARBY_M of the user that actually match every word of the query, then exact names, then
     names covering the whole query (a stop before a place), then stations, then partial GTFS matches,
@@ -179,6 +187,8 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
     # carries a house number or is an intersection the address IS the answer, so it outranks every stop.
     address_query = looks_like_address(q) or looks_like_intersection(q)
     source_rank = {"ideca": 0, "gtfs": 1, "photon": 2}
+    # the point an exact place must be near to count as *this* city's: the user, else the city centre
+    ref = (lat, lon) if have_pos else (city_center[0], city_center[1]) if city_center else None
 
     def dist(r: dict) -> float | None:
         if not have_pos or r.get("lat") is None:
@@ -200,11 +210,13 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
         # A one-word query is a category search ("portal", "calle") where the station is the useful
         # answer. A multi-word query is a name search, and there an exact match IS the answer, and a name
         # that covers every word beats a stop that shares one of them.
+        in_city = (ref is None or r.get("lat") is None or
+                   haversine_m(ref[0], ref[1], r["lat"], r["lon"]) <= EXACT_PLACE_MAX_M)
         tier = (0 if addr_hit else
                 1 if near else
-                2 if (exact and named_query) else
+                2 if (exact and named_query and (r["source"] == "gtfs" or in_city)) else
                 3 if (full and named_query) else
-                4 if (r["type"] == "station" or (exact and r["source"] != "gtfs")) else
+                4 if ((r["type"] == "station" and (word or prefix)) or (exact and r["source"] != "gtfs" and in_city)) else
                 5 if r["source"] == "gtfs" else 6)
         return (
             tier,
@@ -354,7 +366,8 @@ async def geocode(city: City, q: str, lat: float | None, lon: float | None, limi
                                                 search_photon(city, q, lat, lon, max(limit * 3, 15)),
                                                 search_ideca(city, q))
     seen, merged = set(), []
-    for r in rank_results(ideca + _collapse_streets(city, photon, lat, lon) + stops, q, lat, lon):
+    for r in rank_results(ideca + _collapse_streets(city, photon, lat, lon) + stops, q, lat, lon,
+                          city_center=(city.center.lat, city.center.lon)):
         k = (round(r["lat"] or 0, 4), round(r["lon"] or 0, 4), normalize_name(r["name"]))
         if k in seen:
             continue

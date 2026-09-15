@@ -61,6 +61,7 @@ def test_bogota_nomenclature_is_normalised_for_the_geocoder(q, want):
     ("AC 127 7 42", "Avenida Calle 127 # 7-42"),
     ("DG 40A 14 05", "Diagonal 40A # 14-05"),
     ("KR 54 57B 20", "Carrera 54 # 57B-20"),
+    ("CL 63 S 24 17", "Calle 63 # 24-17 Sur"),
 ])
 def test_catastro_form_reads_like_a_person_writes_it(dirtrad, want):
     assert pretty_bogota_address(dirtrad) == want
@@ -207,3 +208,18 @@ def test_admin_sections_carry_the_geocoder_and_the_key_is_masked(bogota: City):
 def test_the_public_city_never_carries_the_geocoder_key(bogota: City):
     city = _city(bogota)
     assert "k-1234-5678" not in json.dumps(city.public())
+
+
+def test_a_station_that_shares_no_word_does_not_lead_a_one_word_search():
+    # "La Castellana" came back for "castilla" by trigram similarity and, being a station, led the page
+    rs = [_stop("La Castellana", typ="station"), _poi("Castilla", typ="place")]
+    assert rank_results(rs, "Castilla")[0]["name"] == "Castilla"
+
+
+def test_an_exact_place_far_from_the_city_is_a_namesake_not_the_answer():
+    faca = {**_poi("Chicó", typ="place"), "lat": 4.81, "lon": -74.35}       # Facatativá, 35 km west
+    rs = [_stop("Br. Chicó Norte II Sector"), faca]
+    out = rank_results(rs, "Chicó", city_center=(4.6534, -74.0836))
+    assert out[0]["source"] == "gtfs"
+    here = {**_poi("Chicó", typ="place"), "lat": 4.67, "lon": -74.05}
+    assert rank_results([_stop("Br. Chicó Norte II Sector"), here], "Chicó", city_center=(4.6534, -74.0836))[0]["type"] == "place"
