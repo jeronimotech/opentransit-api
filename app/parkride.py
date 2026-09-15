@@ -206,11 +206,12 @@ def merge_park_ride(chosen: list[dict], park: list[dict], num: int, *, max_combo
     at most `max_combos` (shortest first) are added under a cap of `num + 3`, the list is re-sorted by
     arrival and re-numbered — the same rules the taxi combos follow."""
     park = sorted(park, key=lambda it: it.get("durationSeconds") or 0)[:max_combos]
+    from .routers.plan import best_plain_transit, droppable_index   # local: parkride is imported by the router
     cap = num + 3
+    keep = best_plain_transit(chosen)
     for it in park:
         while len(chosen) >= cap:
-            idx = next((i for i in range(len(chosen) - 1, 0, -1)
-                        if chosen[i].get("source") == "primary" and not chosen[i].get("rentalLegs")), None)
+            idx = droppable_index(chosen, keep=keep)
             if idx is None:
                 break
             chosen.pop(idx)

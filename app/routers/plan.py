@@ -147,6 +147,24 @@ def _signature(it: dict) -> tuple:
     return tuple(sig)
 
 
+def best_plain_transit(chosen: list[dict]) -> dict | None:
+    """The earliest-arriving itinerary that is plain transit (no rental, taxi or car leg). Every merge that
+    makes room for a taxi, a parking zone or a bike drops other rows before this one: with everything
+    switched on, the page used to end with no bus option at all."""
+    plain = [it for it in chosen
+             if it.get("source", "primary") == "primary" and not it.get("rentalLegs")
+             and any(lg.get("transit") for lg in it.get("legs") or [])
+             and not any((lg.get("mode") or "") in ("CAR", "CAR_ONDEMAND") for lg in it.get("legs") or [])]
+    return min(plain, key=lambda it: (it.get("endTime") or "", it.get("durationSeconds") or 0), default=None)
+
+
+def droppable_index(chosen: list[dict], *, keep: dict | None) -> int | None:
+    """The worst-ranked primary row that is not the first and not `keep`, for a merge that needs room."""
+    return next((i for i in range(len(chosen) - 1, 0, -1)
+                 if chosen[i].get("source") == "primary" and not chosen[i].get("rentalLegs")
+                 and chosen[i] is not keep), None)
+
+
 def merge_plans(primary: list[dict], rental_searches: list[list[dict]], num: int, *, min_rental: int = 2) -> list[dict]:
     """Merge the balanced search with the rental-oriented ones.
 
@@ -238,10 +256,10 @@ def merge_ondemand(chosen: list[dict], ondemand_searches: list[list[dict]], num:
     combos.sort(key=lambda it: it.get("durationSeconds") or 0)
     picks = direct[:max_direct] + combos[:max_combos]
     cap = num + 3
+    keep = best_plain_transit(chosen)
     for it in picks:
         while len(chosen) >= cap:
-            idx = next((i for i in range(len(chosen) - 1, 0, -1)
-                        if chosen[i].get("source") == "primary" and not chosen[i].get("rentalLegs")), None)
+            idx = droppable_index(chosen, keep=keep)
             if idx is None:
                 break
             chosen.pop(idx)
@@ -270,15 +288,16 @@ def merge_direct(chosen: list[dict], direct_searches: list[list[dict]], num: int
             picks.append(it)
             break
     cap = num + len(direct_searches)
+    keep = best_plain_transit(chosen)
     for it in picks:
         while len(chosen) >= cap:
-            # the worst-ranked primary result, never the first; rental and taxi picks earned their place
-            idx = next((i for i in range(len(chosen) - 1, 0, -1) if chosen[i].get("source") == "primary"), None)
+            # the worst-ranked primary result, never the first nor the best bus option; rental and taxi
+            # picks earned their place — and when nothing can go, the ride is added anyway: it was asked for
+            idx = next((i for i in range(len(chosen) - 1, 0, -1)
+                        if chosen[i].get("source") == "primary" and chosen[i] is not keep), None)
             if idx is None:
                 break
             chosen.pop(idx)
-        if len(chosen) >= cap:
-            break
         chosen.append(it)
     chosen.sort(key=lambda it: (it.get("endTime") or "", it.get("durationSeconds") or 0))
     for i, it in enumerate(chosen):
