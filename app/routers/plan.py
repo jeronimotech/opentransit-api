@@ -357,12 +357,16 @@ async def plan(
     reluctance = max(1.0, min(5.0, 2.0 * 1500 / maxWalkDistance))
     common = dict(from_lat=fromLat, from_lon=fromLon, to_lat=toLat, to_lon=toLon, when=when, arrive_by=arriveBy,
                   transit=transit, wheelchair=wheelchair, locale=locale)
-    # One OTP query per rental mode (OTP allows a single rental mode per leg, always paired with WALK). The first
-    # rental mode rides along the balanced primary search; with transit, every rental mode also gets a
-    # rental-biased companion search so "bike to the station" options are not lost to walking (merge_plans).
-    searches: list[dict] = [build_variables(**common, street=base_street + rental[:1], num=numItineraries,
+    # One OTP query per rental mode (OTP allows a single rental mode per leg, always paired with WALK). With
+    # transit, the primary search stays on foot — when a rental mode rode along it, OTP answered every row
+    # with a rented bike to the station and the page had no plain bus option for a rider without the app —
+    # and every rental mode gets a balanced companion plus a rental-biased one, so "bike to the station"
+    # options are not lost to walking either (merge_plans guarantees them a place). Without transit the
+    # first rental mode is the direct search itself.
+    primary_street = base_street if transit else base_street + rental[:1]
+    searches: list[dict] = [build_variables(**common, street=primary_street, num=numItineraries,
                                             walk_reluctance=reluctance)]
-    for m in rental[1:]:
+    for m in (rental if transit else rental[1:]):
         searches.append(build_variables(**common, street=["WALK", m], num=numItineraries,
                                         walk_reluctance=reluctance))
     if transit:

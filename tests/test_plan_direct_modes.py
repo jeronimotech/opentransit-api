@@ -159,3 +159,25 @@ def test_a_requested_direct_ride_is_added_even_when_nothing_can_be_dropped():
     bike = [_it(8, "x", mode="BICYCLE", transit=False, end="2026-09-08T10:40:00")]
     out = merge_direct(chosen, [bike], 3)
     assert len(out) == 5 and any(o["modesUsed"] == ["BICYCLE"] for o in out)
+
+
+@pytest.mark.anyio
+async def test_with_transit_the_primary_search_walks_and_the_rental_bike_is_a_companion(bogota: City):
+    """Seen on production for Kennedy → Chicó with the shared-bike toggle on: seven rows, every one with a
+    rented bike to the station, no plain bus option for a rider without the app."""
+    app, rt, fake = _app(bogota)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/v1/cities/bogota/plan", params={
+            "fromLat": 4.63, "fromLon": -74.153, "toLat": 4.672, "toLon": -74.05,
+            "modes": "TRANSIT,WALK,BICYCLE_RENTAL", "time": "2026-09-08T10:00:00", "fromName": "A", "toName": "B"})
+    assert r.status_code == 200, r.text
+    modes = [v["modes"] for v in fake.variables]
+    assert modes[0]["direct"] == ["WALK"] and modes[0]["transit"]["access"] == ["WALK"]
+    assert [m["direct"] for m in modes[1:]] == [["WALK", "BICYCLE_RENTAL"], ["WALK", "BICYCLE_RENTAL"]]
+    # without transit the rental mode is the direct search itself
+    fake.variables.clear()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        await c.get("/v1/cities/bogota/plan", params={
+            "fromLat": 4.63, "fromLon": -74.153, "toLat": 4.672, "toLon": -74.05,
+            "modes": "BICYCLE_RENTAL", "time": "2026-09-08T10:00:00", "fromName": "A", "toName": "B"})
+    assert [v["modes"] for v in fake.variables] == [{"direct": ["WALK", "BICYCLE_RENTAL"], "directOnly": True}]
