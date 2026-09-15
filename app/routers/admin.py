@@ -369,9 +369,14 @@ async def ingest_static(rt: CityRuntime = Depends(city_runtime), force: bool = F
 @router.post("/v1/admin/cities/{city}/ingest-places", dependencies=[Depends(require_editor)])
 async def ingest_places(request: Request, rt: CityRuntime = Depends(city_runtime)):
     """Mirror the city's named areas (barrios, localidades) now, instead of waiting for the monthly refresh."""
-    result = await refresh_place_areas(geocode_mod.areas, rt.city)
-    request.app.state.place_areas_status.setdefault(rt.city.id, {}).update(
-        {"ok": True, "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"), "error": None, **result})
+    status = request.app.state.place_areas_status.setdefault(rt.city.id, {})
+    now = dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z")
+    try:
+        result = await refresh_place_areas(geocode_mod.areas, rt.city)
+    except Exception as e:  # noqa: BLE001
+        status.update({"ok": False, "at": now, "error": f"{type(e).__name__}: {e}"[:200]})
+        raise ApiError(f"could not fetch the city's area layers: {type(e).__name__}: {e}"[:300], status=502) from e
+    status.update({"ok": True, "at": now, "error": None, **result})
     return result
 
 

@@ -239,14 +239,24 @@ class PgPlaceAreaStore:
                 "updatedAt": at.isoformat() if at else None}
 
 
+def is_arcgis_layer(url: str) -> bool:
+    return "/MapServer/" in url or "/FeatureServer/" in url
+
+
 async def fetch_arcgis_layer(url: str, *, transport: httpx.AsyncBaseTransport | None = None,
                              page: int = 1000) -> list[dict]:
-    """Every feature of an ArcGIS feature layer as GeoJSON, paging with `resultOffset` until the server
-    says it is done (`exceededTransferLimit` false or a short page)."""
+    """Every feature of a layer as GeoJSON. An ArcGIS feature layer (`…/MapServer/37`) is paged with
+    `resultOffset` until the server says it is done; any other URL is a plain GeoJSON FeatureCollection —
+    the form we publish ourselves when a city's GIS server cannot be reached from where the API runs
+    (Catastro's answers a connection from Bogotá and times out one from a US data centre)."""
     feats: list[dict] = []
     offset = 0
-    async with httpx.AsyncClient(timeout=settings().ARCGIS_TIMEOUT_S, transport=transport,
+    async with httpx.AsyncClient(timeout=settings().ARCGIS_TIMEOUT_S, transport=transport, follow_redirects=True,
                                  headers={"User-Agent": settings().GEOCODER_USER_AGENT}) as cli:
+        if not is_arcgis_layer(url):
+            r = await cli.get(url)
+            r.raise_for_status()
+            return list(r.json().get("features") or [])
         while True:
             r = await cli.get(f"{url.rstrip('/')}/query",
                               params={"where": "1=1", "outFields": "*", "outSR": 4326, "f": "geojson",

@@ -147,6 +147,19 @@ async def test_arcgis_layers_are_read_page_by_page():
 
 
 @pytest.mark.anyio
+async def test_a_plain_geojson_url_is_read_in_one_go():
+    calls = []
+
+    def handler(req):
+        calls.append(str(req.url))
+        return httpx.Response(200, json=BARRIOS)
+
+    feats = await fetch_arcgis_layer("https://github.com/x/releases/download/places/bogota-barrios.geojson",
+                                     transport=httpx.MockTransport(handler))
+    assert len(feats) == 4 and calls == ["https://github.com/x/releases/download/places/bogota-barrios.geojson"]
+
+
+@pytest.mark.anyio
 async def test_refresh_mirrors_both_layers_and_names_each_barrio_its_localidad(bogota: City):
     def handler(req):
         body = LOCALIDADES if req.url.path.endswith("/48/query") else BARRIOS

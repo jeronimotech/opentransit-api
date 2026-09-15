@@ -97,10 +97,12 @@ geocoder:
       "avenida 1 de mayo": "AC 22 SUR"
   # Named areas from Catastro's reference map (Datos Abiertos Bogotá): 1 231 sectores catastrales (barrios)
   # and the 20 localidades, mirrored monthly. "Chicó" is then the neighbourhood, not a stop named like it.
+  # Catastro's GIS server (serviciosgis.catastrobogota.gov.co/…/Mapa_Referencia/MapServer/37 and /48) answers
+  # only from Colombia, so `scripts/mirror_places.py bogota --upload` republishes the layers as release assets.
   areas:
     enabled: true
-    barrios_url: https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/Mapa_Referencia/MapServer/37
-    localidades_url: https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/Mapa_Referencia/MapServer/48
+    barrios_url: https://github.com/jeronimotech/opentransit-api/releases/download/places-bogota/bogota-barrios.geojson
+    localidades_url: https://github.com/jeronimotech/opentransit-api/releases/download/places-bogota/bogota-localidades.geojson
     refresh_days: 30
 
 # agency_id -> component. Component drives colors/icons in the apps.
