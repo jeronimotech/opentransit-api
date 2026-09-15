@@ -82,8 +82,9 @@ Stop/route ids are **feed-scoped** exactly as OTP exposes them (`bogota:<gtfs_id
 
 ### Geocoding / search
 - `GET /v1/cities/{city}/geocode?q=portal%20norte&lat=&lon=&limit=8`
-  - Sources merged: GTFS stops/stations (local DB, prefix + fuzzy, stations ranked above stops) and Photon (`https://photon.komoot.io/api/?q=&lat=&lon=&limit=&bbox=` restricted to city bbox; configurable `geocoder.photonUrl`, can be null to disable).
-  - `{ "results": [ {"id": "stop:bogota:1234"|"photon:...", "name": "Portal Norte", "label": "Estación troncal · Autopista Norte", "lat": .., "lon": .., "type": "station"|"stop"|"address"|"poi"|"street"|"place", "stopId": string|null, "component": string|null, "source": "gtfs"|"photon"} ] }`
+  - Sources merged: GTFS stops/stations (local DB, prefix + fuzzy, stations ranked above stops), Photon (`https://photon.komoot.io/api/?q=&lat=&lon=&limit=&bbox=` restricted to city bbox; configurable `geocoder.photonUrl`, can be null to disable) and, **v2.2**, the city's cadastral geocoder when configured (`geocoder.ideca`, Bogotá: IDECA / Catastro Distrital) — asked only when the query looks like an address ("Cra 10 # 15-22 Sur") or an intersection ("Calle 127 con Carrera 7"); named avenues go through the city's alias table ("avenida boyacá" → "AK 72") before the call.
+  - `{ "results": [ {"id": "stop:bogota:1234"|"photon:..."|"ideca:KR_10_15_22_S", "name": "Portal Norte", "label": "Estación troncal · Autopista Norte", "lat": .., "lon": .., "type": "station"|"stop"|"address"|"poi"|"street"|"place", "stopId": string|null, "component": string|null, "source": "gtfs"|"photon"|"ideca"} ] }`
+  - An `ideca` result is `type: address`, its `name` the resolved address in plain form ("Carrera 10 # 15-22 Sur" — Catastro may resolve to a different address than typed), its `label` "Barrio · Localidad", with " · aprox." appended when Catastro answered by approximation (intersections always are).
 - `GET /v1/cities/{city}/reverse?lat=&lon=` → `{ "name": "Calle 26 # 13-19", "lat": .., "lon": .. }` (Photon reverse; falls back to nearest stop name).
 
 ### Stops
@@ -164,6 +165,7 @@ never logged.
 - `POST /v1/admin/cities/{city}/purge` (`admin`)
 
 ### Admin configuration (v1.1.1) — editable at runtime, no redeploy
+- v2.2 adds the editable section **`geocoder`**: `{"photonUrl": string|null, "ideca": {"enabled": bool, "url": string, "apiKey": string|null, "aliases": {"avenida boyacá": "AK 72", ...}}}`. `ideca.apiKey` follows the assistant key's rules: masked on read (`••••374c`), the mask echoed back keeps the stored key, omitted keeps it, `null` drops the override so the YAML/environment value (`IDECA_API_KEY`) applies again. It never appears in the public city payload. `/health` reports the provider under `geocoder.ideca` (`enabled`, `calls`, `failed`, `okRate`, `lastError`).
 The city YAML stays the base. Admins can override these sections only: `fares`, `config` (vehiclePollSeconds, departuresRefreshSeconds, features, minAppVersion, maintenance), `links`, `services`, `branding.primaryColor`. The override is stored in Postgres (`city_config_override` + `city_config_history`), deep-merged over the YAML, validated strictly, and swapped into memory, so `/v1/cities/{city}` and the `/plan` fare estimate reflect it immediately. Public city endpoints are served with `Cache-Control: public, max-age=60`, so cached clients see changes within a minute.
 - `GET /v1/admin/cities/{city}/config` (`viewer`) → `{ "effective": City, "override": {...}|null, "yaml": {fares, config, links, services, branding, mobility, landing}, "revision": n, "updatedAt": "...", "updatedBy": "...", "editable": ["fares","config","links","services","branding","mobility","landing"] }`
 - `PUT /v1/admin/cities/{city}/config` (`admin`) body `{ "fares"?: {...}, "config"?: {...}, "links"?: {...}, "services"?: [...], "branding"?: {"primaryColor"}, "note"?: string, "updatedBy"?: string }` → partial deep-merge into the override (dicts merge, lists replace, a JSON `null` for a section or key removes that override so the YAML applies again). Validation runs on the *effective* result before anything is saved; errors use the standard envelope with the field path, e.g. `fares.maxTransfers: Input should be less than or equal to 5`. Rules: fares `currency` = 3 uppercase letters, `base`/`transfer` ≥ 0, `transferWindowMinutes` 0..600, `maxTransfers` 0..5, `note` ≤ 300; config poll/refresh seconds 5..120, `minAppVersion` semver `x.y.z`, `maintenance.message` ≤ 500; links https or null; services `id` slug, `label` ≤ 60, `icon` ∈ card|report|help|link|bike|parking|taxi|ticket|info|map, `url` https, `kind` external|internal|deeplink, unique ids; branding `primaryColor` `#RRGGBB`. Unknown sections (e.g. `feeds`) are rejected. Returns the GET shape; writes a history row.
@@ -263,8 +265,14 @@ leaves the filter is reported in `removed` so clients keep a plain id-keyed map.
 vehicles currently inside the filter for that connection.
 
 ### Geocode ranking
-With `lat/lon`, GTFS stops/stations within 800 m come first (closest first, `distanceMeters` filled), then
-stations, then other stop matches, then Photon. Without a position: stations first (as before).
+An address query (house number or intersection) puts the address first: the cadastral point (`ideca`), then
+Photon's street. Then, with `lat/lon`, GTFS stops/stations within 800 m that match every word of the query
+(closest first, `distanceMeters` filled). Then an exact name (a stop before a place), then a name that covers
+every word of the query (v2.2: "Clínica Shaio" is the hospital Photon knows, not the stop "Clínica del Niño";
+"Hospital San Ignacio" the hospital, not the station "Hospital"), then stations, then partial stop matches,
+then the rest of Photon. A one-word query is a category search where a station leads ("portal"), except
+that a place named exactly so beats a stop merely named like it ("Chicó" is the neighbourhood, not
+"Br. Chicó Norte II Sector").
 
 
 ## v1.2 additions (implemented 2026-09-04) — shared bikes (GBFS)
