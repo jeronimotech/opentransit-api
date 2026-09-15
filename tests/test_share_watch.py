@@ -291,7 +291,7 @@ async def test_city_config_exposes_share_and_push_without_credentials(bogota: Ci
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         cfg = (await c.get("/v1/cities/bogota")).json()["config"]
     assert cfg["share"] == {"enabled": True, "ttlMinutes": 180}
-    assert cfg["push"] == {"enabled": False}                  # no keyId / keyPath ever reaches a client
+    assert cfg["push"] == {"enabled": False, "reminders": False}   # no keyId / keyPath ever reaches a client
 
 
 # ------------------------------------------------------------------ A3 watch summary: endpoint behaviour
