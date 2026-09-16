@@ -580,7 +580,7 @@ class LandingCfg(_Strict):
     theme: LandingThemeCfg = LandingThemeCfg()
     hero: LandingHeroCfg = LandingHeroCfg()
     apps: LandingAppsCfg = LandingAppsCfg()
-    highlights: list[LandingHighlightCfg] = Field([], max_length=8)
+    highlights: list[LandingHighlightCfg] = Field([], max_length=12)
     screenshots: list[LandingScreenshotCfg] = Field([], max_length=8)
     stats: LandingStatsCfg = LandingStatsCfg()
     partners: list[LandingPartnerCfg] = Field([], max_length=12)

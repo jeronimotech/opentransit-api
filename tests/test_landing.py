@@ -26,7 +26,7 @@ def _app(bogota: City) -> tuple[FastAPI, CityRuntime]:
 
 def test_yaml_landing_and_fallbacks(bogota: City):
     ld = bogota.landing_public()
-    assert ld["enabled"] and len(ld["highlights"]) == 5 and len(ld["screenshots"]) == 6
+    assert ld["enabled"] and len(ld["highlights"]) == 11 and len(ld["screenshots"]) == 6
     assert ld["theme"]["primaryColor"] == bogota.branding.primary_color          # null -> branding
     assert ld["footer"]["privacyUrl"] == bogota.links.privacy                   # null -> links.privacy
     assert ld["footer"]["attribution"] == bogota.attribution
@@ -43,11 +43,11 @@ def test_effective_merge_keeps_yaml_defaults(bogota: City):
     assert city.landing.hero.title == "Hola"
     assert city.landing.hero.subtitle == bogota.landing.hero.subtitle
     assert city.landing.enabled is False
-    assert len(city.landing.highlights) == 5
+    assert len(city.landing.highlights) == 11
 
 
 @pytest.mark.parametrize("patch,path", [
-    ({"highlights": [{"title": "x"}] * 9}, "landing.highlights"),
+    ({"highlights": [{"title": "x"}] * 13}, "landing.highlights"),
     ({"hero": {"title": "t" * 81}}, "landing.hero.title"),
     ({"faq": [{"q": "q", "a": "a" * 601}]}, "landing.faq.0.a"),
     ({"screenshots": [{"url": "http://insecure/x.png"}]}, "landing.screenshots.0.url"),
