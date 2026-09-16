@@ -1,6 +1,7 @@
 """City (tenant) registry. Loaded once from cities/*.yaml; `${VAR}` / `${VAR:-default}` are expanded."""
 import logging
 import math
+import base64
 import os
 import re
 from pathlib import Path
@@ -198,7 +199,15 @@ class ApnsConfig(BaseModel):
 
     def private_key(self) -> str | None:
         if self.key_p8:
-            return self.key_p8.replace("\\n", "\n")
+            v = self.key_p8.strip()
+            # the environment carries it on one line: base64 of the .p8, or the PEM with escaped newlines
+            # (a raw multi-line value would tear the city YAML apart at start-up)
+            if "BEGIN" not in v:
+                try:
+                    v = base64.b64decode(v).decode()
+                except (ValueError, UnicodeDecodeError):
+                    return None
+            return v.replace("\\n", "\n")
         if self.key_path:
             try:
                 return Path(self.key_path).read_text()

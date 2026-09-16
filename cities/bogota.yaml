@@ -144,7 +144,7 @@ config:
       key_id: ${APNS_KEY_ID:-}
       team_id: ${APNS_TEAM_ID:-6DTDJCKC8X}
       bundle_id: com.jeronimotech.opentransit
-      key_p8: ${APNS_KEY_P8:-}
+      key_p8: "${APNS_KEY_P8:-}"     # base64 of the .p8 (one line)
   vehicle_poll_seconds: 15
   departures_refresh_seconds: 20
   features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }

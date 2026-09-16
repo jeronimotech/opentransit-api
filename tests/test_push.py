@@ -204,3 +204,11 @@ def test_the_admin_switch_does_not_expose_credentials(bogota: City):
     city = effective_city(bogota, {"config": {"push": {"enabled": False, "reminders": True}}})
     assert city.config.push.reminders is True
     assert "apns" not in city.public()["config"]["push"]
+
+
+def test_the_key_may_arrive_base64_on_one_line(bogota: City):
+    import base64
+    from app.cities import ApnsConfig
+    assert ApnsConfig(key_p8=base64.b64encode(KEY.encode()).decode()).private_key() == KEY
+    assert ApnsConfig(key_p8=KEY.replace("\n", "\\n")).private_key() == KEY
+    assert ApnsConfig(key_p8="not base64 !!").private_key() is None
