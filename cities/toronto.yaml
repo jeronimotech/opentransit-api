@@ -142,8 +142,10 @@ landing:
     - { icon: route, title: "Door to door", text: "Subway, streetcar, bus and walking combined into one itinerary, from an address rather than a stop." }
     - { icon: live,  title: "Vehicles in real time", text: "Over a thousand TTC vehicles on the map, with the direction each one is heading." }
     - { icon: board, title: "Arrivals at your stop", text: "Live predictions from the TTC feed, paired with the schedule — and we say which is which." }
-    - { icon: bike,  title: "Bike Share Toronto", text: "Over a thousand docking stations with live bike and dock counts, planned as part of the trip rather than shown on a separate map." }
-    - { icon: open,  title: "Open data", text: "Built on the City of Toronto's GTFS and the TTC's GTFS-Realtime. No accounts, no trackers, no ads." }
+    - { icon: bike,  title: "Bike Share Toronto", text: "Over a thousand docking stations with live bike and dock counts, planned as part of the trip rather than shown on a separate map, with pay-as-you-go pricing." }
+    - { icon: alarm, title: "Scheduled trips", text: "Home → Work by 9:00, or an appointment tomorrow: a reminder the evening before, twenty minutes before leaving with live data, and when it is time to go." }
+    - { icon: go,    title: "Follow along", text: "Your trip on the lock screen, the Dynamic Island and Apple Watch: when your streetcar comes, when to get off and how long is left." }
+    - { icon: open,  title: "Open data", text: "Built on the City of Toronto's GTFS and the TTC's GTFS-Realtime. No accounts, no trackers, no ads; your trips and favourites stay on your device." }
   stats: { show: true, items: [routes, stops, vehiclesLive, bikeStations, alertsActive] }
   partners:
     - { name: "Toronto Transit Commission", logo_url: null, url: https://www.ttc.ca, role: "GTFS and GTFS-Realtime" }

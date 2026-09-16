@@ -343,16 +343,22 @@ landing:
   theme: { primary_color: null, accent_color: "#1565C0", logo_url: null, hero_image_url: null, dark_hero: true }
   hero:
     title: "Muévete por Bogotá con datos en vivo"
-    subtitle: "Planea tu viaje, ubica tu bus y llega a tiempo. Gratis, sin cuenta y de código abierto."
+    subtitle: "Planea en bus, bici, taxi o carro + bus; ubica tu bus y deja que te avisemos cuándo salir. Gratis, sin cuenta y de código abierto."
     cta_primary: { label: "Abrir la app web", url: null }
     cta_secondary: { label: "Cómo funciona", url: "#features" }
   apps: { ios: null, android: null, web: null }   # store URLs when the apps are published
   highlights:
-    - { icon: route, title: "Viajes multimodales", text: "Troncal, zonal, alimentador, TransMiCable, bici pública y a pie, combinados en un solo itinerario." }
-    - { icon: live,  title: "Buses en vivo",       text: "Miles de buses en el mapa con su posición real cada 15 segundos." }
-    - { icon: board, title: "Ubica tu bus",        text: "Elige tu estación y tu ruta: te decimos cuándo llegan los próximos buses, en vivo o por programación." }
-    - { icon: bike,  title: "Bicis públicas",      text: "Estaciones y bicis disponibles integradas al planeador, con precio estimado." }
-    - { icon: open,  title: "Datos abiertos",      text: "Construido sobre GTFS, GTFS-Realtime y GBFS publicados por la ciudad. Sin cuentas ni rastreadores." }
+    - { icon: route,   title: "Viajes multimodales",     text: "Troncal, zonal, alimentador, TransMiCable, bici propia o pública y a pie, combinados en un solo itinerario, con hora de salida o de llegada." }
+    - { icon: live,    title: "Buses en vivo",           text: "Miles de buses en el mapa con su posición real cada 15 segundos, y alertas de desvíos en las rutas que sigues." }
+    - { icon: board,   title: "Ubica tu bus",            text: "Elige tu estación y tu ruta: te decimos cuándo llegan los próximos buses, en vivo o por programación." }
+    - { icon: alarm,   title: "Viajes programados",      text: "Casa → Trabajo a las 8:00, o una cita mañana: te avisamos la noche anterior, 20 minutos antes con datos en vivo y a la hora de salir." }
+    - { icon: go,      title: "Iniciar viaje",           text: "Sigue tu viaje en pantalla de bloqueo, Dynamic Island y Apple Watch: cuándo pasa tu bus, cuándo bajarte y cuánto falta." }
+    - { icon: taxi,    title: "Taxi y apps de transporte", text: "Compara el taxi con tarifa oficial y las apps de la ciudad, solo o como primer y último tramo de un viaje en bus." }
+    - { icon: parking, title: "Carro + bus",             text: "Deja el carro en una zona de parqueo pago cerca de la estación —con cupos en vivo y precio— y sigue en transporte público." }
+    - { icon: bike,    title: "Bicis públicas",          text: "Estaciones y bicis disponibles integradas al planeador, con precio estimado por viaje." }
+    - { icon: map,     title: "Direcciones de Bogotá",   text: "Escribe «Cra 7 # 72-41», «Calle 127 con Carrera 7» o un barrio: resolvemos la nomenclatura con el geocodificador de Catastro." }
+    - { icon: chat,    title: "Pregúntame",              text: "Un asistente que planea y consulta con los datos de la app, nunca de memoria, y responde con tarjetas que abren la pantalla real." }
+    - { icon: open,    title: "Datos abiertos y privacidad", text: "GTFS, GTFS-Realtime, GBFS y CDS publicados por la ciudad. Sin cuentas ni rastreadores; tus viajes y favoritos viven en tu dispositivo." }
   screenshots:
     - { url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/hub-mobile-live-api.png,       alt: "Mapa en vivo con paradas cercanas", kind: mobile }
     - { url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/next-mobile-live-api.png,      alt: "Ubica tu bus: próximos buses en tu estación", kind: mobile }
@@ -364,6 +370,8 @@ landing:
   partners:
     - { name: "TRANSMILENIO S.A.", logo_url: null, url: https://www.transmilenio.gov.co, role: "Datos GTFS y GTFS-Realtime" }
     - { name: "Tembici Bogotá",    logo_url: null, url: https://tembici.com.co/,          role: "Bicicletas públicas (GBFS)" }
+    - { name: "Secretaría Distrital de Movilidad · PIM", logo_url: null, url: https://www.movilidadbogota.gov.co, role: "Zonas de parqueo pago con cupos en vivo (CDS)" }
+    - { name: "IDECA · Catastro Bogotá", logo_url: null, url: https://www.ideca.gov.co, role: "Geocodificador oficial, barrios y localidades" }
   open_data:
     show: true
     links:
@@ -372,10 +380,14 @@ landing:
       - { label: "GTFS-RT · llegadas",       url: https://gtfs.transmilenio.gov.co/tripupdates.pb }
       - { label: "GTFS-RT · alertas",        url: https://gtfs.transmilenio.gov.co/alerts.pb }
       - { label: "GBFS · bicicletas públicas", url: https://bogota.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json }
+      - { label: "CDS · zonas de parqueo pago",  url: https://api.opentransit.tech/v1/cities/bogota/cds/curbs/zones }
+      - { label: "Datos Abiertos Bogotá · sectores catastrales", url: https://datosabiertos.bogota.gov.co/dataset/sector-catastral-bogota-d-c }
   faq:
     - { q: "¿Necesito crear una cuenta?", a: "No. La app funciona sin registro, sin ubicación obligatoria y sin publicidad. Tus favoritos se guardan solo en tu dispositivo." }
     - { q: "¿De dónde salen los tiempos de llegada?", a: "De los datos GTFS-Realtime que publica TRANSMILENIO S.A. Cuando no hay dato en vivo, mostramos el horario programado y lo decimos claramente." }
     - { q: "¿La tarifa que muestra es exacta?", a: "Es una estimación calculada con la tarifa vigente y las reglas de transbordo. El valor definitivo lo define el sistema de recaudo." }
+    - { q: "¿Cómo funcionan los avisos de un viaje programado?", a: "El viaje se guarda solo en tu teléfono. La app calcula la hora de salida con datos reales y te avisa la noche anterior, veinte minutos antes (recalculado en vivo) y a la hora de salir; ese último aviso abre el seguimiento del viaje. El servidor nunca conoce tu rutina: como mucho, en iPhone, la hora a la que despertar la app." }
+    - { q: "¿De dónde salen los cupos de parqueo?", a: "De la Plataforma de Información de Micromovilidad de la Secretaría Distrital de Movilidad, en el estándar abierto CDS: cada zona de parqueo pago con sus cupos, su tarifa y su horario. Siempre mostramos la hora del último conteo." }
     - { q: "¿Puedo usar el código para mi ciudad?", a: "Sí. Todo el proyecto es de código abierto (MIT). Cualquier ciudad con GTFS puede desplegarlo y configurarlo sin escribir código." }
   contact:
     email: null
@@ -388,5 +400,5 @@ landing:
     attribution: null              # null -> attribution above
   seo:
     title: "Bogotá en vivo · planeador de transporte público"
-    description: "Planea viajes multimodales en Bogotá con buses en vivo, tablero de llegadas y bicis públicas. Gratis y de código abierto."
+    description: "Planea viajes en Bogotá en bus, bici, taxi o carro + bus, con buses en vivo, avisos de cuándo salir y direcciones de verdad. Gratis y de código abierto."
     og_image_url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/hub-desktop-live-api.png

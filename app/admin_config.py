@@ -59,7 +59,9 @@ log = logging.getLogger("ot.admin_config")
 EDITABLE = ("fares", "config", "links", "services", "branding", "mobility", "openMobility", "landing", "geocoder")
 SERVICE_ICONS = ("card", "report", "help", "link", "bike", "parking", "taxi", "ticket", "info", "map")
 LANDING_ICONS = ("route", "live", "board", "bike", "open", "alert", "accessibility", "favorites", "offline", "map",
-                 "ticket", "info")
+                 "ticket", "info",
+                 # v2.3: taxi / ride-hailing, park & ride, scheduled trips, follow-along, the assistant
+                 "taxi", "parking", "alarm", "go", "chat")
 
 
 # ------------------------------------------------------------------ strict validation (camelCase, public shape)
