@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 
-from ..db import pool
 from .. import geocode as geocode_mod
+from ..db import pool
 from ..geocode import ideca_health, photon_health
 from ..models import CityHealth
 from ..rt import iso

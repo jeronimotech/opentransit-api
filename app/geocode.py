@@ -57,7 +57,8 @@ def looks_like_address(q: str) -> bool:
 
 # Bogotá's street words, as people type them. "Calle 127 con Carrera 7" is an intersection, and just as
 # much an address as a house number: the cadastral geocoder resolves both.
-_WAY = r"(?:cl|cll|calle|ac|kr|kra|cra|cr|carrera|ak|dg|diag|diagonal|tv|tr|transv|transversal|av|avenida|avda|autopista|autonorte|nqs)"
+_WAY = (r"(?:cl|cll|calle|ac|kr|kra|cra|cr|carrera|ak|dg|diag|diagonal|tv|tr|transv|transversal|av|avenida|avda"
+        r"|autopista|autonorte|nqs)")
 _WAY_WORD = re.compile(rf"\b{_WAY}\b", re.I)
 _JOIN = re.compile(r"\b(?:con|esquina)\b", re.I)
 
@@ -238,7 +239,8 @@ def rank_results(results: list[dict], q: str, lat: float | None = None, lon: flo
                 1 if near else
                 2 if (exact and named_query and (r["source"] == "gtfs" or in_city)) else
                 3 if (full and named_query) else
-                4 if ((r["type"] == "station" and (word or prefix)) or (exact and r["source"] != "gtfs" and in_city)) else
+                4 if ((r["type"] == "station" and (word or prefix))
+                      or (exact and r["source"] != "gtfs" and in_city)) else
                 5 if r["source"] == "gtfs" else 6)
         return (
             tier,

@@ -99,7 +99,7 @@ def alert_payload(alert: dict, route_names: list[str], locale: str) -> dict:
     body = (alert.get("description") or alert.get("header") or "")[:300]
     return {"aps": {"alert": {"title": title, "body": body}, "sound": "default", "thread-id": "route-alerts"},
             "kind": "routeAlert", "alertId": alert.get("id"), "routeIds": alert.get("routeIds") or [],
-            "location": f"/{{city}}/alerts", "locale": locale}
+            "location": "/{city}/alerts", "locale": locale}
 
 
 # ------------------------------------------------------------------ devices
@@ -211,13 +211,15 @@ class PgPushDeviceStore:
                 """SELECT token, env, city, locale, wake_at FROM push_device
                     WHERE city=$1 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(wake_at) w
                                               WHERE w BETWEEN $2 AND $3)""", city, lo, hi)
-        return [dict(r, wake_at=json.loads(r["wake_at"]) if isinstance(r["wake_at"], str) else r["wake_at"]) for r in rows]
+        return [dict(r, wake_at=json.loads(r["wake_at"]) if isinstance(r["wake_at"], str) else r["wake_at"])
+                for r in rows]
 
     async def consume_wake(self, token, before):
         async with pool().acquire() as c:
             await c.execute(
-                """UPDATE push_device SET wake_at = COALESCE((SELECT jsonb_agg(w) FROM jsonb_array_elements_text(wake_at) w
-                                                          WHERE w > $2), '[]'::jsonb)
+                """UPDATE push_device
+                      SET wake_at = COALESCE((SELECT jsonb_agg(w) FROM jsonb_array_elements_text(wake_at) w
+                                               WHERE w > $2), '[]'::jsonb)
                     WHERE token=$1""", token, before.isoformat())
 
     async def following(self, city, route_ids):
@@ -288,7 +290,8 @@ async def push_alerts(store: PushDeviceStore, client: ApnsClient, city: str, ale
             names = [route_names.get(r, r) for r in a["routeIds"] if r in set(d.get("routes") or [])]
             payload = alert_payload(a, names, d.get("locale") or "es")
             payload["location"] = payload["location"].replace("{city}", city)
-            ok, reason = await client.send(d["token"], payload, env=d.get("env", "prod"), collapse_id=f"alert-{aid}"[:64])
+            ok, reason = await client.send(d["token"], payload, env=d.get("env", "prod"),
+                                           collapse_id=f"alert-{aid}"[:64])
             await store.record_alert(d["token"], aid)
             if ok:
                 n += 1

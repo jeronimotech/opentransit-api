@@ -220,7 +220,8 @@ class PgPlaceAreaStore:
                 """SELECT kind, code, name, name_norm, parent_name,
                           ST_Y(centroid) AS lat, ST_X(centroid) AS lon,
                           GREATEST(similarity(name_norm, $2),
-                                   CASE WHEN name_norm = $2 THEN 1.0 WHEN name_norm LIKE $3 THEN 0.9 ELSE 0 END) AS score
+                                   CASE WHEN name_norm = $2 THEN 1.0
+                                        WHEN name_norm LIKE $3 THEN 0.9 ELSE 0 END) AS score
                      FROM place_area
                     WHERE city=$1 AND (name_norm % $2 OR name_norm LIKE $3)
                     ORDER BY score DESC, (kind = 'localidad') DESC, length(name)

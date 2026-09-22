@@ -1,7 +1,7 @@
 """City (tenant) registry. Loaded once from cities/*.yaml; `${VAR}` / `${VAR:-default}` are expanded."""
+import base64
 import logging
 import math
-import base64
 import os
 import re
 from pathlib import Path

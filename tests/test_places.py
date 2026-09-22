@@ -22,7 +22,8 @@ from app.places import (
 
 IDECA_OK = {"response": {"success": True, "data": {
     "estado": "success", "tipo_direccion": "Asignada por Catastro", "dirtrad": "KR 7 72 41",
-    "latitude": "4.65566922199997", "longitude": "-74.055227881", "nomseccat": "PORCIUNCULA", "localidad": "CHAPINERO"}}}
+    "latitude": "4.65566922199997", "longitude": "-74.055227881", "nomseccat": "PORCIUNCULA",
+    "localidad": "CHAPINERO"}}}
 
 
 def _city(bogota: City, **ideca) -> City:
@@ -185,7 +186,8 @@ def test_area_result_is_localised():
 
 
 def test_the_neighbourhood_beats_the_stop_named_like_it_and_the_far_photon_namesake():
-    stop = {"name": "Br. Chicó Norte II Sector", "type": "stop", "source": "gtfs", "_nRoutes": 3, "lat": 4.67, "lon": -74.05}
+    stop = {"name": "Br. Chicó Norte II Sector", "type": "stop", "source": "gtfs", "_nRoutes": 3,
+            "lat": 4.67, "lon": -74.05}
     faca = {"name": "Chicó", "type": "place", "source": "photon", "lat": 4.81, "lon": -74.35}
     barrio = {"name": "Chico", "type": "place", "source": "catastro", "lat": 4.664, "lon": -74.056}
     out = rank_results([stop, faca, barrio], "Chicó", city_center=(4.6534, -74.0836))
@@ -201,7 +203,8 @@ def test_admin_sections_carry_the_areas(bogota: City):
 def test_a_rider_far_from_the_city_still_gets_its_neighbourhoods():
     """Seen from the app with the simulator in California: "Cedritos" listed five stops before the barrio,
     because the namesake rule measured from the user only."""
-    stop = {"name": "Br. Cedritos del Sur II", "type": "stop", "source": "gtfs", "_nRoutes": 3, "lat": 4.57, "lon": -74.13}
+    stop = {"name": "Br. Cedritos del Sur II", "type": "stop", "source": "gtfs", "_nRoutes": 3,
+            "lat": 4.57, "lon": -74.13}
     barrio = {"name": "Cedritos", "type": "place", "source": "catastro", "lat": 4.72, "lon": -74.03}
     out = rank_results([stop, barrio], "Cedritos", 37.77, -122.42, city_center=(4.6534, -74.0836))
     assert out[0]["source"] == "catastro"

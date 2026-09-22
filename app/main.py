@@ -1,6 +1,6 @@
 import asyncio
-import datetime as dt
 import contextlib
+import datetime as dt
 import logging
 
 from fastapi import FastAPI
@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from . import __version__
+from . import geocode as geocode_mod
 from .admin_auth import PgAdminUserStore, bootstrap_owner
 from .admin_config import PgConfigStore, load_overrides
 from .analytics import Hasher, PgAnalyticsStore, RateLimiter
@@ -23,10 +24,9 @@ from .logging_setup import setup_logging
 from .normalize import set_feed_flags
 from .oidc import OidcService, PgOidcStateStore, configured_providers
 from .openmobility import PgOpenMobilityStore, refresh_from_pim, refresh_from_url
-from . import geocode as geocode_mod
+from .otp import OtpClient
 from .places import PgGeocodeCache, PgPlaceAreaStore, refresh_place_areas
 from .push import ApnsClient, PgPushDeviceStore, push_alerts, push_wakes
-from .otp import OtpClient
 from .routers import (
     admin,
     alerts,
@@ -41,9 +41,9 @@ from .routers import (
     plan,
     platform,
     pois,
+    push,
     rental,
     routes,
-    push,
     share,
     stops,
     vehicles,
@@ -218,12 +218,13 @@ async def _push_loop(app: FastAPI, stop: asyncio.Event) -> None:
             try:
                 now = dt.datetime.now(dt.UTC)
                 woke = await push_wakes(store, client, cid, now)
-                names = {rid: (r.get("short_name") or r.get("shortName") or rid) for rid, r in rt.rt.route_index.items()}
+                names = {rid: (r.get("short_name") or r.get("shortName") or rid)
+                         for rid, r in rt.rt.route_index.items()}
                 alerts = rt.rt.active_alerts()
                 pushed = await push_alerts(store, client, cid, alerts, names, seen.setdefault(cid, set()),
                                            counts.setdefault(cid, {}))
-                status.update({"ok": True, "at": _utc_iso(), "error": None, "sent": client.sent, "failed": client.failed,
-                               "lastError": client.last_error})
+                status.update({"ok": True, "at": _utc_iso(), "error": None, "sent": client.sent,
+                               "failed": client.failed, "lastError": client.last_error})
                 if woke or pushed:
                     log.info("[%s] push: %d wake-up(s), %d alert(s)", cid, woke, pushed)
             except Exception as e:  # noqa: BLE001

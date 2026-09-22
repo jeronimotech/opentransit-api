@@ -6,6 +6,7 @@ import time
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
+from .. import geocode as geocode_mod
 from ..admin_auth import (
     LoginThrottle,
     Principal,
@@ -31,7 +32,8 @@ from ..admin_config import (
     describe,
     effective_city,
     mask_secrets,
-    unmask_assistant_patch, unmask_geocoder_patch,
+    unmask_assistant_patch,
+    unmask_geocoder_patch,
 )
 from ..config import settings
 from ..errors import ApiError, Forbidden, Unauthorized
@@ -39,7 +41,6 @@ from ..gtfs_static import ingest, load_route_index, load_service_index
 from ..normalize import set_feed_flags
 from ..oidc import redirect_uri_for
 from ..ondemand import unmask_open_mobility_patch, unmask_patch
-from .. import geocode as geocode_mod
 from ..places import refresh_place_areas
 from ..runtime import CityRuntime, city_runtime
 

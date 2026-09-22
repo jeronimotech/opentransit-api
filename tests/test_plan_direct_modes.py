@@ -104,7 +104,8 @@ async def test_walk_and_bike_without_transit_are_two_direct_searches(bogota: Cit
 def test_merge_direct_adds_the_shortest_new_ride_and_never_drops_the_best_transit(bogota: City):
     origin = {"name": "A", "lat": 4.6, "lon": -74.1}
     dest = {"name": "B", "lat": 4.7, "lon": -74.0}
-    transit = plan_from_otp(bogota, json.loads((FIX / "otp_plan.json").read_text()), origin, dest, "2.9.0")["itineraries"]
+    transit = plan_from_otp(bogota, json.loads((FIX / "otp_plan.json").read_text()), origin, dest,
+                            "2.9.0")["itineraries"]
     car = json.loads((FIX / "otp_plan_car.json").read_text())
     for e in car["planConnection"]["edges"]:
         for lg in e["node"]["legs"]:
@@ -123,10 +124,13 @@ def test_merge_direct_makes_room_even_when_every_transit_result_used_a_rental_bi
     """A short page (3) full of rental-access itineraries lost the own-bike ride on production."""
     def it(i, source, rental):
         return {"id": f"it-{i}", "source": source, "rentalLegs": [1] if rental else [], "modesUsed": ["BUS"],
-                "legs": [{"mode": "BUS", "transit": True, "startTime": f"2026-09-08T10:{i:02d}", "from": {"stopId": f"s{i}"}, "to": {}}],
+                "legs": [{"mode": "BUS", "transit": True, "startTime": f"2026-09-08T10:{i:02d}",
+                          "from": {"stopId": f"s{i}"}, "to": {}}],
                 "endTime": f"2026-09-08T11:{i:02d}:00", "durationSeconds": 3000 + i}
-    chosen = [it(0, "primary", True), it(1, "rental", True), it(2, "primary", True), it(3, "primary", True), it(4, "rental", True)]
-    bike = [{"id": "b", "legs": [{"mode": "BICYCLE", "transit": False, "startTime": "2026-09-08T10:00", "from": {}, "to": {}}],
+    chosen = [it(0, "primary", True), it(1, "rental", True), it(2, "primary", True), it(3, "primary", True),
+              it(4, "rental", True)]
+    bike = [{"id": "b",
+             "legs": [{"mode": "BICYCLE", "transit": False, "startTime": "2026-09-08T10:00", "from": {}, "to": {}}],
              "endTime": "2026-09-08T10:40:00", "durationSeconds": 2400, "rentalLegs": [], "modesUsed": ["BICYCLE"]}]
     out = merge_direct(chosen, [bike], num=3)
     assert any("BICYCLE" in o["modesUsed"] for o in out) and len(out) == 4
@@ -135,18 +139,21 @@ def test_merge_direct_makes_room_even_when_every_transit_result_used_a_rental_bi
 
 def _it(i, source, *, rental=False, mode="BUS", transit=True, end=None):
     return {"id": f"it-{i}", "source": source, "rentalLegs": [1] if rental else [], "modesUsed": [mode],
-            "legs": [{"mode": mode, "transit": transit, "startTime": f"2026-09-08T10:{i:02d}", "from": {"stopId": f"s{i}"}, "to": {}}],
+            "legs": [{"mode": mode, "transit": transit, "startTime": f"2026-09-08T10:{i:02d}",
+                      "from": {"stopId": f"s{i}"}, "to": {}}],
             "endTime": end or f"2026-09-08T11:{i:02d}:00", "durationSeconds": 3000 + i}
 
 
 def test_every_merge_keeps_the_best_plain_bus_option():
     """With everything switched on, the page ended with taxis, a parking zone and rental bikes and no bus."""
-    chosen = [_it(0, "rental", rental=True, mode="BICYCLE_RENTAL"), _it(1, "primary"), _it(2, "primary"), _it(3, "primary"),
+    chosen = [_it(0, "rental", rental=True, mode="BICYCLE_RENTAL"), _it(1, "primary"), _it(2, "primary"),
+              _it(3, "primary"),
               _it(4, "rental", rental=True, mode="BICYCLE_RENTAL"), _it(5, "primary"), _it(6, "primary")]
     best = best_plain_transit(chosen)
     assert best is chosen[1]
     taxis = [[{**_it(9, "x", mode="CAR_ONDEMAND", transit=False, end="2026-09-08T10:30:00"),
-               "legs": [{"mode": "CAR_ONDEMAND", "transit": False, "onDemand": True, "distanceMeters": 5000, "startTime": "2026-09-08T10:00", "from": {}, "to": {}}]}]]
+               "legs": [{"mode": "CAR_ONDEMAND", "transit": False, "onDemand": True, "distanceMeters": 5000,
+                         "startTime": "2026-09-08T10:00", "from": {}, "to": {}}]}]]
     out = merge_ondemand(chosen, taxis, 3, max_feeder_m=8000)
     assert best in out
     bike = [_it(8, "x", mode="BICYCLE", transit=False, end="2026-09-08T10:40:00")]
@@ -155,7 +162,8 @@ def test_every_merge_keeps_the_best_plain_bus_option():
 
 
 def test_a_requested_direct_ride_is_added_even_when_nothing_can_be_dropped():
-    chosen = [_it(0, "primary"), _it(1, "rental", rental=True), _it(2, "ondemand", mode="CAR_ONDEMAND"), _it(3, "parkride", mode="CAR")]
+    chosen = [_it(0, "primary"), _it(1, "rental", rental=True), _it(2, "ondemand", mode="CAR_ONDEMAND"),
+              _it(3, "parkride", mode="CAR")]
     bike = [_it(8, "x", mode="BICYCLE", transit=False, end="2026-09-08T10:40:00")]
     out = merge_direct(chosen, [bike], 3)
     assert len(out) == 5 and any(o["modesUsed"] == ["BICYCLE"] for o in out)

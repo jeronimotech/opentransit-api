@@ -141,7 +141,8 @@ def _poi(name, typ="poi", source="photon"):
 
 
 def test_the_cadastral_address_outranks_everything_for_an_address_query():
-    rs = [_stop("Cra. 43 B - 4"), _poi("Carrera 7", typ="street"), _poi("Carrera 7 # 72-41", typ="address", source="ideca")]
+    rs = [_stop("Cra. 43 B - 4"), _poi("Carrera 7", typ="street"),
+          _poi("Carrera 7 # 72-41", typ="address", source="ideca")]
     out = rank_results(rs, "Cra 7 # 72-41")
     assert [r["source"] for r in out] == ["ideca", "photon", "gtfs"]
 
@@ -222,4 +223,5 @@ def test_an_exact_place_far_from_the_city_is_a_namesake_not_the_answer():
     out = rank_results(rs, "Chicó", city_center=(4.6534, -74.0836))
     assert out[0]["source"] == "gtfs"
     here = {**_poi("Chicó", typ="place"), "lat": 4.67, "lon": -74.05}
-    assert rank_results([_stop("Br. Chicó Norte II Sector"), here], "Chicó", city_center=(4.6534, -74.0836))[0]["type"] == "place"
+    out = rank_results([_stop("Br. Chicó Norte II Sector"), here], "Chicó", city_center=(4.6534, -74.0836))
+    assert out[0]["type"] == "place"

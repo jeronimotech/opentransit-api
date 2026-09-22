@@ -105,7 +105,8 @@ async def test_a_dead_token_is_reported_and_transport_errors_are_counted():
 @pytest.mark.anyio
 async def test_wakes_are_pushed_once_when_due_and_dead_tokens_are_forgotten():
     store = MemoryPushDeviceStore()
-    await store.upsert(normalize_registration({"token": TOKEN, "wakeAt": ["2026-09-15T11:49:30Z", "2026-09-16T11:32:00Z"]},
+    await store.upsert(normalize_registration({"token": TOKEN,
+                                               "wakeAt": ["2026-09-15T11:49:30Z", "2026-09-16T11:32:00Z"]},
                                               city="bogota", now=NOW))
     await store.upsert(normalize_registration({"token": "cd" * 32, "wakeAt": ["2026-09-15T11:49:00Z"]},
                                               city="bogota", now=NOW))
@@ -113,7 +114,9 @@ async def test_wakes_are_pushed_once_when_due_and_dead_tokens_are_forgotten():
 
     def handler(req):
         sent.append(req.url.path)
-        return httpx.Response(410, json={"reason": "BadDeviceToken"}) if "cd" * 32 in req.url.path else httpx.Response(200)
+        if "cd" * 32 in req.url.path:
+            return httpx.Response(410, json={"reason": "BadDeviceToken"})
+        return httpx.Response(200)
 
     c = _client(handler)
     assert await push_wakes(store, c, "bogota", NOW) == 1
@@ -135,7 +138,8 @@ async def test_new_alerts_reach_the_devices_following_their_routes_once():
         return httpx.Response(200)
 
     c = _client(handler)
-    alerts = [{"id": "a1", "header": "Desvío en la Calle 26", "description": "Hasta las 18:00", "routeIds": ["bogota:G30"]},
+    alerts = [{"id": "a1", "header": "Desvío en la Calle 26", "description": "Hasta las 18:00",
+               "routeIds": ["bogota:G30"]},
               {"id": "a2", "header": "Sin rutas", "routeIds": []}]
     names = {"bogota:G30": "G30"}
     seen: set[str] = set()
@@ -192,7 +196,8 @@ async def test_registration_is_stored_when_reminders_are_active(bogota: City):
     app = _app(city)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.put("/v1/cities/bogota/push/devices", json={"token": TOKEN, "env": "sandbox",
-                                                                "wakeAt": ["2026-09-16T11:32:00Z"], "routes": ["bogota:G30"]})
+                                                                "wakeAt": ["2026-09-16T11:32:00Z"],
+                                                                "routes": ["bogota:G30"]})
         assert r.status_code == 202 and r.json() == {"accepted": True, "serverPush": True, "wakes": 1, "routes": 1}
         assert app.state.push_devices.devices[TOKEN]["env"] == "sandbox"
         r = await c.delete(f"/v1/cities/bogota/push/devices/{TOKEN}")
@@ -208,6 +213,7 @@ def test_the_admin_switch_does_not_expose_credentials(bogota: City):
 
 def test_the_key_may_arrive_base64_on_one_line(bogota: City):
     import base64
+
     from app.cities import ApnsConfig
     assert ApnsConfig(key_p8=base64.b64encode(KEY.encode()).decode()).private_key() == KEY
     assert ApnsConfig(key_p8=KEY.replace("\n", "\\n")).private_key() == KEY

@@ -28,6 +28,8 @@ from .cities import (
     CdsEventsProvider,
     City,
     Fares,
+    Geocoder,
+    IdecaGeocoder,
     Landing,
     Links,
     Maintenance,
@@ -43,13 +45,15 @@ from .cities import (
     OpenMobility,
     ParkRide,
     PerMinutePrice,
+    PlaceAreas,
     ServiceTile,
     ShareConfig,
     TaxiSurcharge,
     TaxiSurchargeWhen,
     TaxiTariff,
     TaxiZone,
-    UpdateUrls, Geocoder, IdecaGeocoder, PlaceAreas)
+    UpdateUrls,
+)
 from .db import pool
 from .errors import ApiError
 from .ondemand import PLACEHOLDER, is_masked, mask_credentials, mask_value
