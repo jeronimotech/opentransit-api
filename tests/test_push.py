@@ -195,8 +195,9 @@ async def test_registration_is_stored_when_reminders_are_active(bogota: City):
     assert city.public()["config"]["push"]["reminders"] is True
     app = _app(city)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        tomorrow = (dt.datetime.now(dt.UTC) + dt.timedelta(days=1)).isoformat()   # the router uses the real clock
         r = await c.put("/v1/cities/bogota/push/devices", json={"token": TOKEN, "env": "sandbox",
-                                                                "wakeAt": ["2026-09-16T11:32:00Z"],
+                                                                "wakeAt": [tomorrow],
                                                                 "routes": ["bogota:G30"]})
         assert r.status_code == 202 and r.json() == {"accepted": True, "serverPush": True, "wakes": 1, "routes": 1}
         assert app.state.push_devices.devices[TOKEN]["env"] == "sandbox"
