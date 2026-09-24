@@ -1,0 +1,124 @@
+id: santiago
+name: Santiago
+country: CL
+timezone: America/Santiago
+locale: es-CL
+center: { lat: -33.4489, lon: -70.6693 }
+bbox: [-70.95, -34.20, -70.45, -33.25]
+default_zoom: 12
+modes: [WALK, BUS, SUBWAY, RAIL, BICYCLE]
+branding:
+  primary_color: "#E30613"                        # Red Metropolitana de Movilidad
+features:
+  realtime_vehicles: false
+  trip_updates: false
+  alerts: false
+  fares: false
+  bike_share: true
+  on_demand: true
+attribution: "Datos: DTPM · Red Metropolitana de Movilidad · Metro de Santiago · EFE (GTFS) · Bike Santiago (GBFS) · Mapa: © OpenMapTiles © OpenStreetMap contributors"
+feeds:
+  gtfs_static_url: https://www.dtpm.cl/descargas/gtfs/GTFS_20260829.zip
+  poll_seconds: 60
+  static_refresh_hours: 168
+otp:
+  base_url: ${OTP_SANTIAGO_URL:-${OTP_URL:-http://localhost:8080}}
+  feed_id: santiago
+geocoder:
+  photon_url: https://photon.komoot.io
+agencies:
+  - { id: "RM",  name: "Red Metropolitana de Movilidad", component: bus,  color: "#E30613" }
+  - { id: "M",   name: "Metro de Santiago",              component: rail, color: "#D6001C" }
+  - { id: "MT",  name: "EFE Trenes de Chile",            component: rail, color: "#00529B" }
+  - { id: "BAA", name: "Bus de Acercamiento Aeropuerto", component: bus,  color: "#F7941D" }
+route_type_components:
+  "0": tram
+  "1": rail      # Metro
+  "2": rail      # EFE / Metrotren
+  "3": bus
+components:
+  - { id: rail, label: "Metro · Tren", color: "#D6001C", icon: rail }
+  - { id: bus,  label: "Bus Red",      color: "#E30613", icon: bus }
+config:
+  vehicle_poll_seconds: 60
+  departures_refresh_seconds: 30
+  features: { liveVehicles: false, board: true, pois: true, followAlong: true, bike: true }
+  min_app_version: { ios: "1.0.0", android: "1.0.0" }
+  update_urls:
+    ios: "itms-beta://beta.itunes.apple.com/v1/app/6809010622"
+    android: "https://play.google.com/store/apps/details?id=com.jeronimotech.opentransit"
+  analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
+links:
+  support: https://www.red.cl/atencion-a-usuarios/
+  privacy: https://www.red.cl/
+mobility:
+  bike_share:
+    - id: bike-santiago
+      name: Bike Santiago
+      network: bike_santiago                        # = system_id in the feed (Tembici)
+      gbfs_url: https://santiago.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json
+      color: "#00A859"
+      url: https://tembici.cl/
+      apps:
+        ios: https://apps.apple.com/cl/app/id1113742024
+        android: https://play.google.com/store/apps/details?id=com.tembici.bike
+      pricing_summary: "Consulta el plan en la app Tembici (tramos de 30 min)"
+      form_factors: [bicycle]
+  on_demand:
+    - id: uber
+      name: Uber
+      kind: ridehail
+      color: "#000000"
+      text_color: "#FFFFFF"
+      estimate: { kind: none }
+      handoff:
+        kind: template
+        template: "https://m.uber.com/looking?client_id={clientId}&pickup={pickupJson}&drop[0]={dropoffJson}"
+        web: https://m.uber.com/
+        apps: { ios: "https://apps.apple.com/cl/app/id368677368", android: "https://play.google.com/store/apps/details?id=com.ubercab" }
+      credentials: { clientId: "${UBER_CLIENT_ID:-}" }
+      enabled: true
+      order: 1
+landing:
+  enabled: true
+  slug: null
+  locale: es
+  theme: { primary_color: null, accent_color: "#E30613", logo_url: null, hero_image_url: null, dark_hero: true }
+  hero:
+    title: "Muévete por Santiago con Metro, Red y tren"
+    subtitle: "Planea tu viaje en Metro, buses Red, tren y bicicleta pública, de una dirección a otra. Gratis, sin cuenta y de código abierto."
+    cta_primary: { label: "Abrir la app web", url: null }
+    cta_secondary: { label: "Cómo funciona", url: "#features" }
+  apps: { ios: null, android: null, web: null }
+  highlights:
+    - { icon: route, title: "Puerta a puerta", text: "Metro, buses Red, Metrotren, Bike Santiago y a pie combinados en un solo itinerario, desde una dirección y no desde un paradero." }
+    - { icon: board, title: "Próximos buses en tu paradero", text: "Los horarios programados del DTPM en cada paradero, marcados claramente como programados: Santiago aún no publica datos en vivo abiertos." }
+    - { icon: bike,  title: "Bike Santiago", text: "Estaciones con bicicletas y anclajes disponibles en vivo, integradas al planificador." }
+    - { icon: alarm, title: "Viajes programados", text: "Casa → Trabajo a las 9:00, o una cita mañana: te avisamos la noche anterior, 20 minutos antes de salir y a la hora de salir." }
+    - { icon: go,    title: "Iniciar viaje", text: "Sigue tu viaje en pantalla de bloqueo, Dynamic Island y Apple Watch: cuándo bajarte y cuánto falta." }
+    - { icon: open,  title: "Datos abiertos", text: "Construido sobre el GTFS del DTPM y el GBFS de Bike Santiago. Sin cuentas ni rastreadores; tus viajes y favoritos viven en tu dispositivo." }
+  screenshots: []
+  stats: { show: true, items: [routes, stops, bikeStations] }
+  partners:
+    - { name: "DTPM · Red Metropolitana de Movilidad", logo_url: null, url: https://www.dtpm.cl, role: "GTFS" }
+    - { name: "Metro de Santiago", logo_url: null, url: https://www.metro.cl, role: "Red de Metro" }
+    - { name: "Bike Santiago · Tembici", logo_url: null, url: https://tembici.cl, role: "Bicicletas públicas (GBFS)" }
+  open_data:
+    show: true
+    links:
+      - { label: "GTFS vigente (DTPM)", url: https://www.dtpm.cl/index.php/gtfs-vigente }
+      - { label: "GBFS · Bike Santiago", url: https://santiago.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json }
+  faq:
+    - { q: "¿Necesito crear una cuenta?", a: "No. La app funciona sin registro, sin ubicación obligatoria y sin publicidad. Tus favoritos se guardan solo en tu dispositivo." }
+    - { q: "¿Los tiempos son en vivo?", a: "Todavía no: el DTPM no publica un feed abierto en tiempo real. Mostramos el horario programado y lo decimos claramente. Cuando exista un GTFS-Realtime abierto, aparecerá aquí." }
+    - { q: "¿La tarifa que muestra es exacta?", a: "Aún no mostramos tarifas para Santiago. Consulta red.cl y metro.cl para la tarifa bip! vigente." }
+    - { q: "¿Puedo usar el código para mi ciudad?", a: "Sí. Todo el proyecto es de código abierto (MIT). Cualquier ciudad con GTFS puede desplegarlo y configurarlo sin escribir código." }
+  contact:
+    email: null
+    url: https://www.red.cl/atencion-a-usuarios/
+    social: { x: null, instagram: null, facebook: null, youtube: null, github: https://github.com/jeronimotech }
+  footer: { legal_name: null, privacy_url: null, terms_url: null, attribution: null }
+  seo:
+    title: "Santiago · planificador de viajes de código abierto (Metro, Red y tren)"
+    description: "Planea viajes en Santiago con Metro, buses Red, tren y Bike Santiago, de una dirección a otra, con próximos buses en tu paradero. Gratis y de código abierto."
+    og_image_url: null

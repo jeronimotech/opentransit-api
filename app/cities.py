@@ -13,7 +13,7 @@ from pydantic.alias_generators import to_camel
 
 log = logging.getLogger("ot.cities")
 
-Component = Literal["trunk", "feeder", "dual", "zonal", "cable", "rail", "tram", "bus", "other"]
+Component = Literal["trunk", "feeder", "dual", "zonal", "cable", "rail", "tram", "bus", "ferry", "other"]
 # The default may itself be a reference: `${OTP_MYCITY_URL:-${OTP_URL:-http://localhost:8080}}`.
 # Innermost references (whose default contains no `${`) are resolved first, until nothing is left.
 _ENV = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-((?:(?!\$\{)[^}])*))?\}")

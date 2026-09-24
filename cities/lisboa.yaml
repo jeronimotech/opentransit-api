@@ -1,0 +1,105 @@
+id: lisboa
+name: Lisboa
+country: PT
+timezone: Europe/Lisbon
+locale: pt-PT
+center: { lat: 38.7223, lon: -9.1393 }
+bbox: [-9.52, 38.38, -8.42, 39.10]                # Área Metropolitana de Lisboa
+default_zoom: 11
+modes: [WALK, BUS, BICYCLE]
+branding:
+  primary_color: "#FFDD00"                        # Carris Metropolitana yellow
+features:
+  realtime_vehicles: true
+  trip_updates: false          # Carris Metropolitana publishes vehicle positions and alerts, not trip updates
+  alerts: true
+  fares: false
+  bike_share: false
+  on_demand: true
+attribution: "Dados: Carris Metropolitana (GTFS + GTFS-Realtime) · Mapa: © OpenMapTiles © OpenStreetMap contributors"
+feeds:
+  gtfs_static_url: https://api.carrismetropolitana.pt/gtfs
+  rt_positions_url: https://api.carrismetropolitana.pt/vehicles.pb
+  rt_alerts_url: https://api.carrismetropolitana.pt/alerts.pb
+  poll_seconds: 20
+  static_refresh_hours: 24
+otp:
+  base_url: ${OTP_LISBOA_URL:-${OTP_URL:-http://localhost:8080}}
+  feed_id: lisboa
+geocoder:
+  photon_url: https://photon.komoot.io
+route_type_components:
+  "3": bus
+components:
+  - { id: bus, label: "Autocarro", color: "#1A1A1A", icon: bus }
+config:
+  vehicle_poll_seconds: 20
+  departures_refresh_seconds: 20
+  features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }
+  min_app_version: { ios: "1.0.0", android: "1.0.0" }
+  update_urls:
+    ios: "itms-beta://beta.itunes.apple.com/v1/app/6809010622"
+    android: "https://play.google.com/store/apps/details?id=com.jeronimotech.opentransit"
+  analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
+links:
+  support: https://www.carrismetropolitana.pt/apoio
+  privacy: https://www.carrismetropolitana.pt/privacidade
+mobility:
+  on_demand:
+    - id: uber
+      name: Uber
+      kind: ridehail
+      color: "#000000"
+      text_color: "#FFFFFF"
+      estimate: { kind: none }
+      handoff:
+        kind: template
+        template: "https://m.uber.com/looking?client_id={clientId}&pickup={pickupJson}&drop[0]={dropoffJson}"
+        web: https://m.uber.com/
+        apps: { ios: "https://apps.apple.com/pt/app/id368677368", android: "https://play.google.com/store/apps/details?id=com.ubercab" }
+      credentials: { clientId: "${UBER_CLIENT_ID:-}" }
+      enabled: true
+      order: 1
+landing:
+  enabled: true
+  slug: null
+  locale: pt
+  theme: { primary_color: "#1A1A1A", accent_color: "#FFDD00", logo_url: null, hero_image_url: null, dark_hero: true }
+  hero:
+    title: "Anda pela Área Metropolitana de Lisboa com dados em tempo real"
+    subtitle: "Planeia a viagem, vê onde vai o teu autocarro e chega a horas. Grátis, sem conta, open source."
+    cta_primary: { label: "Abrir a web app", url: null }
+    cta_secondary: { label: "Como funciona", url: "#features" }
+  apps: { ios: null, android: null, web: null }
+  highlights:
+    - { icon: route, title: "Porta a porta", text: "As 941 linhas da Carris Metropolitana em 15 municípios, combinadas com caminhada num único itinerário, a partir de uma morada e não de uma paragem." }
+    - { icon: live,  title: "Autocarros em tempo real", text: "As posições publicadas pela Carris Metropolitana no mapa, com a direção de cada autocarro." }
+    - { icon: board, title: "Próximos autocarros na tua paragem", text: "O horário programado cruzado com as posições em tempo real — e dizemos sempre qual dos dois estás a ver." }
+    - { icon: alarm, title: "Viagens programadas", text: "Casa → Trabalho às 9:00, ou uma consulta amanhã: um aviso na véspera, vinte minutos antes de sair com dados em tempo real, e na hora de sair." }
+    - { icon: go,    title: "Acompanhar a viagem", text: "A tua viagem no ecrã bloqueado, na Dynamic Island e no Apple Watch: quando chega o autocarro, onde sair e quanto falta." }
+    - { icon: open,  title: "Dados abertos", text: "Construído sobre o GTFS e o GTFS-Realtime da Carris Metropolitana. Sem contas, sem rastreadores, sem publicidade; viagens e favoritos ficam no teu dispositivo." }
+  screenshots: []
+  stats: { show: true, items: [routes, stops, vehiclesLive, alertsActive] }
+  partners:
+    - { name: "Carris Metropolitana", logo_url: null, url: https://www.carrismetropolitana.pt, role: "GTFS e GTFS-Realtime" }
+  open_data:
+    show: true
+    links:
+      - { label: "GTFS horários",         url: https://api.carrismetropolitana.pt/gtfs }
+      - { label: "GTFS-RT · posições",    url: https://api.carrismetropolitana.pt/vehicles.pb }
+      - { label: "GTFS-RT · avisos",      url: https://api.carrismetropolitana.pt/alerts.pb }
+      - { label: "API Carris Metropolitana", url: https://github.com/carrismetropolitana/api }
+  faq:
+    - { q: "Preciso de uma conta?", a: "Não. Funciona sem registo, sem exigir a tua localização e sem publicidade. Os favoritos ficam no teu dispositivo." }
+    - { q: "De onde vêm os tempos de chegada?", a: "Do horário da Carris Metropolitana, cruzado com as posições dos autocarros em tempo real. Quando não há dado em tempo real mostramos o horário e dizemo-lo." }
+    - { q: "O tarifário é exato?", a: "Ainda não mostramos tarifas para Lisboa. Consulta carrismetropolitana.pt e o navegante." }
+    - { q: "Posso usar isto na minha cidade?", a: "Sim. Todo o projeto é open source (MIT). Qualquer cidade com um feed GTFS pode instalá-lo e configurá-lo sem escrever código." }
+  contact:
+    email: null
+    url: https://www.carrismetropolitana.pt/apoio
+    social: { x: null, instagram: null, facebook: null, youtube: null, github: https://github.com/jeronimotech }
+  footer: { legal_name: null, privacy_url: null, terms_url: null, attribution: null }
+  seo:
+    title: "Lisboa em tempo real · planeador de viagens open source"
+    description: "Planeia viagens na Área Metropolitana de Lisboa com autocarros em tempo real, próximas passagens na paragem e dados abertos. Grátis e open source."
+    og_image_url: null

@@ -1,0 +1,113 @@
+id: roma
+name: Roma
+country: IT
+timezone: Europe/Rome
+locale: it-IT
+center: { lat: 41.9028, lon: 12.4964 }
+bbox: [12.20, 41.62, 12.85, 42.12]
+default_zoom: 12
+modes: [WALK, BUS, TRAM, SUBWAY, BICYCLE]
+branding:
+  primary_color: "#C8102E"                        # Roma Mobilità red
+features:
+  realtime_vehicles: true
+  trip_updates: true
+  alerts: true
+  fares: false
+  bike_share: false
+  on_demand: true
+attribution: "Dati: Roma Servizi per la Mobilità (GTFS + GTFS-Realtime) · Mappa: © OpenMapTiles © OpenStreetMap contributors"
+feeds:
+  gtfs_static_url: https://romamobilita.it/sites/default/files/rome_static_gtfs.zip
+  rt_positions_url: https://romamobilita.it/sites/default/files/rome_rtgtfs_vehicle_positions_feed.pb
+  rt_tripupdates_url: https://romamobilita.it/sites/default/files/rome_rtgtfs_trip_updates_feed.pb
+  rt_alerts_url: https://romamobilita.it/sites/default/files/rome_rtgtfs_service_alerts_feed.pb
+  poll_seconds: 30
+  static_refresh_hours: 24
+otp:
+  base_url: ${OTP_ROMA_URL:-${OTP_URL:-http://localhost:8080}}
+  feed_id: roma
+geocoder:
+  photon_url: https://photon.komoot.io
+agencies:
+  - { id: "OP1", name: "ATAC", component: bus, color: "#C8102E" }
+route_type_components:
+  "0": tram
+  "1": rail      # Metro A, B, B1, C
+  "3": bus
+components:
+  - { id: rail, label: "Metro",   color: "#C8102E", icon: rail }
+  - { id: tram, label: "Tram",    color: "#00843D", icon: tram }
+  - { id: bus,  label: "Autobus", color: "#0072BC", icon: bus }
+config:
+  vehicle_poll_seconds: 20
+  departures_refresh_seconds: 20
+  features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }
+  min_app_version: { ios: "1.0.0", android: "1.0.0" }
+  update_urls:
+    ios: "itms-beta://beta.itunes.apple.com/v1/app/6809010622"
+    android: "https://play.google.com/store/apps/details?id=com.jeronimotech.opentransit"
+  analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
+links:
+  support: https://www.atac.roma.it/contatti
+  privacy: https://www.atac.roma.it/privacy
+mobility:
+  on_demand:
+    - id: uber
+      name: Uber
+      kind: ridehail
+      color: "#000000"
+      text_color: "#FFFFFF"
+      estimate: { kind: none }
+      handoff:
+        kind: template
+        template: "https://m.uber.com/looking?client_id={clientId}&pickup={pickupJson}&drop[0]={dropoffJson}"
+        web: https://m.uber.com/
+        apps: { ios: "https://apps.apple.com/it/app/id368677368", android: "https://play.google.com/store/apps/details?id=com.ubercab" }
+      credentials: { clientId: "${UBER_CLIENT_ID:-}" }
+      enabled: true
+      order: 1
+landing:
+  enabled: true
+  slug: null
+  locale: it
+  theme: { primary_color: null, accent_color: "#C8102E", logo_url: null, hero_image_url: null, dark_hero: true }
+  hero:
+    title: "Muoviti a Roma con dati in tempo reale"
+    subtitle: "Pianifica il viaggio, trova il tuo autobus e arriva in orario. Gratis, senza account, open source."
+    cta_primary: { label: "Apri la web app", url: null }
+    cta_secondary: { label: "Come funziona", url: "#features" }
+  apps: { ios: null, android: null, web: null }
+  highlights:
+    - { icon: route, title: "Porta a porta", text: "Metro, tram, autobus e a piedi combinati in un unico itinerario, partendo da un indirizzo e non da una fermata." }
+    - { icon: live,  title: "Mezzi in tempo reale", text: "Le posizioni pubblicate da Roma Mobilità sulla mappa, con la direzione di ogni mezzo." }
+    - { icon: board, title: "Arrivi alla tua fermata", text: "Previsioni in tempo reale abbinate all’orario programmato — e diciamo sempre quale delle due stai vedendo." }
+    - { icon: alarm, title: "Viaggi programmati", text: "Casa → Lavoro alle 9:00, o un appuntamento domani: un promemoria la sera prima, venti minuti prima di partire con dati live, e quando è ora di uscire." }
+    - { icon: go,    title: "Segui il viaggio", text: "Il tuo viaggio sulla schermata di blocco, nella Dynamic Island e su Apple Watch: quando arriva il mezzo, dove scendere e quanto manca." }
+    - { icon: open,  title: "Dati aperti", text: "Costruito sui GTFS e GTFS-Realtime di Roma Servizi per la Mobilità. Niente account, niente tracker, niente pubblicità; viaggi e preferiti restano sul tuo dispositivo." }
+  screenshots: []
+  stats: { show: true, items: [routes, stops, vehiclesLive, alertsActive] }
+  partners:
+    - { name: "Roma Servizi per la Mobilità", logo_url: null, url: https://romamobilita.it, role: "GTFS e GTFS-Realtime" }
+    - { name: "ATAC", logo_url: null, url: https://www.atac.roma.it, role: "Servizio metro, tram e autobus" }
+  open_data:
+    show: true
+    links:
+      - { label: "GTFS orari",            url: https://romamobilita.it/sites/default/files/rome_static_gtfs.zip }
+      - { label: "GTFS-RT · posizioni",   url: https://romamobilita.it/sites/default/files/rome_rtgtfs_vehicle_positions_feed.pb }
+      - { label: "GTFS-RT · arrivi",      url: https://romamobilita.it/sites/default/files/rome_rtgtfs_trip_updates_feed.pb }
+      - { label: "GTFS-RT · avvisi",      url: https://romamobilita.it/sites/default/files/rome_rtgtfs_service_alerts_feed.pb }
+  faq:
+    - { q: "Serve un account?", a: "No. Funziona senza registrazione, senza chiedere la posizione e senza pubblicità. I preferiti restano sul tuo dispositivo." }
+    - { q: "Da dove vengono gli orari di arrivo?", a: "Dal feed GTFS-Realtime di Roma Servizi per la Mobilità. Quando non c’è una previsione live mostriamo l’orario programmato e lo diciamo." }
+    - { q: "La tariffa è esatta?", a: "Per Roma non mostriamo ancora le tariffe. Consulta atac.roma.it per i titoli di viaggio." }
+    - { q: "Posso usarlo per la mia città?", a: "Sì. Tutto il progetto è open source (MIT). Qualsiasi città con un feed GTFS può installarlo e configurarlo senza scrivere codice." }
+  contact:
+    email: null
+    url: https://romamobilita.it/it/contatti
+    social: { x: null, instagram: null, facebook: null, youtube: null, github: https://github.com/jeronimotech }
+  footer: { legal_name: null, privacy_url: null, terms_url: null, attribution: null }
+  seo:
+    title: "Roma in tempo reale · pianificatore di viaggi open source"
+    description: "Pianifica viaggi a Roma con metro, tram e autobus in tempo reale, arrivi alla fermata e dati aperti. Gratis e open source."
+    og_image_url: null

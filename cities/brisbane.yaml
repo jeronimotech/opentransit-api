@@ -1,0 +1,112 @@
+id: brisbane
+name: Brisbane
+country: AU
+timezone: Australia/Brisbane
+locale: en-AU
+center: { lat: -27.4698, lon: 153.0251 }
+bbox: [152.10, -28.20, 153.60, -26.10]           # South East Queensland: Sunshine Coast to Gold Coast
+default_zoom: 12
+modes: [WALK, BUS, RAIL, TRAM, FERRY, BICYCLE]
+branding:
+  primary_color: "#00539F"                        # TransLink blue
+features:
+  realtime_vehicles: true
+  trip_updates: true
+  alerts: true
+  fares: false
+  bike_share: false
+  on_demand: true
+attribution: "Data: TransLink (Queensland Government) GTFS + GTFS-Realtime · Map: © OpenMapTiles © OpenStreetMap contributors"
+feeds:
+  gtfs_static_url: https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip
+  rt_positions_url: https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions
+  rt_tripupdates_url: https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates
+  rt_alerts_url: https://gtfsrt.api.translink.com.au/api/realtime/SEQ/Alerts
+  poll_seconds: 20
+  static_refresh_hours: 24
+otp:
+  base_url: ${OTP_BRISBANE_URL:-${OTP_URL:-http://localhost:8080}}
+  feed_id: brisbane
+geocoder:
+  photon_url: https://photon.komoot.io
+route_type_components:
+  "0": tram      # G:link (Gold Coast light rail)
+  "2": rail      # Queensland Rail City network
+  "3": bus
+  "4": ferry     # CityCat and ferries
+components:
+  - { id: rail,  label: "Train",  color: "#00539F", icon: rail }
+  - { id: bus,   label: "Bus",    color: "#E4002B", icon: bus }
+  - { id: tram,  label: "G:link", color: "#F2A900", icon: tram }
+  - { id: ferry, label: "Ferry",  color: "#00A6D6", icon: ferry }
+config:
+  vehicle_poll_seconds: 20
+  departures_refresh_seconds: 20
+  features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }
+  min_app_version: { ios: "1.0.0", android: "1.0.0" }
+  update_urls:
+    ios: "itms-beta://beta.itunes.apple.com/v1/app/6809010622"
+    android: "https://play.google.com/store/apps/details?id=com.jeronimotech.opentransit"
+  analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
+links:
+  support: https://translink.com.au/contact-us
+  privacy: https://translink.com.au/privacy
+mobility:
+  on_demand:
+    - id: uber
+      name: Uber
+      kind: ridehail
+      color: "#000000"
+      text_color: "#FFFFFF"
+      estimate: { kind: none }
+      handoff:
+        kind: template
+        template: "https://m.uber.com/looking?client_id={clientId}&pickup={pickupJson}&drop[0]={dropoffJson}"
+        web: https://m.uber.com/
+        apps: { ios: "https://apps.apple.com/au/app/id368677368", android: "https://play.google.com/store/apps/details?id=com.ubercab" }
+      credentials: { clientId: "${UBER_CLIENT_ID:-}" }
+      enabled: true
+      order: 1
+landing:
+  enabled: true
+  slug: null
+  locale: en
+  theme: { primary_color: null, accent_color: "#00539F", logo_url: null, hero_image_url: null, dark_hero: true }
+  hero:
+    title: "Ride South East Queensland with live data"
+    subtitle: "Trains, buses, CityCats and the G:link in one trip, with live vehicles and arrivals. Free, no account, open source."
+    cta_primary: { label: "Open the web app", url: null }
+    cta_secondary: { label: "How it works", url: "#features" }
+  apps: { ios: null, android: null, web: null }
+  highlights:
+    - { icon: route, title: "Door to door", text: "Train, bus, ferry, light rail and walking combined into one itinerary, from an address rather than a stop, from the Sunshine Coast to the Gold Coast." }
+    - { icon: live,  title: "Vehicles in real time", text: "TransLink's live positions on the map, with the direction each vehicle is heading." }
+    - { icon: board, title: "Arrivals at your stop", text: "Live predictions from TransLink's feed paired with the timetable — and we say which is which." }
+    - { icon: alarm, title: "Scheduled trips", text: "Home → Work by 9:00, or an appointment tomorrow: a reminder the evening before, twenty minutes before leaving with live data, and when it is time to go." }
+    - { icon: go,    title: "Follow along", text: "Your trip on the lock screen, the Dynamic Island and Apple Watch: when your bus comes, when to get off and how long is left." }
+    - { icon: open,  title: "Open data", text: "Built on TransLink's GTFS and GTFS-Realtime. No accounts, no trackers, no ads; your trips and favourites stay on your device." }
+  screenshots: []
+  stats: { show: true, items: [routes, stops, vehiclesLive, alertsActive] }
+  partners:
+    - { name: "TransLink · Queensland Government", logo_url: null, url: https://translink.com.au, role: "GTFS and GTFS-Realtime" }
+  open_data:
+    show: true
+    links:
+      - { label: "GTFS schedule",       url: https://gtfsrt.api.translink.com.au/GTFS/SEQ_GTFS.zip }
+      - { label: "GTFS-RT · vehicles",  url: https://gtfsrt.api.translink.com.au/api/realtime/SEQ/VehiclePositions }
+      - { label: "GTFS-RT · arrivals",  url: https://gtfsrt.api.translink.com.au/api/realtime/SEQ/TripUpdates }
+      - { label: "GTFS-RT · alerts",    url: https://gtfsrt.api.translink.com.au/api/realtime/SEQ/Alerts }
+  faq:
+    - { q: "Do I need an account?", a: "No. It works without signing up, without requiring your location and without ads. Favourites stay on your device." }
+    - { q: "Where do the arrival times come from?", a: "From TransLink's own GTFS-Realtime feed. When there is no live prediction we show the timetable and say so." }
+    - { q: "Is the fare shown?", a: "Not yet for South East Queensland. Check translink.com.au for go card and 50-cent fares." }
+    - { q: "Can I use this for my city?", a: "Yes. The whole project is open source (MIT). Any city with a GTFS feed can deploy it and configure it without writing code." }
+  contact:
+    email: null
+    url: https://translink.com.au/contact-us
+    social: { x: null, instagram: null, facebook: null, youtube: null, github: https://github.com/jeronimotech }
+  footer: { legal_name: null, privacy_url: null, terms_url: null, attribution: null }
+  seo:
+    title: "Brisbane & South East Queensland transit, live · open-source trip planner"
+    description: "Plan trips across South East Queensland with live TransLink vehicles, arrivals at your stop and open data. Free and open source."
+    og_image_url: null

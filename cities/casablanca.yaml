@@ -1,0 +1,89 @@
+id: casablanca
+name: Casablanca
+country: MA
+timezone: Africa/Casablanca
+locale: fr-MA
+center: { lat: 33.5731, lon: -7.5898 }
+bbox: [-7.80, 33.40, -7.40, 33.70]
+default_zoom: 12
+modes: [WALK, TRAM, BUS, BICYCLE]
+branding:
+  primary_color: "#0072CE"                        # Casa Tramway blue
+features:
+  realtime_vehicles: false
+  trip_updates: false
+  alerts: false
+  fares: false
+  bike_share: false
+  on_demand: false
+attribution: "Données : Casa Tramway / Casa Transports (GTFS communautaire) · Carte : © OpenMapTiles © OpenStreetMap contributors"
+feeds:
+  # Community-maintained GTFS (github.com/SpaghettDev/CasaTransport-GTFS). The tramway and busway feed is
+  # current; the bus feed's calendar expired in June 2026 and comes back when the export runs again.
+  gtfs_static_url: https://raw.githubusercontent.com/SpaghettDev/CasaTransport-GTFS/master/gtfs-tramway/gtfs-tramway.zip
+  poll_seconds: 60
+  static_refresh_hours: 168
+otp:
+  base_url: ${OTP_CASABLANCA_URL:-${OTP_URL:-http://localhost:8080}}
+  feed_id: casablanca
+geocoder:
+  photon_url: https://photon.komoot.io
+route_type_components:
+  "0": tram
+  "3": bus       # busway
+components:
+  - { id: tram, label: "Tramway", color: "#0072CE", icon: tram }
+  - { id: bus,  label: "Busway",  color: "#E4002B", icon: bus }
+config:
+  vehicle_poll_seconds: 60
+  departures_refresh_seconds: 30
+  features: { liveVehicles: false, board: true, pois: true, followAlong: true, bike: true }
+  min_app_version: { ios: "1.0.0", android: "1.0.0" }
+  update_urls:
+    ios: "itms-beta://beta.itunes.apple.com/v1/app/6809010622"
+    android: "https://play.google.com/store/apps/details?id=com.jeronimotech.opentransit"
+  analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
+links:
+  support: https://www.casatramway.ma/contact
+  privacy: https://www.casatramway.ma/
+landing:
+  enabled: true
+  slug: null
+  locale: fr
+  theme: { primary_color: null, accent_color: "#0072CE", logo_url: null, hero_image_url: null, dark_hero: true }
+  hero:
+    title: "Déplacez-vous à Casablanca avec le tramway et le busway"
+    subtitle: "Planifiez votre trajet en tramway, busway et à pied, d’une adresse à l’autre. Gratuit, sans compte, open source."
+    cta_primary: { label: "Ouvrir l’application web", url: null }
+    cta_secondary: { label: "Comment ça marche", url: "#features" }
+  apps: { ios: null, android: null, web: null }
+  highlights:
+    - { icon: route, title: "De porte à porte", text: "Les lignes T1 à T4 du tramway, les busways BW1 et BW2 et la marche combinés en un seul itinéraire, à partir d’une adresse et non d’une station." }
+    - { icon: board, title: "Prochains passages", text: "Les horaires programmés à votre station, clairement indiqués comme tels : il n’existe pas encore de données en temps réel ouvertes à Casablanca." }
+    - { icon: alarm, title: "Trajets programmés", text: "Maison → Travail à 9h00, ou un rendez-vous demain : un rappel la veille, vingt minutes avant de partir, et au moment de partir." }
+    - { icon: go,    title: "Suivre le trajet", text: "Votre trajet sur l’écran de verrouillage, la Dynamic Island et l’Apple Watch : quand descendre et combien de temps il reste." }
+    - { icon: open,  title: "Données ouvertes", text: "Construit sur un GTFS communautaire du réseau Casa Tramway. Sans compte, sans traceur, sans publicité ; vos trajets et favoris restent sur votre appareil." }
+  screenshots: []
+  stats: { show: true, items: [routes, stops] }
+  partners:
+    - { name: "Casa Tramway", logo_url: null, url: https://www.casatramway.ma, role: "Exploitant du tramway et des busways" }
+    - { name: "CasaTransport-GTFS", logo_url: null, url: https://github.com/SpaghettDev/CasaTransport-GTFS, role: "GTFS communautaire" }
+  open_data:
+    show: true
+    links:
+      - { label: "GTFS tramway et busway", url: https://raw.githubusercontent.com/SpaghettDev/CasaTransport-GTFS/master/gtfs-tramway/gtfs-tramway.zip }
+      - { label: "GTFS bus (Casabus)",     url: https://raw.githubusercontent.com/SpaghettDev/CasaTransport-GTFS/master/gtfs-bus/gtfs-bus.zip }
+  faq:
+    - { q: "Faut-il un compte ?", a: "Non. L’application fonctionne sans inscription, sans exiger votre position et sans publicité. Vos favoris restent sur votre appareil." }
+    - { q: "Les horaires sont-ils en temps réel ?", a: "Pas encore : aucune donnée en temps réel n’est publiée pour Casablanca. Nous affichons les horaires programmés et le disons clairement. Dès qu’un flux GTFS-Realtime existera, il apparaîtra ici." }
+    - { q: "Et les bus Casabus ?", a: "Le GTFS communautaire des bus a expiré en juin 2026 ; les lignes reviendront dès qu’il sera régénéré. Le tramway et les busways sont à jour." }
+    - { q: "Puis-je l’utiliser pour ma ville ?", a: "Oui. Tout le projet est open source (MIT). Toute ville disposant d’un flux GTFS peut le déployer et le configurer sans écrire de code." }
+  contact:
+    email: null
+    url: https://www.casatramway.ma/contact
+    social: { x: null, instagram: null, facebook: null, youtube: null, github: https://github.com/jeronimotech }
+  footer: { legal_name: null, privacy_url: null, terms_url: null, attribution: null }
+  seo:
+    title: "Casablanca · planificateur de trajets open source (tramway et busway)"
+    description: "Planifiez vos trajets à Casablanca en tramway et busway, d’une adresse à l’autre, avec les prochains passages à votre station. Gratuit et open source."
+    og_image_url: null
