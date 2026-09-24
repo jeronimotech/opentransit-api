@@ -1,17 +1,24 @@
-"""v2.3 — APNs pushes for scheduled trips.
+"""v2.3 — pushes for scheduled trips; v2.5 — Android as well as iOS.
 
 Two kinds, both to anonymous device tokens a phone registered itself:
-* a **silent wake-up** (`content-available`) at the instants the phone asked for — twenty minutes before
-  a scheduled trip leaves — so it can re-plan with live data and adjust its own reminder. The server
-  never learns the trip, only "wake me at 06:52";
+* a **silent wake-up** at the instants the phone asked for — twenty minutes before a scheduled trip
+  leaves — so it can re-plan with live data and adjust its own reminder. The server never learns the
+  trip, only "wake me at 06:52";
 * an **alert push** when a new service alert touches a route the device follows.
 
-Android needs neither: WorkManager runs the refresh and the alert poll on time without a push.
+Both go out over whichever transport the device's platform uses: APNs for iOS, FCM (HTTP v1) for
+Android. A [PushMessage] says what to deliver; each client renders it the way its service expects, so
+the two passes below stay transport-agnostic and a city may have one transport, both, or neither.
+
+Android managed without pushes until now: it schedules an exact alarm itself and WorkManager polls.
+That still runs and is still the floor — the push only makes the wake-up prompt and the alert quick,
+which matters on the phones whose vendors kill background work.
 """
 import datetime as dt
 import json
 import logging
 import time
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 import httpx
@@ -27,6 +34,59 @@ WAKE_HORIZON = dt.timedelta(days=8)            # the phone re-registers before t
 MAX_WAKES = 64
 MAX_ROUTES = 50
 MAX_ALERT_PUSHES_PER_DAY = 6
+FCM_TOKEN_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:_-.")
+
+
+# APNs says a token is gone with the first three; FCM with the rest. Either way the row goes.
+DEAD_REASONS = {"BadDeviceToken", "Unregistered", "DeviceTokenNotForTopic",
+                "UNREGISTERED", "INVALID_ARGUMENT", "SENDER_ID_MISMATCH", "NOT_FOUND"}
+
+
+@dataclass(frozen=True)
+class PushMessage:
+    """What to deliver, independent of how. `data` travels alongside in both transports; FCM needs its
+    values as strings, so anything that is not one is sent as JSON and the client parses it back."""
+    kind: str
+    silent: bool = False
+    title: str = ""
+    body: str = ""
+    data: dict = field(default_factory=dict)
+    collapse_id: str | None = None
+    ttl: int = 600                                  # seconds; an undelivered push is not worth keeping
+
+    def apns_payload(self) -> dict:
+        if self.silent:
+            return {"aps": {"content-available": 1}, "kind": self.kind, **self.data}
+        return {"aps": {"alert": {"title": self.title, "body": self.body}, "sound": "default",
+                        "thread-id": "route-alerts"},
+                "kind": self.kind, **self.data}
+
+    def fcm_data(self) -> dict:
+        """Data-only on purpose: the app renders the notification itself, so the wording follows the
+        device's language and the tap opens the right screen — a `notification` block would hand both
+        to the system tray and skip the app entirely while it is in the background."""
+        out = {"kind": self.kind}
+        if not self.silent:
+            out["title"] = self.title
+            out["body"] = self.body
+        for k, v in self.data.items():
+            out[k] = v if isinstance(v, str) else json.dumps(v)
+        return out
+
+
+def silent_wake_payload() -> PushMessage:
+    return PushMessage(kind="tripRefresh", silent=True, collapse_id="tripRefresh", ttl=600)
+
+
+def alert_payload(alert: dict, route_names: list[str], locale: str) -> PushMessage:
+    routes = ", ".join(route_names) if route_names else ""
+    title = (f"{routes}: {alert.get('header') or ''}" if routes else (alert.get("header") or "")).strip()[:120]
+    body = (alert.get("description") or alert.get("header") or "")[:300]
+    aid = str(alert.get("id") or "")
+    return PushMessage(kind="routeAlert", title=title, body=body,
+                       data={"alertId": alert.get("id"), "routeIds": alert.get("routeIds") or [],
+                             "location": "/{city}/alerts", "locale": locale},
+                       collapse_id=f"alert-{aid}"[:64], ttl=6 * 3600)
 
 
 class ApnsClient:
@@ -50,22 +110,21 @@ class ApnsClient:
             self._jwt_at = now
         return self._jwt
 
-    async def send(self, device_token: str, payload: dict, *, env: str = "prod", background: bool = False,
-                   collapse_id: str | None = None) -> tuple[bool, str | None]:
+    async def send(self, device_token: str, msg: PushMessage, *, env: str = "prod") -> tuple[bool, str | None]:
         """(delivered, reason). `reason` is APNs' word for a failure ("BadDeviceToken", "Unregistered"…);
         the caller drops the token on those two."""
         headers = {
             "authorization": f"bearer {self.token()}",
             "apns-topic": self.bundle_id,
-            "apns-push-type": "background" if background else "alert",
-            "apns-priority": "5" if background else "10",
-            "apns-expiration": str(int(time.time()) + (10 * 60 if background else 6 * 3600)),
+            "apns-push-type": "background" if msg.silent else "alert",
+            "apns-priority": "5" if msg.silent else "10",
+            "apns-expiration": str(int(time.time()) + msg.ttl),
         }
-        if collapse_id:
-            headers["apns-collapse-id"] = collapse_id[:64]
+        if msg.collapse_id:
+            headers["apns-collapse-id"] = msg.collapse_id[:64]
         url = f"{APNS_HOST.get(env, APNS_HOST['prod'])}/3/device/{device_token}"
         try:
-            r = await self._cli.post(url, headers=headers, content=json.dumps(payload))
+            r = await self._cli.post(url, headers=headers, content=json.dumps(msg.apns_payload()))
         except httpx.HTTPError as e:
             self.failed += 1
             self.last_error = f"{type(e).__name__}: {e}"[:200]
@@ -86,20 +145,89 @@ class ApnsClient:
         await self._cli.aclose()
 
 
-DEAD_REASONS = {"BadDeviceToken", "Unregistered", "DeviceTokenNotForTopic"}
+class FcmClient:
+    """Firebase Cloud Messaging, HTTP v1. Authentication is a service-account JWT exchanged for an
+    access token, which is Google's flow and not Apple's: the JWT never goes to FCM itself."""
+
+    TOKEN_URL = "https://oauth2.googleapis.com/token"
+    SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
+
+    def __init__(self, *, project_id: str, client_email: str, private_key: str,
+                 transport: httpx.AsyncBaseTransport | None = None) -> None:
+        self.project_id, self.client_email, self.private_key = project_id, client_email, private_key
+        self._token: str | None = None
+        self._token_exp = 0.0
+        self._cli = httpx.AsyncClient(timeout=10, transport=transport)
+        self.sent = 0
+        self.failed = 0
+        self.last_error: str | None = None
+
+    @property
+    def endpoint(self) -> str:
+        return f"https://fcm.googleapis.com/v1/projects/{self.project_id}/messages:send"
+
+    async def access_token(self, now: float | None = None) -> str:
+        now = now or time.time()
+        if self._token and now < self._token_exp - 120:
+            return self._token
+        assertion = jwt.encode(
+            {"iss": self.client_email, "scope": self.SCOPE, "aud": self.TOKEN_URL,
+             "iat": int(now), "exp": int(now) + 3600},
+            self.private_key, algorithm="RS256")
+        r = await self._cli.post(self.TOKEN_URL, data={
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": assertion})
+        r.raise_for_status()
+        body = r.json()
+        self._token = str(body["access_token"])
+        self._token_exp = now + float(body.get("expires_in", 3600))
+        return self._token
+
+    @staticmethod
+    def _reason(body: dict, status_code: int) -> str:
+        err = body.get("error") or {}
+        for d in err.get("details") or []:
+            if isinstance(d, dict) and d.get("errorCode"):
+                return str(d["errorCode"])
+        return str(err.get("status") or status_code)
+
+    async def send(self, device_token: str, msg: PushMessage, *, env: str = "prod") -> tuple[bool, str | None]:
+        """(delivered, reason). `env` is ignored: FCM has no sandbox, the token itself says which app
+        it belongs to. High priority on both kinds, because a wake-up that arrives after the bus has
+        gone is worse than no wake-up at all."""
+        android: dict = {"priority": "high", "ttl": f"{msg.ttl}s"}
+        if msg.collapse_id:
+            android["collapse_key"] = msg.collapse_id[:64]
+        payload = {"message": {"token": device_token, "data": msg.fcm_data(), "android": android}}
+        try:
+            token = await self.access_token()
+            r = await self._cli.post(self.endpoint, headers={"authorization": f"Bearer {token}"}, json=payload)
+        except httpx.HTTPError as e:
+            self.failed += 1
+            self.last_error = f"{type(e).__name__}: {e}"[:200]
+            return False, "transport"
+        if r.status_code == 200:
+            self.sent += 1
+            return True, None
+        try:
+            reason = self._reason(r.json(), r.status_code)
+        except ValueError:
+            reason = str(r.status_code)
+        self.failed += 1
+        self.last_error = f"{r.status_code} {reason}".strip()
+        return False, reason
+
+    async def aclose(self) -> None:
+        await self._cli.aclose()
 
 
-def silent_wake_payload() -> dict:
-    return {"aps": {"content-available": 1}, "kind": "tripRefresh"}
+class PushSender(Protocol):
+    """What the two passes need from a transport. APNs and FCM both satisfy it."""
+    sent: int
+    failed: int
+    last_error: str | None
 
-
-def alert_payload(alert: dict, route_names: list[str], locale: str) -> dict:
-    routes = ", ".join(route_names) if route_names else ""
-    title = (f"{routes}: {alert.get('header') or ''}" if routes else (alert.get("header") or "")).strip()[:120]
-    body = (alert.get("description") or alert.get("header") or "")[:300]
-    return {"aps": {"alert": {"title": title, "body": body}, "sound": "default", "thread-id": "route-alerts"},
-            "kind": "routeAlert", "alertId": alert.get("id"), "routeIds": alert.get("routeIds") or [],
-            "location": "/{city}/alerts", "locale": locale}
+    async def send(self, device_token: str, msg: PushMessage, *, env: str = "prod") -> tuple[bool, str | None]: ...
+    async def aclose(self) -> None: ...
 
 
 # ------------------------------------------------------------------ devices
@@ -133,12 +261,20 @@ def _parse_instants(values) -> list[dt.datetime]:
 def normalize_registration(body: dict, *, city: str, now: dt.datetime) -> dict:
     """What a phone may register: a hex token, its platform and environment, the instants it wants to be
     woken (bounded and inside the horizon) and the routes it follows (bounded). Anything else is dropped."""
-    token = str(body.get("token") or "").strip().lower()
-    if not token or len(token) > 200 or any(c not in "0123456789abcdef" for c in token):
-        raise ValueError("token: a hex APNs device token is required")
     platform = str(body.get("platform") or "ios").lower()
-    if platform not in ("ios",):
-        raise ValueError("platform: only ios registers for pushes")
+    if platform not in ("ios", "android"):
+        raise ValueError("platform: ios or android")
+    token = str(body.get("token") or "").strip()
+    if platform == "ios":
+        # APNs device tokens are hex, and Apple accepts either case; one case in the table keeps the
+        # unregister path from missing the row it means to delete.
+        token = token.lower()
+        if not token or len(token) > 200 or any(c not in "0123456789abcdef" for c in token):
+            raise ValueError("token: a hex APNs device token is required")
+    elif not token or len(token) > 512 or any(c not in FCM_TOKEN_CHARS for c in token):
+        # FCM registration tokens are long, mixed-case and carry ':', '-', '_' and '.', so they are
+        # neither hex nor case-insensitive: lowercasing one makes it undeliverable.
+        raise ValueError("token: an FCM registration token is required")
     env = "sandbox" if str(body.get("env") or "prod").lower() == "sandbox" else "prod"
     locale = str(body.get("locale") or "es")[:5]
     wakes = [t for t in _parse_instants(body.get("wakeAt")) if now - WAKE_WINDOW <= t <= now + WAKE_HORIZON][:MAX_WAKES]
@@ -208,7 +344,7 @@ class PgPushDeviceStore:
         lo, hi = (now - WAKE_WINDOW).isoformat(), now.isoformat()
         async with pool().acquire() as c:
             rows = await c.fetch(
-                """SELECT token, env, city, locale, wake_at FROM push_device
+                """SELECT token, platform, env, city, locale, wake_at FROM push_device
                     WHERE city=$1 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(wake_at) w
                                               WHERE w BETWEEN $2 AND $3)""", city, lo, hi)
         return [dict(r, wake_at=json.loads(r["wake_at"]) if isinstance(r["wake_at"], str) else r["wake_at"])
@@ -225,7 +361,7 @@ class PgPushDeviceStore:
     async def following(self, city, route_ids):
         async with pool().acquire() as c:
             rows = await c.fetch(
-                """SELECT token, env, city, locale, routes, alerts_sent FROM push_device
+                """SELECT token, platform, env, city, locale, routes, alerts_sent FROM push_device
                     WHERE city=$1 AND routes ?| $2::text[]""", city, list(route_ids))
         out = []
         for r in rows:
@@ -257,12 +393,20 @@ class PgPushDeviceStore:
 # ------------------------------------------------------------------ the two passes
 
 
-async def push_wakes(store: PushDeviceStore, client: ApnsClient, city: str, now: dt.datetime) -> int:
-    """Silent wake-ups due now. Returns how many were delivered."""
+def _sender_for(senders: dict, device: dict):
+    """The transport for this device, or None when its platform has none configured — which is a normal
+    state, not an error: a city may run APNs only, FCM only, or neither."""
+    return senders.get(str(device.get("platform") or "ios").lower())
+
+
+async def push_wakes(store: PushDeviceStore, senders: dict, city: str, now: dt.datetime) -> int:
+    """Silent wake-ups due now, over each device's own transport. Returns how many were delivered."""
     n = 0
     for d in await store.due_wakes(city, now):
-        ok, reason = await client.send(d["token"], silent_wake_payload(), env=d.get("env", "prod"),
-                                       background=True, collapse_id="tripRefresh")
+        sender = _sender_for(senders, d)
+        if sender is None:
+            continue
+        ok, reason = await sender.send(d["token"], silent_wake_payload(), env=d.get("env", "prod"))
         await store.consume_wake(d["token"], now)
         if ok:
             n += 1
@@ -277,7 +421,7 @@ def alerts_to_push(alerts: list[dict], seen: set[str]) -> list[dict]:
     return [a for a in alerts if a.get("id") and a.get("routeIds") and str(a["id"]) not in seen]
 
 
-async def push_alerts(store: PushDeviceStore, client: ApnsClient, city: str, alerts: list[dict],
+async def push_alerts(store: PushDeviceStore, senders: dict, city: str, alerts: list[dict],
                       route_names: dict[str, str], seen: set[str], today_counts: dict[str, int]) -> int:
     """New alerts to the devices following one of their routes; at most a few per device per day."""
     n = 0
@@ -285,13 +429,15 @@ async def push_alerts(store: PushDeviceStore, client: ApnsClient, city: str, ale
         aid = str(a["id"])
         seen.add(aid)
         for d in await store.following(city, set(a["routeIds"])):
+            sender = _sender_for(senders, d)
+            if sender is None:
+                continue
             if aid in (d.get("alerts_sent") or []) or today_counts.get(d["token"], 0) >= MAX_ALERT_PUSHES_PER_DAY:
                 continue
             names = [route_names.get(r, r) for r in a["routeIds"] if r in set(d.get("routes") or [])]
-            payload = alert_payload(a, names, d.get("locale") or "es")
-            payload["location"] = payload["location"].replace("{city}", city)
-            ok, reason = await client.send(d["token"], payload, env=d.get("env", "prod"),
-                                           collapse_id=f"alert-{aid}"[:64])
+            msg = alert_payload(a, names, d.get("locale") or "es")
+            msg = replace(msg, data={**msg.data, "location": str(msg.data["location"]).replace("{city}", city)})
+            ok, reason = await sender.send(d["token"], msg, env=d.get("env", "prod"))
             await store.record_alert(d["token"], aid)
             if ok:
                 n += 1

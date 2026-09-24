@@ -35,6 +35,17 @@ components:
   - { id: tram, label: "Tramway", color: "#0072CE", icon: tram }
   - { id: bus,  label: "Busway",  color: "#E4002B", icon: bus }
 config:
+  push:
+    reminders: true
+    apns:
+      key_id: ${APNS_KEY_ID:-}
+      team_id: ${APNS_TEAM_ID:-6DTDJCKC8X}
+      bundle_id: com.jeronimotech.opentransit
+      key_p8: "${APNS_KEY_P8:-}"     # base64 of the .p8 (one line)
+    fcm:
+      # base64 of the whole service-account JSON, on one line (a raw multi-line value would tear
+      # this file apart at start-up, which is how the APNs key once took the API down).
+      service_account_json: "${FCM_SERVICE_ACCOUNT_JSON:-}"
   vehicle_poll_seconds: 60
   departures_refresh_seconds: 30
   features: { liveVehicles: false, board: true, pois: true, followAlong: true, bike: true }

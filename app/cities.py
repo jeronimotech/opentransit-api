@@ -1,5 +1,6 @@
 """City (tenant) registry. Loaded once from cities/*.yaml; `${VAR}` / `${VAR:-default}` are expanded."""
 import base64
+import json
 import logging
 import math
 import os
@@ -216,17 +217,72 @@ class ApnsConfig(BaseModel):
         return None
 
 
+class FcmConfig(BaseModel):
+    """Firebase Cloud Messaging (HTTP v1) for Android, the counterpart of [ApnsConfig].
+
+    The whole service-account JSON goes in `service_account_json`, base64 on one line — a raw multi-line
+    value tears the city YAML apart at start-up, which is exactly how the APNs key broke production once.
+    `project_id`, `client_email` and `private_key` are read from that JSON unless given explicitly.
+    Empty by default: Android then relies on its own alarms and WorkManager, as it did before v2.5."""
+    project_id: str | None = None
+    client_email: str | None = None
+    private_key: str | None = None
+    service_account_json: str | None = None
+
+    def _account(self) -> dict:
+        raw = (self.service_account_json or "").strip()
+        if not raw:
+            return {}
+        if not raw.startswith("{"):
+            try:
+                raw = base64.b64decode(raw).decode()
+            except (ValueError, UnicodeDecodeError):
+                return {}
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    @property
+    def credentials(self) -> tuple[str, str, str] | None:
+        """(project_id, client_email, private_key PEM), or None when anything is missing."""
+        acct = self._account()
+        project = self.project_id or acct.get("project_id")
+        email = self.client_email or acct.get("client_email")
+        key = self.private_key or acct.get("private_key")
+        if not (project and email and key):
+            return None
+        return str(project), str(email), str(key).replace("\\n", "\n")
+
+    @property
+    def configured(self) -> bool:
+        return self.credentials is not None
+
+
 class PushConfig(BaseModel):
     """Optional server-driven Live Activity updates (v1.7 A4). Disabled means the client drives them.
-    v2.3 `reminders`: the silent wake-up that lets an iPhone re-plan a scheduled trip twenty minutes
-    before leaving, and alert pushes for the routes a device follows — anonymous device tokens only."""
+    v2.3 `reminders`: the silent wake-up that lets a phone re-plan a scheduled trip twenty minutes
+    before leaving, and alert pushes for the routes a device follows — anonymous device tokens only.
+    v2.5: Android too, through FCM. Either transport may be configured alone; a device whose platform
+    has no transport simply never gets a push, and its own alarms still fire."""
     enabled: bool = False
     reminders: bool = False
     apns: ApnsConfig = ApnsConfig()
+    fcm: FcmConfig = FcmConfig()
 
     @property
     def reminders_active(self) -> bool:
-        return self.reminders and self.apns.configured
+        return self.reminders and (self.apns.configured or self.fcm.configured)
+
+    def platforms(self) -> set[str]:
+        """Platforms this city can actually reach right now."""
+        out = set()
+        if self.apns.configured:
+            out.add("ios")
+        if self.fcm.configured:
+            out.add("android")
+        return out
 
 
 class AssistantConfig(BaseModel):

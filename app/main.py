@@ -26,7 +26,7 @@ from .oidc import OidcService, PgOidcStateStore, configured_providers
 from .openmobility import PgOpenMobilityStore, refresh_from_pim, refresh_from_url
 from .otp import OtpClient
 from .places import PgGeocodeCache, PgPlaceAreaStore, refresh_place_areas
-from .push import ApnsClient, PgPushDeviceStore, push_alerts, push_wakes
+from .push import ApnsClient, FcmClient, PgPushDeviceStore, push_alerts, push_wakes
 from .routers import (
     admin,
     alerts,
@@ -185,21 +185,30 @@ async def _open_mobility_loop(app: FastAPI, stop: asyncio.Event) -> None:
             await asyncio.wait_for(stop.wait(), timeout=300)
 
 
-def _apns_for(rt) -> ApnsClient | None:
+def _senders_for(rt) -> dict:
+    """One transport per platform this city can reach: APNs for iOS, FCM for Android. Either may be
+    missing — a city with only one of them still pushes to that one, and devices on the other keep
+    relying on their own alarms."""
     cfg = rt.city.config.push
     if not cfg.reminders_active:
-        return None
+        return {}
+    out: dict = {}
     key = cfg.apns.private_key()
-    if not key:
-        return None
-    return ApnsClient(key_id=cfg.apns.key_id, team_id=cfg.apns.team_id, private_key=key, bundle_id=cfg.apns.bundle_id)
+    if key and cfg.apns.configured:
+        out["ios"] = ApnsClient(key_id=cfg.apns.key_id, team_id=cfg.apns.team_id, private_key=key,
+                                bundle_id=cfg.apns.bundle_id)
+    creds = cfg.fcm.credentials
+    if creds:
+        project, email, private_key = creds
+        out["android"] = FcmClient(project_id=project, client_email=email, private_key=private_key)
+    return out
 
 
 async def _push_loop(app: FastAPI, stop: asyncio.Event) -> None:
     """Every minute: the silent wake-ups that are due, and alert pushes for newly active alerts on the
     routes devices follow. A failing APNs never takes the API down."""
     store = app.state.push_devices
-    clients: dict[str, ApnsClient] = {}
+    clients: dict[str, dict] = {}
     seen: dict[str, set[str]] = {}
     counts: dict[str, dict[str, int]] = {}
     day = ""
@@ -210,21 +219,24 @@ async def _push_loop(app: FastAPI, stop: asyncio.Event) -> None:
             day = today
         for rt in app.state.cities.values():
             cid = rt.city.id
-            client = clients.get(cid) or _apns_for(rt)
-            if client is None:
+            senders = clients.get(cid) or _senders_for(rt)
+            if not senders:
                 continue
-            clients[cid] = client
+            clients[cid] = senders
             status = app.state.push_status.setdefault(cid, {})
             try:
                 now = dt.datetime.now(dt.UTC)
-                woke = await push_wakes(store, client, cid, now)
+                woke = await push_wakes(store, senders, cid, now)
                 names = {rid: (r.get("short_name") or r.get("shortName") or rid)
                          for rid, r in rt.rt.route_index.items()}
                 alerts = rt.rt.active_alerts()
-                pushed = await push_alerts(store, client, cid, alerts, names, seen.setdefault(cid, set()),
+                pushed = await push_alerts(store, senders, cid, alerts, names, seen.setdefault(cid, set()),
                                            counts.setdefault(cid, {}))
-                status.update({"ok": True, "at": _utc_iso(), "error": None, "sent": client.sent,
-                               "failed": client.failed, "lastError": client.last_error})
+                last = next((s.last_error for s in senders.values() if s.last_error), None)
+                status.update({"ok": True, "at": _utc_iso(), "error": None,
+                               "sent": sum(s.sent for s in senders.values()),
+                               "failed": sum(s.failed for s in senders.values()),
+                               "platforms": sorted(senders), "lastError": last})
                 if woke or pushed:
                     log.info("[%s] push: %d wake-up(s), %d alert(s)", cid, woke, pushed)
             except Exception as e:  # noqa: BLE001
@@ -232,8 +244,9 @@ async def _push_loop(app: FastAPI, stop: asyncio.Event) -> None:
                 log.exception("[%s] push pass failed", cid)
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=60)
-    for c in clients.values():
-        await c.aclose()
+    for senders in clients.values():
+        for c in senders.values():
+            await c.aclose()
 
 
 async def _place_areas_loop(app: FastAPI, stop: asyncio.Event) -> None:
