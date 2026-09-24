@@ -43,7 +43,7 @@ def test_effective_merge_keeps_yaml_defaults(bogota: City):
     assert city.landing.hero.title == "Hola"
     assert city.landing.hero.subtitle == bogota.landing.hero.subtitle
     assert city.landing.enabled is False
-    assert len(city.landing.highlights) == 11
+    assert len(city.landing.highlights) == 12
 
 
 @pytest.mark.parametrize("patch,path", [
