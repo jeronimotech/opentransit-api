@@ -1,0 +1,20 @@
+{
+  "transitModelTimeZone": "Europe/Lisbon",
+  "transitServiceStart": "-P1M",
+  "transitServiceEnd": "P6M",
+  "maxDataImportIssuesPerFile": 1000,
+  "osmCacheDataInMem": true,
+  "osm": [
+    {
+      "source": "file:///var/opentripplanner/lisboa.osm.pbf",
+      "osmTagMapping": "default"
+    }
+  ],
+  "transitFeeds": [
+    {
+      "type": "gtfs",
+      "feedId": "lisboa",
+      "source": "file:///var/opentripplanner/lisboa-gtfs.zip"
+    }
+  ]
+}

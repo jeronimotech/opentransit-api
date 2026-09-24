@@ -1,0 +1,20 @@
+{
+  "transitModelTimeZone": "Africa/Casablanca",
+  "transitServiceStart": "-P1M",
+  "transitServiceEnd": "P6M",
+  "maxDataImportIssuesPerFile": 1000,
+  "osmCacheDataInMem": true,
+  "osm": [
+    {
+      "source": "file:///var/opentripplanner/casablanca.osm.pbf",
+      "osmTagMapping": "default"
+    }
+  ],
+  "transitFeeds": [
+    {
+      "type": "gtfs",
+      "feedId": "casablanca",
+      "source": "file:///var/opentripplanner/casablanca-gtfs.zip"
+    }
+  ]
+}

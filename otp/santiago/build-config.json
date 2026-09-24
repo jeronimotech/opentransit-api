@@ -1,0 +1,20 @@
+{
+  "transitModelTimeZone": "America/Santiago",
+  "transitServiceStart": "-P1M",
+  "transitServiceEnd": "P6M",
+  "maxDataImportIssuesPerFile": 1000,
+  "osmCacheDataInMem": true,
+  "osm": [
+    {
+      "source": "file:///var/opentripplanner/santiago.osm.pbf",
+      "osmTagMapping": "default"
+    }
+  ],
+  "transitFeeds": [
+    {
+      "type": "gtfs",
+      "feedId": "santiago",
+      "source": "file:///var/opentripplanner/santiago-gtfs.zip"
+    }
+  ]
+}

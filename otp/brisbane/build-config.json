@@ -1,0 +1,20 @@
+{
+  "transitModelTimeZone": "Australia/Brisbane",
+  "transitServiceStart": "-P1M",
+  "transitServiceEnd": "P6M",
+  "maxDataImportIssuesPerFile": 1000,
+  "osmCacheDataInMem": true,
+  "osm": [
+    {
+      "source": "file:///var/opentripplanner/brisbane.osm.pbf",
+      "osmTagMapping": "default"
+    }
+  ],
+  "transitFeeds": [
+    {
+      "type": "gtfs",
+      "feedId": "brisbane",
+      "source": "file:///var/opentripplanner/brisbane-gtfs.zip"
+    }
+  ]
+}

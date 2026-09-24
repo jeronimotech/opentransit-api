@@ -1,0 +1,20 @@
+{
+  "transitModelTimeZone": "America/New_York",
+  "transitServiceStart": "-P1M",
+  "transitServiceEnd": "P6M",
+  "maxDataImportIssuesPerFile": 1000,
+  "osmCacheDataInMem": true,
+  "osm": [
+    {
+      "source": "file:///var/opentripplanner/boston.osm.pbf",
+      "osmTagMapping": "default"
+    }
+  ],
+  "transitFeeds": [
+    {
+      "type": "gtfs",
+      "feedId": "boston",
+      "source": "file:///var/opentripplanner/boston-gtfs.zip"
+    }
+  ]
+}

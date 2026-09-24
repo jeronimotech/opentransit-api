@@ -1,0 +1,20 @@
+{
+  "transitModelTimeZone": "Europe/Rome",
+  "transitServiceStart": "-P1M",
+  "transitServiceEnd": "P6M",
+  "maxDataImportIssuesPerFile": 1000,
+  "osmCacheDataInMem": true,
+  "osm": [
+    {
+      "source": "file:///var/opentripplanner/roma.osm.pbf",
+      "osmTagMapping": "default"
+    }
+  ],
+  "transitFeeds": [
+    {
+      "type": "gtfs",
+      "feedId": "roma",
+      "source": "file:///var/opentripplanner/roma-gtfs.zip"
+    }
+  ]
+}

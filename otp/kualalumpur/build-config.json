@@ -1,0 +1,20 @@
+{
+  "transitModelTimeZone": "Asia/Kuala_Lumpur",
+  "transitServiceStart": "-P1M",
+  "transitServiceEnd": "P6M",
+  "maxDataImportIssuesPerFile": 1000,
+  "osmCacheDataInMem": true,
+  "osm": [
+    {
+      "source": "file:///var/opentripplanner/kualalumpur.osm.pbf",
+      "osmTagMapping": "default"
+    }
+  ],
+  "transitFeeds": [
+    {
+      "type": "gtfs",
+      "feedId": "kualalumpur",
+      "source": "file:///var/opentripplanner/kualalumpur-gtfs.zip"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "server": {
+    "apiProcessingTimeout": "30s"
+  },
+  "routingDefaults": {
+    "_comment": "Few feeds publish usable trip/stop accessibility data, so unknown is allowed with a cost instead of excluding every trip in wheelchair mode.",
+    "wheelchairAccessibility": {
+      "trip": {
+        "onlyConsiderAccessible": false,
+        "unknownCost": 600,
+        "inaccessibleCost": 3600
+      },
+      "stop": {
+        "onlyConsiderAccessible": false,
+        "unknownCost": 600,
+        "inaccessibleCost": 3600
+      },
+      "elevator": {
+        "onlyConsiderAccessible": false,
+        "unknownCost": 20,
+        "inaccessibleCost": 3600
+      },
+      "inaccessibleStreetReluctance": 25.0,
+      "maxSlope": 0.083,
+      "slopeExceededReluctance": 1.0,
+      "stairsReluctance": 100.0
+    },
+    "maxDirectStreetDuration": "PT3H"
+  },
+  "updaters": [
+    {
+      "type": "stop-time-updater",
+      "frequency": "30s",
+      "url": "https://romamobilita.it/sites/default/files/rome_rtgtfs_trip_updates_feed.pb",
+      "feedId": "roma",
+      "fuzzyTripMatching": false
+    },
+    {
+      "type": "real-time-alerts",
+      "frequency": "60s",
+      "url": "https://romamobilita.it/sites/default/files/rome_rtgtfs_service_alerts_feed.pb",
+      "feedId": "roma"
+    },
+    {
+      "type": "vehicle-positions",
+      "frequency": "20s",
+      "url": "https://romamobilita.it/sites/default/files/rome_rtgtfs_vehicle_positions_feed.pb",
+      "feedId": "roma",
+      "fuzzyTripMatching": false,
+      "features": [
+        "position"
+      ]
+    }
+  ]
+}

@@ -324,7 +324,7 @@ async def plan(
     wheelchair: bool = False,
     numItineraries: int = Query(5, ge=1, le=10),
     maxWalkDistance: int = Query(1500, ge=100, le=10000),
-    locale: str = Query("es", pattern="^(es|en)$"),
+    locale: str = Query("es", pattern="^(es|en|it|pt|fr|ms|ar)$"),
     fromName: str | None = Query(None, max_length=120, description="label for the origin, echoed back"),
     toName: str | None = Query(None, max_length=120, description="label for the destination, echoed back"),
 ):
@@ -483,7 +483,7 @@ async def plan_forecast(
     maxOptions: int = Query(8, ge=2, le=12),
     arriveBy: bool = False,
     wheelchair: bool = False,
-    locale: str = Query("es", pattern="^(es|en)$"),
+    locale: str = Query("es", pattern="^(es|en|it|pt|fr|ms|ar)$"),
     fromName: str | None = Query(None, max_length=120),
     toName: str | None = Query(None, max_length=120),
 ):

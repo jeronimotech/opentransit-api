@@ -1,0 +1,48 @@
+{
+  "server": {
+    "apiProcessingTimeout": "30s"
+  },
+  "routingDefaults": {
+    "_comment": "Few feeds publish usable trip/stop accessibility data, so unknown is allowed with a cost instead of excluding every trip in wheelchair mode.",
+    "wheelchairAccessibility": {
+      "trip": {
+        "onlyConsiderAccessible": false,
+        "unknownCost": 600,
+        "inaccessibleCost": 3600
+      },
+      "stop": {
+        "onlyConsiderAccessible": false,
+        "unknownCost": 600,
+        "inaccessibleCost": 3600
+      },
+      "elevator": {
+        "onlyConsiderAccessible": false,
+        "unknownCost": 20,
+        "inaccessibleCost": 3600
+      },
+      "inaccessibleStreetReluctance": 25.0,
+      "maxSlope": 0.083,
+      "slopeExceededReluctance": 1.0,
+      "stairsReluctance": 100.0
+    },
+    "maxDirectStreetDuration": "PT3H"
+  },
+  "updaters": [
+    {
+      "type": "real-time-alerts",
+      "frequency": "60s",
+      "url": "https://api.carrismetropolitana.pt/alerts.pb",
+      "feedId": "lisboa"
+    },
+    {
+      "type": "vehicle-positions",
+      "frequency": "20s",
+      "url": "https://api.carrismetropolitana.pt/vehicles.pb",
+      "feedId": "lisboa",
+      "fuzzyTripMatching": false,
+      "features": [
+        "position"
+      ]
+    }
+  ]
+}

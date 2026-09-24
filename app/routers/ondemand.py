@@ -69,7 +69,7 @@ async def estimate(request: Request, rt: CityRuntime = Depends(city_runtime),
                    providerId: str | None = None,
                    options: str | None = Query(None, description="comma list of optional surcharge ids, e.g. door"),
                    fromName: str | None = Query(None, max_length=120), toName: str | None = Query(None, max_length=120),
-                   locale: str = Query("es", pattern="^(es|en)$")):
+                   locale: str = Query("es", pattern="^(es|en|it|pt|fr|ms|ar)$")):
     """Car route (OTP) + one quote per provider: taxi tariff estimate, or "price in the app"."""
     _require(rt)
     city = rt.city
