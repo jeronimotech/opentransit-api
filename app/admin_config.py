@@ -65,7 +65,8 @@ SERVICE_ICONS = ("card", "report", "help", "link", "bike", "parking", "taxi", "t
 LANDING_ICONS = ("route", "live", "board", "bike", "open", "alert", "accessibility", "favorites", "offline", "map",
                  "ticket", "info",
                  # v2.3: taxi / ride-hailing, park & ride, scheduled trips, follow-along, the assistant
-                 "taxi", "parking", "alarm", "go", "chat")
+                 "taxi", "parking", "alarm", "go", "chat",
+                 "globe")  # v2.4: seven UI languages
 
 
 # ------------------------------------------------------------------ strict validation (camelCase, public shape)

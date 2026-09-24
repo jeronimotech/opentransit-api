@@ -72,6 +72,7 @@ landing:
     - { icon: alarm, title: "Scheduled trips", text: "Home → Work by 9:00, or an appointment tomorrow: a reminder the evening before, twenty minutes before leaving with live data, and when it is time to go." }
     - { icon: go,    title: "Follow along", text: "Your trip on the lock screen, the Dynamic Island and Apple Watch: when your bus comes, when to get off and how long is left." }
     - { icon: open,  title: "Open data", text: "Built on Prasarana's GTFS and GTFS-Realtime published on data.gov.my. No accounts, no trackers, no ads; your trips and favourites stay on your device." }
+    - { icon: globe, title: "In your language", text: "Bahasa Melayu, English, Arabic, Spanish, Portuguese, French and Italian: the app speaks the language of whoever uses it, visitors included." }
   screenshots: []
   stats: { show: true, items: [routes, stops, vehiclesLive] }
   partners:

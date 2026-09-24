@@ -85,6 +85,7 @@ landing:
     - { icon: alarm, title: "Viaggi programmati", text: "Casa → Lavoro alle 9:00, o un appuntamento domani: un promemoria la sera prima, venti minuti prima di partire con dati live, e quando è ora di uscire." }
     - { icon: go,    title: "Segui il viaggio", text: "Il tuo viaggio sulla schermata di blocco, nella Dynamic Island e su Apple Watch: quando arriva il mezzo, dove scendere e quanto manca." }
     - { icon: open,  title: "Dati aperti", text: "Costruito sui GTFS e GTFS-Realtime di Roma Servizi per la Mobilità. Niente account, niente tracker, niente pubblicità; viaggi e preferiti restano sul tuo dispositivo." }
+    - { icon: globe, title: "Nella tua lingua", text: "Italiano, inglese, spagnolo, portoghese, francese, malese e arabo: l’app parla la lingua di chi la usa, anche di chi visita Roma." }
   screenshots: []
   stats: { show: true, items: [routes, stops, vehiclesLive, alertsActive] }
   partners:

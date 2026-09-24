@@ -146,6 +146,7 @@ landing:
     - { icon: alarm, title: "Scheduled trips", text: "Home → Work by 9:00, or an appointment tomorrow: a reminder the evening before, twenty minutes before leaving with live data, and when it is time to go." }
     - { icon: go,    title: "Follow along", text: "Your trip on the lock screen, the Dynamic Island and Apple Watch: when your streetcar comes, when to get off and how long is left." }
     - { icon: open,  title: "Open data", text: "Built on the City of Toronto's GTFS and the TTC's GTFS-Realtime. No accounts, no trackers, no ads; your trips and favourites stay on your device." }
+    - { icon: globe, title: "In your language", text: "English, Spanish, Portuguese, French, Italian, Malay and Arabic: the app speaks the language of whoever uses it, visitors included." }
   stats: { show: true, items: [routes, stops, vehiclesLive, bikeStations, alertsActive] }
   partners:
     - { name: "Toronto Transit Commission", logo_url: null, url: https://www.ttc.ca, role: "GTFS and GTFS-Realtime" }

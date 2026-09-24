@@ -26,7 +26,7 @@ def _app(bogota: City) -> tuple[FastAPI, CityRuntime]:
 
 def test_yaml_landing_and_fallbacks(bogota: City):
     ld = bogota.landing_public()
-    assert ld["enabled"] and len(ld["highlights"]) == 11 and len(ld["screenshots"]) == 6
+    assert ld["enabled"] and len(ld["highlights"]) == 12 and len(ld["screenshots"]) == 6
     assert ld["theme"]["primaryColor"] == bogota.branding.primary_color          # null -> branding
     assert ld["footer"]["privacyUrl"] == bogota.links.privacy                   # null -> links.privacy
     assert ld["footer"]["attribution"] == bogota.attribution

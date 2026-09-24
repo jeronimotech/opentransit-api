@@ -78,6 +78,7 @@ landing:
     - { icon: alarm, title: "Viagens programadas", text: "Casa → Trabalho às 9:00, ou uma consulta amanhã: um aviso na véspera, vinte minutos antes de sair com dados em tempo real, e na hora de sair." }
     - { icon: go,    title: "Acompanhar a viagem", text: "A tua viagem no ecrã bloqueado, na Dynamic Island e no Apple Watch: quando chega o autocarro, onde sair e quanto falta." }
     - { icon: open,  title: "Dados abertos", text: "Construído sobre o GTFS e o GTFS-Realtime da Carris Metropolitana. Sem contas, sem rastreadores, sem publicidade; viagens e favoritos ficam no teu dispositivo." }
+    - { icon: globe, title: "Na tua língua", text: "Português, inglês, espanhol, francês, italiano, malaio e árabe: a app fala a língua de quem a usa, também de quem visita Lisboa." }
   screenshots: []
   stats: { show: true, items: [routes, stops, vehiclesLive, alertsActive] }
   partners:

@@ -359,6 +359,7 @@ landing:
     - { icon: map,     title: "Direcciones de Bogotá",   text: "Escribe «Cra 7 # 72-41», «Calle 127 con Carrera 7» o un barrio: resolvemos la nomenclatura con el geocodificador de Catastro." }
     - { icon: chat,    title: "Pregúntame",              text: "Un asistente que planea y consulta con los datos de la app, nunca de memoria, y responde con tarjetas que abren la pantalla real." }
     - { icon: open,    title: "Datos abiertos y privacidad", text: "GTFS, GTFS-Realtime, GBFS y CDS publicados por la ciudad. Sin cuentas ni rastreadores; tus viajes y favoritos viven en tu dispositivo." }
+    - { icon: globe, title: "En tu idioma", text: "Español, inglés, portugués, francés, italiano, malayo y árabe: la app habla el idioma de quien la usa, también de quien visita Bogotá." }
   screenshots:
     - { url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/hub-mobile-live-api.png,       alt: "Mapa en vivo con paradas cercanas", kind: mobile }
     - { url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/next-mobile-live-api.png,      alt: "Ubica tu bus: próximos buses en tu estación", kind: mobile }

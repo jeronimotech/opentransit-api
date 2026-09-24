@@ -63,6 +63,7 @@ landing:
     - { icon: alarm, title: "Trajets programmés", text: "Maison → Travail à 9h00, ou un rendez-vous demain : un rappel la veille, vingt minutes avant de partir, et au moment de partir." }
     - { icon: go,    title: "Suivre le trajet", text: "Votre trajet sur l’écran de verrouillage, la Dynamic Island et l’Apple Watch : quand descendre et combien de temps il reste." }
     - { icon: open,  title: "Données ouvertes", text: "Construit sur un GTFS communautaire du réseau Casa Tramway. Sans compte, sans traceur, sans publicité ; vos trajets et favoris restent sur votre appareil." }
+    - { icon: globe, title: "Dans votre langue", text: "Français, arabe, anglais, espagnol, portugais, italien et malais : l’application parle la langue de celui qui l’utilise, visiteurs compris." }
   screenshots: []
   stats: { show: true, items: [routes, stops] }
   partners:

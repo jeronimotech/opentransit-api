@@ -97,6 +97,7 @@ landing:
     - { icon: alarm, title: "Viajes programados", text: "Casa → Trabajo a las 9:00, o una cita mañana: te avisamos la noche anterior, 20 minutos antes de salir y a la hora de salir." }
     - { icon: go,    title: "Iniciar viaje", text: "Sigue tu viaje en pantalla de bloqueo, Dynamic Island y Apple Watch: cuándo bajarte y cuánto falta." }
     - { icon: open,  title: "Datos abiertos", text: "Construido sobre el GTFS del DTPM y el GBFS de Bike Santiago. Sin cuentas ni rastreadores; tus viajes y favoritos viven en tu dispositivo." }
+    - { icon: globe, title: "En tu idioma", text: "Español, inglés, portugués, francés, italiano, malayo y árabe: la app habla el idioma de quien la usa, también de quien visita Santiago." }
   screenshots: []
   stats: { show: true, items: [routes, stops, bikeStations] }
   partners:
