@@ -115,9 +115,24 @@ def parse_trip_updates(
     return delays, nxt, by_stop
 
 
-def parse_positions(msg: gtfsrt.FeedMessage, known_trips: set[str] | None) -> tuple[list[dict], list[int], int]:
-    """Vehicles as flat dicts (raw GTFS ids, no feed prefix), sorted entity timestamps, unresolved count."""
-    ents, ages, unresolved = [], [], 0
+def norm_gtfs_time(t: str | None) -> str:
+    """`H:MM:SS` and `HH:MM:SS` are the same instant; GTFS allows both and feeds mix them. Times past
+    midnight (`25:10:00`) are left alone, because that is what the schedule means."""
+    t = (t or "").strip()
+    return f"0{t}" if len(t) == 7 else t
+
+
+def parse_positions(msg: gtfsrt.FeedMessage, known_trips: set[str] | None,
+                    schedule_index: dict[tuple[str, str], str] | None = None,
+                    ) -> tuple[list[dict], list[int], int, int]:
+    """Vehicles as flat dicts (raw GTFS ids, no feed prefix), sorted timestamps, unresolved, rescued.
+
+    Some feeds invent a trip_id for every vehicle they cannot match to their own schedule and mark it
+    `ADDED` — in Bogotá that is all of the 11-12 % that used to come back unresolved, none of which
+    is a genuinely extra trip. When the route and the start time name exactly one scheduled trip, the
+    vehicle is matched to it and `tripMatch` records that the match came from the schedule and not
+    from an id, so nothing downstream has to pretend it was exact."""
+    ents, ages, unresolved, rescued = [], [], 0, 0
     for e in msg.entity:
         if not e.HasField("vehicle"):
             continue
@@ -126,6 +141,12 @@ def parse_positions(msg: gtfsrt.FeedMessage, known_trips: set[str] | None) -> tu
             continue
         tid = v.trip.trip_id or None
         resolved = bool(tid) and (known_trips is None or tid in known_trips)
+        match = "id" if resolved else None
+        if not resolved and schedule_index and v.trip.route_id and v.trip.start_time:
+            found = schedule_index.get((v.trip.route_id, norm_gtfs_time(v.trip.start_time)))
+            if found:
+                tid, resolved, match = found, True, "schedule"
+                rescued += 1
         if not resolved:
             unresolved += 1
         if v.timestamp:
@@ -136,6 +157,7 @@ def parse_positions(msg: gtfsrt.FeedMessage, known_trips: set[str] | None) -> tu
             "routeId": v.trip.route_id or None,
             "tripId": tid,
             "tripResolved": resolved,
+            "tripMatch": match,
             "lat": round(v.position.latitude, 5),
             "lon": round(v.position.longitude, 5),
             "bearing": round(v.position.bearing, 1) if v.position.HasField("bearing") else None,
@@ -146,7 +168,7 @@ def parse_positions(msg: gtfsrt.FeedMessage, known_trips: set[str] | None) -> tu
             if v.HasField("occupancy_status") else None,
         })
     ages.sort()
-    return ents, ages, unresolved
+    return ents, ages, unresolved, rescued
 
 
 # Bogotá's GTFS-RT publishes no bearing at all (0 of ~6.4k vehicles), so it is derived from consecutive
@@ -184,6 +206,9 @@ class RTCache:
         # stop_id -> arrivals predicted for it, soonest first. Usable when the feed's
         # trip ids do not match the schedule's.
         self.stop_arrivals: dict[str, list[dict]] = {}
+        # (route_id, first departure) -> trip_id, for feeds that invent trip ids: see parse_positions.
+        self.schedule_index: dict[tuple[str, str], str] = {}
+        self.n_trip_rescued: int = 0
         self.alerts: list[dict] = []
         self.alerts_by_route: dict[str, list[int]] = {}
         self.alerts_by_stop: dict[str, list[int]] = {}
@@ -203,8 +228,11 @@ class RTCache:
         self._subs: set[asyncio.Queue] = set()
 
     # ---- static helpers ----
-    def set_static(self, routes: dict[str, dict], trips: set[str], headsigns: dict[str, str]) -> None:
+    def set_static(self, routes: dict[str, dict], trips: set[str], headsigns: dict[str, str],
+                   schedule_index: dict[tuple[str, str], str] | None = None) -> None:
         self.route_index, self.known_trips, self.trip_headsign = routes, trips, headsigns
+        if schedule_index is not None:
+            self.schedule_index = schedule_index
 
     def component(self, route_id: str | None) -> str | None:
         r = self.route_index.get(route_id or "")
@@ -229,10 +257,17 @@ class RTCache:
 
     # ---- frames ----
     def health(self) -> dict:
+        n = max(len(self.vehicles), 1)
+        measurable = self.known_trips is not None and self.vehicles
         return {
             "entityAgeP50Seconds": int(time.time() - self.entity_ts_p50) if self.entity_ts_p50 else None,
-            "pctTripResolved": round(100 * (1 - self.n_trip_unresolved / max(len(self.vehicles), 1)), 2)
-            if self.known_trips is not None and self.vehicles else None,
+            "pctTripResolved": round(100 * (1 - self.n_trip_unresolved / n), 2) if measurable else None,
+            # How much of that came from the schedule rather than a matching id, and what the rate
+            # would be without the rescue — so the number stays readable as the feed changes.
+            "pctTripResolvedById": round(100 * (1 - (self.n_trip_unresolved + self.n_trip_rescued) / n), 2)
+            if measurable else None,
+            "tripsRescuedBySchedule": self.n_trip_rescued if measurable else None,
+            "scheduleIndexPairs": len(self.schedule_index) or None,
             "httpStatus": self.http_status,
         }
 
@@ -312,11 +347,12 @@ class RTCache:
             self.trip_delays, self.trip_next, self.stop_arrivals = parse_trip_updates(tu)
         if pos is None:
             return
-        ents, ages, unresolved = parse_positions(pos, self.known_trips)
+        ents, ages, unresolved, rescued = parse_positions(pos, self.known_trips, self.schedule_index)
         self.delta = self._compute_delta(self.by_id, ents) if self.by_id else None
         self.vehicles = ents
         self.by_id = {e["id"]: e for e in ents}
         self.n_trip_unresolved = unresolved
+        self.n_trip_rescued = rescued
         self.header_ts = pos.header.timestamp
         self.entity_ts_p50 = ages[len(ages) // 2] if ages else 0
         self.updated_at = time.time()

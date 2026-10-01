@@ -20,7 +20,7 @@ from .errors import install_error_handlers
 from .forecast import ForecastCache
 from .gbfs import GbfsNetwork
 from .graph_drift import store as drift_store
-from .gtfs_static import ingest, load_route_index, load_service_index
+from .gtfs_static import ingest, load_route_index, load_schedule_index, load_service_index
 from .logging_setup import setup_logging
 from .normalize import set_feed_flags
 from .oidc import OidcService, PgOidcStateStore, configured_providers
@@ -77,7 +77,7 @@ async def _bootstrap_static(rt: CityRuntime, do_ingest: bool) -> None:
     try:
         if do_ingest:
             await ingest(rt.city)
-        rt.rt.set_static(*await load_route_index(rt.city))
+        rt.rt.set_static(*await load_route_index(rt.city), await load_schedule_index(rt.city))
         rt.services = await load_service_index(rt.city)
         set_feed_flags(rt.city.id, rt.services.flags)
         rt.static_ready = bool(rt.rt.route_index)

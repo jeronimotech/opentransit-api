@@ -2,7 +2,7 @@ import time
 
 from google.transit import gtfs_realtime_pb2 as gtfsrt
 
-from app.rt import RTCache, parse_alerts, parse_positions, parse_trip_updates
+from app.rt import RTCache, norm_gtfs_time, parse_alerts, parse_positions, parse_trip_updates
 
 
 def _positions(ts: int) -> gtfsrt.FeedMessage:
@@ -63,15 +63,58 @@ def _alerts() -> gtfsrt.FeedMessage:
 
 
 def test_parse_positions_resolves_trips_against_static():
-    ents, ages, unresolved = parse_positions(_positions(1_700_000_000), known_trips={"T1"})
-    assert len(ents) == 2 and unresolved == 1
+    ents, ages, unresolved, rescued = parse_positions(_positions(1_700_000_000), known_trips={"T1"})
+    assert len(ents) == 2 and unresolved == 1 and rescued == 0
     v1 = next(e for e in ents if e["id"] == "V1")
     assert v1["tripResolved"] is True and v1["routeId"] == "R1" and v1["bearing"] == 90.0
+    assert v1["tripMatch"] == "id"
     assert v1["occupancy"] == "MANY_SEATS_AVAILABLE" and v1["stopId"] == "S9" and v1["stopSequence"] == 4
     assert ages == [1_699_999_990, 1_699_999_990]
+    # the one whose id is not in the schedule says so rather than claiming a match
+    v2 = next(e for e in ents if e["id"] == "V2")
+    assert v2["tripResolved"] is False and v2["tripMatch"] is None
     # without a static feed nothing is flagged unresolved
-    _, _, unresolved = parse_positions(_positions(100), known_trips=None)
+    _, _, unresolved, _ = parse_positions(_positions(100), known_trips=None)
     assert unresolved == 0
+
+
+def test_a_vehicle_whose_trip_id_the_feed_invented_is_matched_by_route_and_start_time():
+    """TransMilenio ships every vehicle it cannot match to its own schedule as `ADDED`, with a
+    trip_id that exists nowhere in its static feed — 11-12 % of the fleet, none of it a genuinely
+    extra trip. Route plus start time names the trip it is really running."""
+    m = _positions(1_700_000_000)
+    v2 = next(e.vehicle for e in m.entity if e.id == "V2")
+    v2.trip.start_time = "6:05:00"                    # the feed writes H:MM:SS, the schedule HH:MM:SS
+    v2.trip.schedule_relationship = gtfsrt.TripDescriptor.ADDED
+
+    index = {("R2", "06:05:00"): "T2"}
+    ents, _, unresolved, rescued = parse_positions(m, known_trips={"T1"}, schedule_index=index)
+    assert unresolved == 0 and rescued == 1
+    got = next(e for e in ents if e["id"] == "V2")
+    assert got["tripId"] == "T2" and got["tripResolved"] is True
+    # the match is recorded as inferred, so nothing downstream claims the id matched
+    assert got["tripMatch"] == "schedule"
+
+
+def test_the_rescue_never_guesses():
+    m = _positions(1_700_000_000)
+    v2 = next(e.vehicle for e in m.entity if e.id == "V2")
+    v2.trip.start_time = "06:05:00"
+    # a pair that names two trips is left out of the index upstream, so it simply misses
+    for index in ({}, {("R2", "07:00:00"): "T2"}, {("R9", "06:05:00"): "T2"}):
+        _, _, unresolved, rescued = parse_positions(m, known_trips={"T1"}, schedule_index=index)
+        assert (unresolved, rescued) == (1, 0)
+    # and a vehicle with no start time at all cannot be rescued
+    v2.trip.ClearField("start_time")
+    _, _, unresolved, rescued = parse_positions(m, known_trips={"T1"}, schedule_index={("R2", ""): "T2"})
+    assert (unresolved, rescued) == (1, 0)
+
+
+def test_gtfs_times_normalise_without_touching_times_past_midnight():
+    assert norm_gtfs_time("6:05:00") == "06:05:00"
+    assert norm_gtfs_time("06:05:00") == "06:05:00"
+    assert norm_gtfs_time(" 25:10:00 ") == "25:10:00"      # a trip that leaves after midnight
+    assert norm_gtfs_time(None) == "" and norm_gtfs_time("") == ""
 
 
 def test_parse_trip_updates_keeps_the_next_stop_and_every_stop():

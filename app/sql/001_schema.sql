@@ -42,6 +42,12 @@ CREATE TABLE IF NOT EXISTS trip (
   PRIMARY KEY (feed_version_id, trip_id)
 );
 
+-- v2.6 realtime rescue. The first scheduled departure of each trip, so a realtime message whose
+-- trip_id the feed invented (TransMilenio ships every unmatched vehicle as schedule_relationship
+-- ADDED, with an id that exists nowhere in its own static feed) can still be matched to the trip it
+-- is really running, by route and start time. See app/rt.py: build_schedule_index.
+ALTER TABLE trip ADD COLUMN IF NOT EXISTS start_time TEXT;
+
 CREATE TABLE IF NOT EXISTS stop (
   feed_version_id BIGINT NOT NULL REFERENCES feed_version(id) ON DELETE CASCADE,
   stop_id        TEXT NOT NULL,

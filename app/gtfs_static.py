@@ -293,8 +293,9 @@ async def ingest(city: City, force: bool = False) -> dict:
               f"#{r['route_text_color']}" if r.get("route_text_color") else None,
               comp_of_route(r["route_id"])) for r in routes.values()])
         await c.copy_records_to_table(
-            "trip", records=[(fv, *t) for t in trips],
-            columns=["feed_version_id", "trip_id", "route_id", "shape_id", "headsign", "direction_id"])
+            "trip", records=[(fv, *t, (trip_span.get(t[0]) or (None, None))[0]) for t in trips],
+            columns=["feed_version_id", "trip_id", "route_id", "shape_id", "headsign", "direction_id",
+                     "start_time"])
         await c.executemany(
             """INSERT INTO stop (feed_version_id, stop_id, stop_code, name, name_norm, lat, lon, geog,
                                  location_type, parent_station, wheelchair, component, n_routes)
@@ -344,6 +345,27 @@ async def load_service_index(city: City) -> ServiceIndex:
                                "WHERE feed_version_id=$1", fv["id"]):
             idx.exceptions[(r["service_id"], r["date"])] = r["exception_type"]
     return idx
+
+
+async def load_schedule_index(city: City) -> dict[tuple[str, str], str]:
+    """(route_id, first departure) -> trip_id, for the pairs that name exactly one trip.
+
+    This is what lets the realtime layer rescue a vehicle whose trip_id the feed made up. Ambiguous
+    pairs — two trips of the same route leaving at the same second — are left out rather than guessed:
+    there were 27 of them in Bogotá, against roughly 500 rescues."""
+    from .rt import norm_gtfs_time
+
+    async with pool().acquire() as c:
+        fv = await c.fetchval("SELECT id FROM feed_version WHERE city=$1 AND is_active LIMIT 1", city.id)
+        if not fv:
+            return {}
+        rows = await c.fetch("SELECT trip_id, route_id, start_time FROM trip "
+                             "WHERE feed_version_id=$1 AND route_id IS NOT NULL AND start_time IS NOT NULL", fv)
+    seen: dict[tuple[str, str], str | None] = {}
+    for r in rows:
+        key = (r["route_id"], norm_gtfs_time(r["start_time"]))
+        seen[key] = None if key in seen else r["trip_id"]       # None marks an ambiguous pair
+    return {k: v for k, v in seen.items() if v is not None}
 
 
 async def load_route_index(city: City) -> tuple[dict[str, dict], set[str], dict[str, str]]:
