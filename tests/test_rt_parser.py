@@ -2,7 +2,17 @@ import time
 
 from google.transit import gtfs_realtime_pb2 as gtfsrt
 
-from app.rt import RTCache, norm_gtfs_time, parse_alerts, parse_positions, parse_trip_updates
+from app.rt import (
+    BACKOFF_MAX_S,
+    BACKOFF_START_S,
+    TURNED_AWAY,
+    FeedBackoff,
+    RTCache,
+    norm_gtfs_time,
+    parse_alerts,
+    parse_positions,
+    parse_trip_updates,
+)
 
 
 def _positions(ts: int) -> gtfsrt.FeedMessage:
@@ -163,3 +173,34 @@ def test_cache_apply_builds_frames_and_deltas(bogota):
     assert cache.alerts_for("R1", [])[0]["id"] == "A1"
     assert cache.alerts_for(None, ["S9"])[0]["id"] == "A1"
     assert cache.alerts_for("R2", ["S1"]) == []
+
+
+def test_a_feed_that_turns_us_away_is_left_alone_and_backs_off():
+    """TransMilenio's proxy rate-limits with 429 and, for nine days in September, answered 403 to a
+    Railway address polling every twelve seconds. Polling straight through a refusal neither helps
+    nor ends it, so each URL steps back on its own."""
+    b = FeedBackoff()
+    url = "https://example.test/positions.pb"
+    now = 1_000_000.0
+    assert b.blocked(url, now) is False
+
+    first = b.refused(url, 429, now)
+    assert first == BACKOFF_START_S and b.blocked(url, now + first - 1)
+    assert b.blocked(url, now + first + 1) is False          # the pause ends on its own
+    assert b.snapshot(now)[url] == {"status": 429, "forSeconds": int(first)}
+
+    # a second refusal doubles the wait, up to a cap
+    second = b.refused(url, 403, now)
+    assert second == first * 2
+    for _ in range(20):
+        last = b.refused(url, 403, now)
+    assert last == BACKOFF_MAX_S
+
+    # being let in forgets all of it, so one bad minute does not punish the rest of the day
+    b.allowed(url)
+    assert b.blocked(url, now) is False and b.snapshot(now) == {}
+
+
+def test_every_status_that_means_go_away_counts():
+    assert {403, 429} <= set(TURNED_AWAY)
+    assert 200 not in TURNED_AWAY and 500 not in TURNED_AWAY   # a server error is worth retrying

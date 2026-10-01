@@ -515,8 +515,15 @@ class RealtimeHealth(Out):
     entity_age_p50_seconds: int | None = None
     vehicles: int = 0
     pct_trip_resolved: float | None = None
+    # v2.6: what the rate would be without the schedule rescue, how much of it the rescue supplied,
+    # and how many (route, start time) pairs the index holds. See app/rt.py: parse_positions.
+    pct_trip_resolved_by_id: float | None = None
+    trips_rescued_by_schedule: int | None = None
+    schedule_index_pairs: int | None = None
     alerts: int = 0
     http_status: int | None = None
+    # Feeds that turned us away and are being left alone for a while; empty in the normal case.
+    backoff: dict | None = None
     stale: bool = False
     stale_seconds: int | None = None
 

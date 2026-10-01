@@ -194,6 +194,50 @@ def derive_bearing(history, *, min_move_m: float = MIN_MOVE_M,
     return None
 
 
+# How long a feed is left alone after it turns us away, doubling on each refusal. TransMilenio's proxy
+# rate-limits with 429 near one request a second and, between 2026-09-19 and 2026-09-28, answered 403
+# for nine days to a Railway address polling every twelve seconds. Polling straight through a refusal
+# neither helps nor ends, so each URL steps back on its own and recovers the moment it is let in.
+BACKOFF_START_S = 60
+BACKOFF_MAX_S = 900
+TURNED_AWAY = (401, 403, 405, 418, 429, 451)
+
+# Service alerts change a few times a day, so asking every cycle spends a third of our request budget
+# on a file that is almost always identical.
+ALERTS_MIN_INTERVAL_S = 60
+
+
+class FeedBackoff:
+    """Per-URL pause after a refusal. Nothing persists: a restart is a fresh start, which is right —
+    the block we hit was on an address, not on us."""
+
+    def __init__(self) -> None:
+        self.until: dict[str, float] = {}
+        self.delay: dict[str, float] = {}
+        self.last_status: dict[str, int] = {}
+
+    def blocked(self, url: str, now: float | None = None) -> bool:
+        return (now or time.time()) < self.until.get(url, 0.0)
+
+    def refused(self, url: str, status: int, now: float | None = None) -> float:
+        now = now or time.time()
+        d = min(BACKOFF_MAX_S, (self.delay.get(url) or BACKOFF_START_S / 2) * 2)
+        self.delay[url] = d
+        self.until[url] = now + d
+        self.last_status[url] = status
+        return d
+
+    def allowed(self, url: str) -> None:
+        self.delay.pop(url, None)
+        self.until.pop(url, None)
+        self.last_status.pop(url, None)
+
+    def snapshot(self, now: float | None = None) -> dict:
+        now = now or time.time()
+        return {url: {"status": self.last_status.get(url), "forSeconds": int(until - now)}
+                for url, until in self.until.items() if until > now}
+
+
 class RTCache:
     """Per-city realtime state. The only thing endpoints read."""
 
@@ -216,6 +260,8 @@ class RTCache:
         self.header_ts: int = 0
         self.entity_ts_p50: int = 0
         self.fetch_ms: int = 0
+        self.alerts_fetched_at: float = 0.0
+        self.backoff = FeedBackoff()
         self.http_status: int | None = None
         self.n_trip_unresolved: int = 0
         self.known_trips: set[str] | None = None      # None until the static feed is loaded
@@ -269,6 +315,9 @@ class RTCache:
             "tripsRescuedBySchedule": self.n_trip_rescued if measurable else None,
             "scheduleIndexPairs": len(self.schedule_index) or None,
             "httpStatus": self.http_status,
+            # Feeds that turned us away and are being left alone for a while. Empty is the normal
+            # state; anything here is the reason the numbers above look wrong.
+            "backoff": self.backoff.snapshot() or None,
         }
 
     def public_vehicle(self, e: dict) -> dict:
@@ -383,8 +432,14 @@ class RTCache:
                 pass
 
 
-async def _fetch(cli: httpx.AsyncClient, url: str | None, cache: RTCache, track: bool = False):
+async def _fetch(cli: httpx.AsyncClient, url: str | None, cache: RTCache,
+                 backoff: FeedBackoff | None = None, track: bool = False):
     if not url:
+        return None
+    name = url.rsplit("/", 1)[-1]
+    if backoff is not None and backoff.blocked(url):
+        if track:
+            cache.http_status = backoff.last_status.get(url, 0)
         return None
     t0 = time.perf_counter()
     try:
@@ -392,24 +447,39 @@ async def _fetch(cli: httpx.AsyncClient, url: str | None, cache: RTCache, track:
         if track:
             cache.fetch_ms = int((time.perf_counter() - t0) * 1000)
             cache.http_status = r.status_code
+        if backoff is not None:
+            if r.status_code in TURNED_AWAY:
+                d = backoff.refused(url, r.status_code)
+                log.warning("[%s] %s answered %s; not asking again for %ds",
+                            cache.city.id, name, r.status_code, int(d))
+                return None
+            backoff.allowed(url)
         r.raise_for_status()
         m = gtfsrt.FeedMessage()
         m.ParseFromString(r.content)     # feeds are often served as text/plain: always parse as binary
         return m
     except Exception as e:  # noqa: BLE001
-        log.warning("[%s] failed to read %s: %s", cache.city.id, url.rsplit("/", 1)[-1], e)
+        log.warning("[%s] failed to read %s: %s", cache.city.id, name, e)
         if track:
             cache.http_status = 0
         return None
 
 
-async def poll_once(cache: RTCache) -> None:
+async def poll_once(cache: RTCache, backoff: FeedBackoff | None = None, now: float | None = None) -> None:
     f = cache.city.feeds
+    backoff = backoff if backoff is not None else cache.backoff
+    now = now or time.time()
+    want_alerts = f.rt_alerts_url and now - cache.alerts_fetched_at >= ALERTS_MIN_INTERVAL_S
+    urls = [f.rt_positions_url, f.rt_tripupdates_url, f.rt_alerts_url if want_alerts else None]
     async with httpx.AsyncClient(timeout=25, follow_redirects=True) as cli:
         pos, tu, al = await asyncio.gather(
-            _fetch(cli, f.rt_positions_url, cache, track=True),
-            _fetch(cli, f.rt_tripupdates_url, cache),
-            _fetch(cli, f.rt_alerts_url, cache))
+            _fetch(cli, urls[0], cache, backoff, track=True),
+            _fetch(cli, urls[1], cache, backoff),
+            _fetch(cli, urls[2], cache, backoff))
+    if want_alerts and al is not None:
+        cache.alerts_fetched_at = now
+    # `al` of None means "not asked this cycle" as well as "failed", and apply() already keeps the
+    # alerts it has when it gets None, so a slower cadence costs nothing.
     cache.apply(pos, tu, al)
 
 
