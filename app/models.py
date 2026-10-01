@@ -631,6 +631,9 @@ class PushHealth(Out):
     sent: int | None = None
     failed: int | None = None
     last_error: str | None = None
+    # Which transports this city can actually reach: "ios" needs an APNs key, "android" an FCM
+    # service account. A platform missing here is why its devices are never woken.
+    platforms: list[str] | None = None
     devices: int | None = None
     with_wakes: int | None = None
     with_routes: int | None = None
