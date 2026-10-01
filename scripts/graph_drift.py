@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime as dt
 import gzip
 import io
 import os
@@ -38,6 +39,9 @@ sys.path.insert(0, str(ROOT))
 
 UA = {"User-Agent": "opentransit-graph-drift/1.0 (+https://opentransit.tech)"}
 DEFAULT_THRESHOLD = 85.0
+# How close the feed's last service date may come before it is worth saying so. A month is enough
+# notice to notice, and short enough that it is not shouting all year.
+CALENDAR_WARN_DAYS = 45
 
 
 # ----------------------------------------------------------------- reading one member of a remote zip
@@ -98,6 +102,25 @@ def _open_remote_zip(url: str) -> zipfile.ZipFile:
         return zipfile.ZipFile(tmp.name)
 
 
+def _reader(z: zipfile.ZipFile, name: str):
+    return csv.DictReader(io.TextIOWrapper(z.open(name), encoding="utf-8-sig", newline=""))
+
+
+def calendar_end(z: zipfile.ZipFile) -> str | None:
+    """The last date the feed has any service for. A graph is useless past it, and the feeds do not
+    warn: TransMilenio's calendar runs to 2026-12-31, so every graph built before a January
+    republication loses its whole timetable on New Year's Day while reporting healthy."""
+    ends = []
+    for name in ("calendar.txt", "calendar_dates.txt"):
+        if name not in z.namelist():
+            continue
+        for r in _reader(z, name):
+            v = (r.get("end_date") or r.get("date") or "").strip()
+            if len(v) == 8 and v.isdigit() and (name == "calendar.txt" or r.get("exception_type") == "1"):
+                ends.append(v)
+    return max(ends) if ends else None
+
+
 def trip_ids_from_zip(z: zipfile.ZipFile) -> set[str]:
     name = next((n for n in z.namelist() if n.rsplit("/", 1)[-1] == "trips.txt"), None)
     if name is None:
@@ -139,11 +162,19 @@ def check(city_id: str, threshold: float) -> dict:
         return {"city": city_id, "skipped": "the city has no static feed"}
 
     baseline = read_baseline(baseline_url)
-    current = trip_ids_from_zip(_open_remote_zip(feed_url))
+    z = _open_remote_zip(feed_url)
+    current = trip_ids_from_zip(z)
     shared = len(baseline & current)
     pct = shared / len(current) * 100 if current else 0.0
+    ends = calendar_end(z)
+    days_left = None
+    if ends:
+        end = dt.date(int(ends[:4]), int(ends[4:6]), int(ends[6:]))
+        days_left = (end - dt.date.today()).days
     return {"city": city_id, "graphTrips": len(baseline), "feedTrips": len(current),
-            "sharedTrips": shared, "overlapPct": round(pct, 1), "rebuild": pct < threshold}
+            "sharedTrips": shared, "overlapPct": round(pct, 1), "rebuild": pct < threshold,
+            "calendarEnds": ends, "calendarDaysLeft": days_left,
+            "calendarWarning": days_left is not None and days_left <= CALENDAR_WARN_DAYS}
 
 
 def main() -> int:
@@ -168,6 +199,7 @@ def main() -> int:
         ap.error("name a city or pass --all")
 
     worst = 100.0
+    calendar_alarm = False
     for cid in cities:
         try:
             r = check(cid, a.threshold)
@@ -179,10 +211,14 @@ def main() -> int:
                 print(f"{cid:14} skipped: {r['skipped']}")
             continue
         flag = "  REBUILD" if r["rebuild"] else ""
+        if r.get("calendarWarning"):
+            flag += f"  CALENDAR ENDS IN {r['calendarDaysLeft']}d ({r['calendarEnds']})"
         print(f"{cid:14} {r['overlapPct']:5.1f}%  graph {r['graphTrips']:>7,} · feed {r['feedTrips']:>7,}"
               f" · shared {r['sharedTrips']:>7,}{flag}")
         worst = min(worst, r["overlapPct"])
-    return 1 if worst < a.threshold else 0
+        if r.get("calendarWarning"):
+            calendar_alarm = True
+    return 1 if (worst < a.threshold or calendar_alarm) else 0
 
 
 if __name__ == "__main__":

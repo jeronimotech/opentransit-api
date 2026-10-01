@@ -334,8 +334,19 @@ class RTCache:
             "occupancy": e.get("occupancy"),
         }
 
+    # A feed's own header clock is worth publishing when it runs; TransMilenio's is frozen — two
+    # values in a week, both Sunday 23:02, 72 hours behind by the time we measured it. Publishing
+    # that as "when the agency generated this" is a lie waiting for someone to believe it, so an
+    # implausible header is reported as nothing at all rather than as a number.
+    FEED_TS_MAX_SKEW_S = 3600
+
+    def feed_timestamp(self, now: float | None = None) -> str | None:
+        if not self.header_ts:
+            return None
+        return iso(self.header_ts) if abs((now or time.time()) - self.header_ts) <= self.FEED_TS_MAX_SKEW_S else None
+
     def _meta(self) -> dict:
-        return {"seq": self.seq, "generatedAt": iso(self.updated_at), "feedTimestamp": iso(self.header_ts),
+        return {"seq": self.seq, "generatedAt": iso(self.updated_at), "feedTimestamp": self.feed_timestamp(),
                 "count": len(self.vehicles), "health": self.health()}
 
     def snapshot(self) -> dict:
