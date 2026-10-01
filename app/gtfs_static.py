@@ -129,7 +129,10 @@ async def _unchanged_upstream(city: City, cli: httpx.AsyncClient) -> dict | None
             """SELECT id FROM feed_version WHERE city=$1 AND is_active
                   AND last_modified = $2::text::timestamptz
                   AND EXISTS (SELECT 1 FROM trip WHERE feed_version_id=feed_version.id)
-                  AND EXISTS (SELECT 1 FROM stop WHERE feed_version_id=feed_version.id)""", city.id, last_mod)
+                  AND EXISTS (SELECT 1 FROM stop WHERE feed_version_id=feed_version.id)
+                  AND EXISTS (SELECT 1 FROM trip
+                               WHERE feed_version_id=feed_version.id AND start_time IS NOT NULL)""",
+            city.id, last_mod)
     return {"changed": False, "feedVersionId": row["id"], "lastModified": last_mod} if row else None
 
 
@@ -150,9 +153,15 @@ async def ingest(city: City, force: bool = False) -> dict:
         prev = await c.fetchrow("SELECT id, is_active FROM feed_version WHERE city=$1 AND sha256=$2",
                                 city.id, sha)
         if prev and prev["is_active"] and not force:
+            # The skip is a cache, so it has to be invalid when the code wants something the stored
+            # version does not carry. `start_time` arrived in v2.6 for the realtime rescue: without
+            # this clause an unchanged feed would skip forever and the new column would stay empty,
+            # which is exactly what happened on its first deploy.
             complete = await c.fetchval(
                 """SELECT EXISTS (SELECT 1 FROM trip WHERE feed_version_id=$1)
-                   AND EXISTS (SELECT 1 FROM stop WHERE feed_version_id=$1)""", prev["id"])
+                   AND EXISTS (SELECT 1 FROM stop WHERE feed_version_id=$1)
+                   AND EXISTS (SELECT 1 FROM trip WHERE feed_version_id=$1 AND start_time IS NOT NULL)""",
+                prev["id"])
             if complete:
                 log.info("[%s] static unchanged (%s), skipping", city.id, sha[:12])
                 return {"changed": False, "sha": sha, "feedVersionId": prev["id"]}
