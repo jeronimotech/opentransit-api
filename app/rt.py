@@ -327,6 +327,10 @@ class RTCache:
             "id": e["id"], "label": e.get("label"),
             "routeId": self.city.scoped(rid), "routeShortName": r["short_name"] if r else None,
             "tripId": self.city.scoped(e.get("tripId")), "tripResolved": e["tripResolved"],
+            # "id" when the feed's own trip id was in the schedule, "schedule" when it was not and
+            # route plus start time named the trip instead. Null means unmatched. A client that shows
+            # a trip's scheduled times should know which of the three it is looking at.
+            "tripMatch": e.get("tripMatch"),
             "component": r["component"] if r else None,
             "lat": e["lat"], "lon": e["lon"], "bearing": e.get("bearing"),
             "bearingSource": e.get("bearingSource"), "timestamp": iso(e.get("ts")),

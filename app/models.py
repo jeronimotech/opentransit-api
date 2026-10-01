@@ -443,6 +443,9 @@ class Vehicle(Out):
     route_short_name: str | None = None
     trip_id: str | None = None
     trip_resolved: bool = False
+    # How the trip was matched: "id" when the feed's own trip id was in the schedule, "schedule" when
+    # it was not and route plus start time named the trip instead, null when it stayed unmatched.
+    trip_match: Literal["id", "schedule"] | None = None
     component: str | None = None
     lat: float
     lon: float
