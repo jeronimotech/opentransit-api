@@ -521,11 +521,25 @@ class RealtimeHealth(Out):
     stale_seconds: int | None = None
 
 
+class GraphDriftHealth(Out):
+    """How much of today's feed the deployed graph still recognises. `rebuild` true means OTP is
+    dropping a meaningful share of the realtime messages it receives — see app/graph_drift.py."""
+    enabled: bool = False
+    ok: bool | None = None
+    overlap_pct: float | None = None
+    graph_trips: int | None = None
+    feed_trips: int | None = None
+    shared_trips: int | None = None
+    rebuild: bool | None = None
+    error: str | None = None
+
+
 class RouterHealth(Out):
     up: bool
     version: str | None = None
     graph_built_at: str | None = None
     base_url: str | None = None
+    graph_drift: GraphDriftHealth = GraphDriftHealth()
 
 
 class RentalNetworkHealth(Out):

@@ -60,6 +60,10 @@ class Feeds(BaseModel):
 class Otp(BaseModel):
     base_url: str
     feed_id: str
+    # Gzipped list of the trip ids the deployed graph was built from, published beside graph.obj in
+    # its release. With it, /health reports how much of today's feed that graph still recognises and
+    # says when to rebuild; without it the check is simply off. See app/graph_drift.py.
+    trip_ids_url: str | None = None
 
 
 class IdecaGeocoder(BaseModel):

@@ -1,0 +1,28 @@
+name: graph-drift
+# Every OTP graph is built from one snapshot of a city's GTFS, and agencies re-issue trip ids as they
+# re-publish their programming. Once the ids have moved, OTP keeps receiving realtime messages and
+# matches none of them: riders lose live times while every feed reports healthy, so nothing alerts.
+# This measures it daily and fails when a graph has fallen behind, which is the signal to rebuild.
+#
+# Measuring is cheap — only trips.txt is read, over range requests where the host allows them — so
+# this runs on a plain runner. Rebuilding is not: Bogotá wants a 14 GB heap, more than a hosted
+# runner has, so the rebuild stays one command on a workstation:
+#
+#   JAVA=/opt/homebrew/opt/openjdk@25/bin/java OTP_HEAP=14G scripts/build-graph.sh <city>
+#   scripts/graph_drift.py --write-baseline data/<city>/<city>-gtfs.zip data/<city>/trip-ids.txt.gz
+#   # publish graph.obj, the configs and trip-ids.txt.gz as graph-<city>-<date>, then point
+#   # otp-<city> at it and update otp.trip_ids_url in cities/<city>.yaml
+on:
+  schedule:
+    - cron: "17 11 * * *"      # 06:17 in Bogotá, after the overnight feed publication
+  workflow_dispatch:
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: measure every city
+        run: python scripts/graph_drift.py --all

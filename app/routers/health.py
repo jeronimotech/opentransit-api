@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Request
 from .. import geocode as geocode_mod
 from ..db import pool
 from ..geocode import ideca_health, photon_health
+from ..graph_drift import store as drift_store
 from ..models import CityHealth
 from ..rt import iso
 from ..runtime import CityRuntime, city_runtime
@@ -31,7 +32,8 @@ async def city_health(request: Request, rt: CityRuntime = Depends(city_runtime))
                      "stale": rt.freshness()["stale"], "staleSeconds": rt.freshness()["staleSeconds"]},
         "router": {"up": info is not None, "version": rt.otp.version,
                    "graphBuiltAt": (info or {}).get("transitTimeZone") and None or _built_at(info),
-                   "baseUrl": rt.city.otp.base_url},
+                   "baseUrl": rt.city.otp.base_url,
+                   "graphDrift": drift_store.get(rt.city.id) or {"enabled": False}},
         "rental": {"networks": [g.health() for g in rt.gbfs.values()]},
         "ondemand": {"providers": len(rt.city.on_demand_providers()), "tariffs": len(rt.city.mobility.taxi_tariffs),
                      "routerCar": (await rt.car_router().probe(rt.city)) if rt.city.on_demand_providers() else None},

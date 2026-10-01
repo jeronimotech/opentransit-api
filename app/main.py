@@ -19,6 +19,7 @@ from .db import close_pool, init_pool
 from .errors import install_error_handlers
 from .forecast import ForecastCache
 from .gbfs import GbfsNetwork
+from .graph_drift import store as drift_store
 from .gtfs_static import ingest, load_route_index, load_service_index
 from .logging_setup import setup_logging
 from .normalize import set_feed_flags
@@ -81,6 +82,9 @@ async def _bootstrap_static(rt: CityRuntime, do_ingest: bool) -> None:
         set_feed_flags(rt.city.id, rt.services.flags)
         rt.static_ready = bool(rt.rt.route_index)
         rt.ingest_error = None
+        # The feed just changed, so the graph's drift did too. Measuring it here keeps it off the
+        # /health request path and costs one small download per graph version.
+        await drift_store.refresh(rt.city.id, rt.city.otp.trip_ids_url, rt.rt.known_trips)
     except Exception as e:  # noqa: BLE001
         rt.ingest_error = str(e)
         log.exception("[%s] static bootstrap failed (continuing without it)", rt.city.id)

@@ -37,11 +37,16 @@ locally (or in CI) and published as a release asset.
 
 ```bash
 CITY=bogota; TAG=graph-$CITY-$(date +%F)
+# the trip ids this graph knows, so the drift check can tell when it has fallen behind (see §8)
+scripts/graph_drift.py --write-baseline data/$CITY/$CITY-gtfs.zip data/$CITY/trip-ids.txt.gz
 cd data/$CITY && shasum -a 256 graph.obj > SHA256SUMS
-gh release create $TAG graph.obj build-config.json ../../otp/$CITY/router-config.json SHA256SUMS \
+gh release create $TAG graph.obj build-config.json ../../otp/$CITY/router-config.json \
+  trip-ids.txt.gz SHA256SUMS \
   --title "$CITY OTP graph $(date +%F)" --notes "OTP 2.9.0 graph for $CITY"
 ```
-Note the asset URLs: `https://github.com/<org>/opentransit-api/releases/download/$TAG/{graph.obj,router-config.json}`.
+Note the asset URLs: `https://github.com/<org>/opentransit-api/releases/download/$TAG/{graph.obj,router-config.json,trip-ids.txt.gz}`.
+Point `cities/$CITY.yaml` at the new baseline (`otp.trip_ids_url`) in the same commit that deploys the graph,
+or `/health` keeps grading the new graph against the old one's ids.
 
 ## 2. Create the services
 
@@ -229,3 +234,46 @@ each service. Keep the same graph release unless the feed changed.
 - Health checks: `api` uses `/healthz` (in `railway.json`). `otp` has none because its boot takes
   minutes; the API reports `router.up` instead.
 - Logs: `railway logs -s <service> -e <env>` (`-b` for build logs).
+
+## 8. Keeping a graph from going stale
+
+A graph is built from one snapshot of a city's GTFS, and agencies re-issue `trip_id`s as they
+re-publish their programming. OTP matches realtime messages against its own graph, so once the ids
+have moved the positions and delays keep arriving and match nothing: riders lose live times while
+every feed, the router and the API all report healthy. Nothing alerts, because nothing is broken.
+
+Measured on Bogotá, 2026-09-30 — a graph four weeks old recognised **52 %** of the feed's trips, and
+rebuilding took it to **88 %**, which is that feed's own ceiling (about 11 % of its realtime trips do
+not exist in its own schedule). The drift is not gradual: over the previous eight weeks, consecutive
+snapshots a single day apart differed by up to 14 %, a week apart by up to 45 %, and some three-day
+gaps not at all. A fixed weekly rebuild would be both too often and too late.
+
+So: measure daily, rebuild when it matters.
+
+```bash
+scripts/graph_drift.py --all          # one line per city; exit 1 when any has fallen behind
+scripts/graph_drift.py roma           # just one
+```
+
+`.github/workflows/graph-drift.yml` runs that every morning and fails the run when a city drops below
+85 %. The same number is in `/v1/cities/<city>/health` under `router.graphDrift`, refreshed whenever
+the API re-ingests the static feed, so it costs one 400 KB download per graph release rather than a
+feed fetch of its own.
+
+Reading the feed stays cheap: only `trips.txt` is needed, and where the host honours range requests
+just that member is pulled out of the remote zip. Two hosts do not — TransMilenio answers `403` to a
+`Range` and sends no `Content-Length` on `HEAD`, and Roma Mobilità ignores the header and returns the
+whole file with a `200` — so those are downloaded in full and streamed to a temp file.
+
+A rebuild is not CI work: Bogotá wants a 14 GB heap, more than a hosted runner has. It is one command
+on a workstation, then §1 and §3.
+
+```bash
+JAVA=/opt/homebrew/opt/openjdk@25/bin/java OTP_HEAP=14G scripts/build-graph.sh <city>
+```
+
+Two traps worth knowing. Geofabrik's `<region>-latest.osm.pbf` alias started 301-ing to itself on
+2026-09-30, so `curl -L` looped to its redirect limit and the build died at the OSM download;
+`scripts/build-graph.sh` now falls back to the newest dated file in the parent directory. And a graph
+whose realtime match rate is **0 %** is a different illness: Toronto's feed shares no trip ids with
+its own schedule at all, and no rebuild will change that.
