@@ -23,10 +23,31 @@ cd "$DATA"
 REGION_PBF="$(basename "$OSM_URL")"
 fresh() { [ -z "$FORCE" ] && [ -s "$1" ] && [ -z "$(find "$1" -mtime +1 2>/dev/null)" ]; }
 
+# Geofabrik's "<region>-latest.osm.pbf" alias was, on 2026-09-30, 301-redirecting to itself: `curl -L`
+# loops until it gives up with "Maximum (50) redirects followed" and every graph build dies at the
+# download. The dated files the alias is meant to point at serve fine and the parent directory lists
+# them, so when the alias does not answer with content, take the newest dated file instead.
+resolve_osm() {
+  local url="$1" code dir base region newest
+  code="$(curl -fsS -m 30 -r 0-0 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || true)"
+  case "$code" in
+    20*) printf '%s' "$url"; return ;;
+  esac
+  dir="${url%/*}"; base="${url##*/}"; region="${base%-latest.osm.pbf}"
+  newest="$(curl -fsS -m 60 "$dir/" 2>/dev/null | grep -o "${region}-[0-9]\{6\}\.osm\.pbf" | sort -u | tail -1)"
+  if [ -n "$newest" ]; then
+    echo "[osm] the -latest alias is broken; using $newest" >&2
+    printf '%s/%s' "$dir" "$newest"
+  else
+    printf '%s' "$url"
+  fi
+}
+
 if fresh "$CITY-gtfs.zip"; then echo "[gtfs] using cached $CITY-gtfs.zip"; else
   echo "[gtfs] downloading $GTFS_URL"; curl -fsSL --retry 3 -o "$CITY-gtfs.zip" "$GTFS_URL"; fi
 if fresh "$REGION_PBF"; then echo "[osm] using cached $REGION_PBF"; else
-  echo "[osm] downloading $OSM_URL"; curl -fsSL --retry 3 -o "$REGION_PBF" "$OSM_URL"; fi
+  OSM_RESOLVED="$(resolve_osm "$OSM_URL")"
+  echo "[osm] downloading $OSM_RESOLVED"; curl -fsSL --retry 3 -o "$REGION_PBF" "$OSM_RESOLVED"; fi
 
 echo "[osm] clipping $REGION_PBF to $BBOX -> $CITY.osm.pbf"
 docker run --rm -v "$DATA:/data" "$OSMIUM_IMAGE" osmium \
