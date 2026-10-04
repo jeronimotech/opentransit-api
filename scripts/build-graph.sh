@@ -50,8 +50,16 @@ if fresh "$REGION_PBF"; then echo "[osm] using cached $REGION_PBF"; else
   echo "[osm] downloading $OSM_RESOLVED"; curl -fsSL --retry 3 -o "$REGION_PBF" "$OSM_RESOLVED"; fi
 
 echo "[osm] clipping $REGION_PBF to $BBOX -> $CITY.osm.pbf"
-docker run --rm -v "$DATA:/data" "$OSMIUM_IMAGE" osmium \
-  extract --overwrite -s complete_ways -b "$BBOX" "/data/$REGION_PBF" -o "/data/$CITY.osm.pbf"
+# The regional extracts are shared between cities through symlinks into data/_osm, so several
+# cities on the same region hold one copy instead of a 900 MB file each. Docker only sees what is
+# mounted, and a symlink to an absolute host path outside the mount is a dangling link inside the
+# container: osmium fails with "Could not get file size ... No such file or directory" even though
+# the file is right there on the host. So resolve the link and mount whatever directory really
+# holds it. When the pbf is a plain file in $DATA this mounts the same directory twice, which is
+# harmless.
+PBF_REAL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$REGION_PBF")"
+docker run --rm -v "$DATA:/data" -v "$(dirname "$PBF_REAL"):/osm:ro" "$OSMIUM_IMAGE" osmium \
+  extract --overwrite -s complete_ways -b "$BBOX" "/osm/$(basename "$PBF_REAL")" -o "/data/$CITY.osm.pbf"
 ls -lh "$CITY.osm.pbf"
 
 if [ "$OTP_RUNTIME" = native ]; then

@@ -29,7 +29,7 @@ otp:
   feed_id: roma
   # Trip ids the deployed graph was built from; /health reports what share of today's feed
   # it still recognises and says when to rebuild (scripts/graph_drift.py).
-  trip_ids_url: https://github.com/jeronimotech/opentransit-api/releases/download/graph-roma-2026-09-30/trip-ids.txt.gz
+  trip_ids_url: https://github.com/jeronimotech/opentransit-api/releases/download/graph-roma-2026-10-04/trip-ids.txt.gz
 geocoder:
   photon_url: https://photon.komoot.io
 agencies:

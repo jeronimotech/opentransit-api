@@ -34,7 +34,7 @@ otp:
   feed_id: bogota             # must match build-config.json transitFeeds[].feedId
   # Trip ids the deployed graph was built from; /health reports what share of today's feed
   # it still recognises and says when to rebuild (scripts/graph_drift.py).
-  trip_ids_url: https://github.com/jeronimotech/opentransit-api/releases/download/graph-bogota-2026-09-30/trip-ids.txt.gz
+  trip_ids_url: https://github.com/jeronimotech/opentransit-api/releases/download/graph-bogota-2026-10-04/trip-ids.txt.gz
 
 geocoder:
   photon_url: https://photon.komoot.io   # null disables Photon (GTFS stops only)
