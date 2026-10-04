@@ -48,6 +48,13 @@ Note the asset URLs: `https://github.com/<org>/opentransit-api/releases/download
 Point `cities/$CITY.yaml` at the new baseline (`otp.trip_ids_url`) in the same commit that deploys the graph,
 or `/health` keeps grading the new graph against the old one's ids.
 
+**A rebuild touches three things, not two.** The release, the `otp-<city>` service, and the `api`
+service. `trip_ids_url` lives in the repo, so the API only learns about a new baseline when it is
+redeployed (`railway up -s api -e production -d -c`); until then `router.graphDrift` keeps comparing
+the new feed against the previous graph's ids and reports a number that looks fine and means nothing.
+Right after that redeploy every city reads `enabled: false` for a few minutes — that is the bootstrap
+window before the first static ingest, not a failure.
+
 ## 2. Create the services
 
 ```bash
