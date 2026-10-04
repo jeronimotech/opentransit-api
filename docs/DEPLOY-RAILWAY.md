@@ -251,12 +251,17 @@ gaps not at all. A fixed weekly rebuild would be both too often and too late.
 So: measure daily, rebuild when it matters.
 
 ```bash
-scripts/graph_drift.py --all          # one line per city; exit 1 when any has fallen behind
+scripts/graph_drift.py --all          # one line per city; exit 1 on either alarm
 scripts/graph_drift.py roma           # just one
+scripts/graph_drift.py --all --check drift     # only a graph that has fallen behind
+scripts/graph_drift.py --all --check calendar  # only a calendar about to run out
 ```
 
-`.github/workflows/graph-drift.yml` runs that every morning and fails the run when a city drops below
-85 %. The same number is in `/v1/cities/<city>/health` under `router.graphDrift`, refreshed whenever
+`.github/workflows/graph-drift.yml` runs that every morning as **two jobs**, `drift` and `calendar`,
+so the check name says which alarm fired. They are different jobs of work: a graph below 85 % is ours
+to rebuild today, a `calendar.txt` inside 45 days is the agency's to republish and can sit red for
+weeks. While both shared one exit code, Toronto's calendar kept the run permanently red and real
+threshold crossings changed nothing visible. The same number is in `/v1/cities/<city>/health` under `router.graphDrift`, refreshed whenever
 the API re-ingests the static feed, so it costs one 400 KB download per graph release rather than a
 feed fetch of its own.
 

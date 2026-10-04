@@ -4,6 +4,8 @@
     scripts/graph_drift.py bogota                 # print the overlap
     scripts/graph_drift.py --all                  # every city that publishes a baseline
     scripts/graph_drift.py bogota --threshold 85  # exit 1 when it has fallen below
+    scripts/graph_drift.py --all --check drift    # ignore the calendar warning
+    scripts/graph_drift.py --all --check calendar # only the calendar warning
 
 Also writes the baseline a future run compares against:
 
@@ -185,6 +187,13 @@ def main() -> int:
                     help=f"exit 1 when the overlap is under this percentage (default {DEFAULT_THRESHOLD})")
     ap.add_argument("--write-baseline", nargs=2, metavar=("GTFS_ZIP", "OUT_GZ"),
                     help="write the trip ids of a feed, for publishing beside graph.obj")
+    # Two unrelated things can be wrong, and they want different answers: drift means rebuild a
+    # graph today, a calendar running out means wait for the agency to republish. Collapsing both
+    # into one exit code kept the daily check red for weeks on a calendar nobody could act on, and
+    # a real threshold crossing then changed nothing visible. Measuring still always reports both;
+    # this only chooses what counts as failure.
+    ap.add_argument("--check", choices=("drift", "calendar", "both"), default="both",
+                    help="which signal decides the exit code (default both)")
     a = ap.parse_args()
 
     if a.write_baseline:
@@ -218,7 +227,10 @@ def main() -> int:
         worst = min(worst, r["overlapPct"])
         if r.get("calendarWarning"):
             calendar_alarm = True
-    return 1 if (worst < a.threshold or calendar_alarm) else 0
+    drift_alarm = worst < a.threshold
+    failing = {"drift": drift_alarm, "calendar": calendar_alarm,
+               "both": drift_alarm or calendar_alarm}[a.check]
+    return 1 if failing else 0
 
 
 if __name__ == "__main__":

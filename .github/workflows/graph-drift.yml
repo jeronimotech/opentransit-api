@@ -16,6 +16,11 @@ on:
   schedule:
     - cron: "17 11 * * *"      # 06:17 in Bogotá, after the overnight feed publication
   workflow_dispatch:
+# Two jobs, not two steps, because the check name is the alert. A graph that has fallen behind is
+# ours to fix today; a calendar running out is the agency's to republish and can sit for weeks.
+# When both shared one exit code the run was permanently red on Toronto's calendar, and Brisbane
+# and Bogotá crossing the threshold on 3 and 4 October changed nothing visible. Now `drift` going
+# red is news.
 jobs:
   drift:
     runs-on: ubuntu-latest
@@ -25,4 +30,14 @@ jobs:
         with: { python-version: "3.12", cache: pip }
       - run: pip install -r requirements.txt
       - name: measure every city
-        run: python scripts/graph_drift.py --all
+        run: python scripts/graph_drift.py --all --check drift
+
+  calendar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: calendars running out
+        run: python scripts/graph_drift.py --all --check calendar
