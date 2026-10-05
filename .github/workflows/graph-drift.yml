@@ -24,6 +24,11 @@ on:
 jobs:
   drift:
     runs-on: ubuntu-latest
+    # Measuring nine cities takes about a minute. The 2026-10-05 scheduled run sat for fifteen and
+    # ended "cancelled", which reads like neither success nor failure and left no log to look at.
+    # A cap turns a hung feed host into a failure with a name, and stops one slow agency from
+    # holding a runner. graph_drift.py already has per-request timeouts; this is the outer bound.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -34,6 +39,7 @@ jobs:
 
   calendar:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
