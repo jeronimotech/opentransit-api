@@ -59,7 +59,7 @@ config:
   features: { liveVehicles: false, board: true, pois: true, followAlong: true, bike: true }
   min_app_version: { ios: "1.0.0", android: "1.0.0" }
   update_urls:
-    ios: "itms-beta://beta.itunes.apple.com/v1/app/6809010622"
+    ios: "https://apps.apple.com/app/id6809010622"
     android: "https://play.google.com/store/apps/details?id=com.jeronimotech.opentransit"
   analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
 links:
@@ -103,7 +103,7 @@ landing:
     subtitle: "Planea tu viaje en Metro, buses Red, tren y bicicleta pública, de una dirección a otra. Gratis, sin cuenta y de código abierto."
     cta_primary: { label: "Abrir la app web", url: null }
     cta_secondary: { label: "Cómo funciona", url: "#features" }
-  apps: { ios: null, android: null, web: null }
+  apps: { ios: "https://apps.apple.com/app/id6809010622", android: null, web: null }
   highlights:
     - { icon: route, title: "Puerta a puerta", text: "Metro, buses Red, Metrotren, Bike Santiago y a pie combinados en un solo itinerario, desde una dirección y no desde un paradero." }
     - { icon: board, title: "Próximos buses en tu paradero", text: "Los horarios programados del DTPM en cada paradero, marcados claramente como programados: Santiago aún no publica datos en vivo abiertos." }

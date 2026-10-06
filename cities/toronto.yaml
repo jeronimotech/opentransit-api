@@ -79,7 +79,7 @@ config:
   features: { liveVehicles: true, board: true, pois: true, followAlong: true, bike: true }
   min_app_version: { ios: "1.0.0", android: "1.0.0" }
   update_urls:
-    ios: "itms-beta://beta.itunes.apple.com/v1/app/6809010622"
+    ios: "https://apps.apple.com/app/id6809010622"
     android: "https://play.google.com/store/apps/details?id=com.jeronimotech.opentransit"
   analytics: { enabled: true, retention_days: 90, k_threshold: 5 }
 
@@ -151,7 +151,7 @@ landing:
     subtitle: "Plan a trip, watch the streetcars move and know when your bus arrives. Free, no account, open source."
     cta_primary: { label: "Open the web app", url: null }
     cta_secondary: { label: "How it works", url: "#features" }
-  apps: { ios: null, android: null, web: null }
+  apps: { ios: "https://apps.apple.com/app/id6809010622", android: null, web: null }
   highlights:
     - { icon: route, title: "Door to door", text: "Subway, streetcar, bus and walking combined into one itinerary, from an address rather than a stop." }
     - { icon: live,  title: "Vehicles in real time", text: "Over a thousand TTC vehicles on the map, with the direction each one is heading." }

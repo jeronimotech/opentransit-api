@@ -82,7 +82,11 @@ async def test_endpoint_shape_stats_and_cache(bogota: City):
         assert body["city"]["id"] == "bogota" and body["city"]["mobility"]["bikeShare"][0]["id"]
         assert "gbfsUrl" not in body["city"]["mobility"]["bikeShare"][0]
         assert body["landing"]["hero"]["title"].startswith("Muévete")
-        assert body["apps"] == {"ios": None, "android": None, "web": None}
+        # Passed through from the city's config, not invented here. Asserting literal values made
+        # this fail the day iOS went live on the App Store and apps.ios stopped being null, which
+        # told us nothing about the endpoint. What matters is the shape and the pass-through.
+        assert set(body["apps"]) == {"ios", "android", "web"}
+        assert body["apps"] == bogota.landing.apps.model_dump(by_alias=True)
         # stats are cached for 60 s
         rt.rt.vehicles = []
         assert (await c.get("/v1/cities/bogota/landing")).json()["stats"] == body["stats"]
