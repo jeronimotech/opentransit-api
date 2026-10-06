@@ -31,7 +31,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 DEFAULT_BASE = "https://api.opentransit.tech"
 CITIES = ["bogota", "boston", "brisbane", "casablanca", "kualalumpur",
@@ -49,7 +49,7 @@ def sample(base: str, city: str, timeout: float = 30) -> dict:
     rt = d.get("realtime") or {}
     g = (d.get("router") or {}).get("graphDrift") or {}
     return {
-        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "at": datetime.now(UTC).isoformat(timespec="seconds"),
         "city": city,
         "driftPct": g.get("overlapPct"),
         "graphTrips": g.get("graphTrips"),
