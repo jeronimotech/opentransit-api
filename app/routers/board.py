@@ -54,7 +54,7 @@ def group_board(deps: list[dict], per_route: int, now_ts: float) -> list[dict]:
         t = d.get("realtimeTime") or d["scheduledTime"]
         row["next"].append({"time": t, "minutes": _minutes_until(t, now_ts), "realtime": bool(d.get("realtime")),
                             "delaySeconds": d.get("delaySeconds"), "tripId": d.get("tripId"),
-                            "vehicleId": d.get("vehicleId")})
+                            "vehicleId": d.get("vehicleId"), "vehicle": d.get("vehicle")})
     return sorted(rows.values(), key=lambda r: (r["next"][0]["minutes"] if r["next"] else 10**6,
                                                 r["route"].get("shortName") or ""))
 
@@ -68,9 +68,13 @@ async def board(stopId: str, rt: CityRuntime = Depends(city_runtime),
         raise StopNotFound(f"stop '{stopId}' not found")
     stop = await _db_stop(rt, rt.city.unscoped(stopId)) or stop_from_otp(rt.city, s)
     deps = [departure_from_otp(rt.city, st) for st in (s.get("stoptimesWithoutPatterns") or []) if st]
-    by_trip = {e["tripId"]: e["id"] for e in rt.rt.vehicles if e.get("tripId")}
+    # The live frame is already in hand, so carrying the whole vehicle costs nothing beyond the
+    # bytes: the stop page needs its position to draw the bus, not just an id to match against.
+    by_trip = {e["tripId"]: e for e in rt.rt.vehicles if e.get("tripId")}
     for d in deps:
-        d["vehicleId"] = by_trip.get(rt.city.unscoped(d["tripId"])) if d.get("tripId") else None
+        e = by_trip.get(rt.city.unscoped(d["tripId"])) if d.get("tripId") else None
+        d["vehicleId"] = e["id"] if e else None
+        d["vehicle"] = rt.rt.public_vehicle(e) if e else None
     now_ts = time.time()
     rows = group_board(merge_departures(deps), perRoute, now_ts)
     seen = {r["route"]["id"] for r in rows}

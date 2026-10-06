@@ -370,6 +370,12 @@ class BoardTime(Out):
     delay_seconds: int | None = None
     trip_id: str | None = None
     vehicle_id: str | None = None
+    # Where that bus is, so a stop page can draw it approaching instead of only saying "3 min".
+    # Null when the departure has no live match, which is the honest answer for a feed whose trip
+    # ids are not the schedule's — the same cases where `realtime` is false or the match was by
+    # stop rather than trip. Carries its own `timestamp`, so a cached board cannot pin a stale bus
+    # on the map.
+    vehicle: "Vehicle | None" = None
 
 
 class BoardRow(Out):

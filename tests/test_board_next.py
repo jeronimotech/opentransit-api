@@ -26,9 +26,23 @@ def test_board_groups_by_route_and_sorts_by_first_minutes():
     g12 = rows[0]
     assert [n["minutes"] for n in g12["next"]] == [4, 9, 15]          # capped at perRoute, realtime time wins
     assert g12["next"][0] == {"time": _t(4), "minutes": 4, "realtime": True, "delaySeconds": -60,
-                              "tripId": "bogota:t2", "vehicleId": "V1"}
+                              "tripId": "bogota:t2", "vehicleId": "V1", "vehicle": None}
     assert rows[1]["headsign"] == "Portal Sur" and rows[2]["headsign"] == "Norte"
 
+
+
+def test_board_carries_the_vehicle_so_the_stop_map_can_draw_it():
+    """A board row hands over where the bus is, not only when it is due.
+
+    The stop page draws approaching buses on its map; "3 min" from a feed that may be stale is
+    exactly the claim a rider cannot check, and a position two blocks away is. Departures with no
+    live match stay null rather than borrowing another bus's position."""
+    live = {"id": "V1", "lat": 4.63, "lon": -74.08, "bearing": 12.0, "tripMatch": "id"}
+    deps = [dict(_dep("G12", 5, "t2", rt=True), vehicle=live), _dep("B13", 12, "t1")]
+    rows = group_board(deps, per_route=3, now_ts=NOW_TS)
+    by_route = {r["route"]["shortName"]: r for r in rows}
+    assert by_route["G12"]["next"][0]["vehicle"] == live
+    assert by_route["B13"]["next"][0]["vehicle"] is None
 
 # ---- next buses -------------------------------------------------------------
 
