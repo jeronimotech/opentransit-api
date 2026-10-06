@@ -15,7 +15,8 @@ def _t(minutes: float) -> str:
 def _dep(route: str, minutes: float, trip: str, rt: bool = False, headsign: str | None = "Portal Sur") -> dict:
     return {"route": {"id": f"bogota:{route}", "shortName": route}, "headsign": headsign, "tripId": f"bogota:{trip}",
             "scheduledTime": _t(minutes), "realtimeTime": _t(minutes - 1) if rt else None, "realtime": rt,
-            "delaySeconds": -60 if rt else None, "vehicleId": "V1" if rt else None}
+            "delaySeconds": -60 if rt else None, "vehicleId": "V1" if rt else None,
+            "realtimeSource": "trip" if rt else None}
 
 
 def test_board_groups_by_route_and_sorts_by_first_minutes():
@@ -25,8 +26,9 @@ def test_board_groups_by_route_and_sorts_by_first_minutes():
     assert [r["route"]["shortName"] for r in rows] == ["G12", "B13", "B13"]
     g12 = rows[0]
     assert [n["minutes"] for n in g12["next"]] == [4, 9, 15]          # capped at perRoute, realtime time wins
-    assert g12["next"][0] == {"time": _t(4), "minutes": 4, "realtime": True, "delaySeconds": -60,
-                              "tripId": "bogota:t2", "vehicleId": "V1", "vehicle": None}
+    assert g12["next"][0] == {"time": _t(4), "minutes": 4, "realtime": True, "source": "live",
+                              "delaySeconds": -60, "tripId": "bogota:t2", "vehicleId": "V1",
+                              "vehicle": None}
     assert rows[1]["headsign"] == "Portal Sur" and rows[2]["headsign"] == "Norte"
 
 
@@ -43,6 +45,25 @@ def test_board_carries_the_vehicle_so_the_stop_map_can_draw_it():
     by_route = {r["route"]["shortName"]: r for r in rows}
     assert by_route["G12"]["next"][0]["vehicle"] == live
     assert by_route["B13"]["next"][0]["vehicle"] is None
+
+def test_board_separates_a_rescued_arrival_from_a_live_one():
+    """Three states, not two: `realtime` is true for both a matched trip and a rescued one.
+
+    A prediction paired by stop and route after the trip id failed to resolve is our inference, and
+    in Bogota or Roma — whose feeds rotate trip ids between publications — it is most of the board.
+    Showing it as "live" claims a bus reported itself when nothing did, so the board says
+    "estimated" instead and keeps "live" for the arrivals that earned it."""
+    matched = _dep("G12", 5, "t2", rt=True)
+    rescued = dict(_dep("B13", 7, "t3", rt=True), realtimeSource="stop")
+    timetable = _dep("C15", 9, "t4")
+    rows = group_board([matched, rescued, timetable], per_route=3, now_ts=NOW_TS)
+    by_route = {r["route"]["shortName"]: r["next"][0] for r in rows}
+    assert by_route["G12"]["source"] == "live"
+    assert by_route["B13"]["source"] == "estimated"
+    assert by_route["C15"]["source"] == "scheduled"
+    # The rescued one is still realtime — the time is better than the timetable's, just not reported.
+    assert by_route["B13"]["realtime"] is True
+
 
 # ---- next buses -------------------------------------------------------------
 

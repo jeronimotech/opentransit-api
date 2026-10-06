@@ -43,6 +43,19 @@ def _minutes_until(iso_time: str, now_ts: float) -> int:
     return int(round((t - now_ts) / 60))
 
 
+def board_source(dep: dict) -> str:
+    """How much to trust one departure's time, in `/next`'s vocabulary.
+
+    `realtime` is true for two quite different things: a prediction whose trip id the schedule
+    knows, and one we rescued by pairing on stop and route after the id did not resolve. The second
+    is an inference of ours. Collapsing both into "live" is the lie the board has been telling, and
+    in cities whose feeds rotate trip ids it is the common case rather than the edge one.
+    """
+    if not dep.get("realtime"):
+        return "scheduled"
+    return "live" if dep.get("realtimeSource") == "trip" else "estimated"
+
+
 def group_board(deps: list[dict], per_route: int, now_ts: float) -> list[dict]:
     """Departures -> rows grouped by (route id, headsign), each with its next `per_route` times."""
     rows: dict[tuple[str, str | None], dict] = {}
@@ -53,6 +66,7 @@ def group_board(deps: list[dict], per_route: int, now_ts: float) -> list[dict]:
             continue
         t = d.get("realtimeTime") or d["scheduledTime"]
         row["next"].append({"time": t, "minutes": _minutes_until(t, now_ts), "realtime": bool(d.get("realtime")),
+                            "source": board_source(d),
                             "delaySeconds": d.get("delaySeconds"), "tripId": d.get("tripId"),
                             "vehicleId": d.get("vehicleId"), "vehicle": d.get("vehicle")})
     return sorted(rows.values(), key=lambda r: (r["next"][0]["minutes"] if r["next"] else 10**6,

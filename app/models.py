@@ -367,6 +367,13 @@ class BoardTime(Out):
     time: str
     minutes: int
     realtime: bool = False
+
+    # How much to trust the number, in the same three words `/next` already uses:
+    # "live" when the feed's own trip matched the schedule's, "estimated" when the prediction was
+    # rescued by pairing on stop and route instead, "scheduled" when there is no prediction at all.
+    # `realtime` cannot say this — it is true for both of the first two — and the middle case is the
+    # one a rider deserves to be told about, because it is an inference we made, not a bus reporting.
+    source: Literal["live", "estimated", "scheduled"] = "scheduled"
     delay_seconds: int | None = None
     trip_id: str | None = None
     vehicle_id: str | None = None
