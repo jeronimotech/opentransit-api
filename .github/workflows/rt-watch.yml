@@ -1,0 +1,33 @@
+name: rt-watch
+# A time-boxed experiment, not a permanent alarm. Delete it once it has answered its question.
+#
+# On 2026-10-05 Bogotá and Roma republished their programming and graph drift fell to 69.7 % and
+# 64.7 % within a day of a rebuild, while the realtime match held at 95.9 % and 100 %: the live feed
+# was still emitting the trip ids the graph knew. Drift is the early warning, the realtime match is
+# the deadline, and nobody knows the lag between them. Rebuilding by hand every time drift dips is
+# not sustainable — Bogotá wants a 14 GB heap, more than a hosted runner has — so the rebuild cadence
+# has to be chosen from the lag, and the lag has to be measured.
+#
+# Deliberately reporting-only. Two cities already sit at 0 % realtime match for an unrelated reason
+# (Toronto and Kuala Lumpur publish realtime against a different trip id namespace than their static
+# feed), so any threshold here would be born red and would hide the thing it was meant to show. That
+# is the mistake this repository has now made twice: Toronto's calendar masking Bogotá's drift, and
+# the site's link checker masking sixteen real 404s. Decide the threshold after the data, not before.
+on:
+  schedule:
+    - cron: "7 */3 * * *"
+  workflow_dispatch:
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - name: sample every city
+        # The step summary is what makes a green run worth opening: the table lands on the run page
+        # instead of inside a log nobody expands.
+        run: |
+          python scripts/rt_match.py | tee /tmp/sample.txt
+          { echo '```'; cat /tmp/sample.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
