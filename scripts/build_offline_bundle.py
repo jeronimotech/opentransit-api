@@ -23,6 +23,13 @@ and running times vary by hour, so the deviations cost more than the sharing sav
 So the slice is: everything. Every service the feed describes, for as long as it describes it. No
 expiry window to get wrong, no partial-coverage edge cases, and the whole thing is a smaller
 download than one screenshot.
+
+**Why it is NDJSON and not one object.** Small on the wire is not the same as small in memory.
+Expanded into client objects, Lisboa's twelve million departures are about 160 MB resident and
+several hundred at the peak of a whole-document parse, which gets an app killed on a mid-range
+phone. So the file is one header line — stops, routes, headsigns, calendar, around a megabyte, and
+the only part a client keeps — followed by one line per stop. A client records each line's offset
+once at install and afterwards reads exactly the stop a rider is looking at.
 """
 from __future__ import annotations
 
@@ -237,7 +244,7 @@ def build(zip_path: Path, city: str) -> dict:
 
     feed_info = next(iter(_rows(z, "feed_info.txt")), {})
 
-    return {
+    header = {
         "v": FORMAT_VERSION,
         "city": city,
         "builtAt": dt.datetime.now(dt.UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -249,7 +256,6 @@ def build(zip_path: Path, city: str) -> dict:
         "services": services,
         "serviceExceptions": exceptions,
         "stops": stops,
-        "boards": boards,
         "stats": {
             "departures": total_departures,
             "groups": len(groups),
@@ -259,8 +265,10 @@ def build(zip_path: Path, city: str) -> dict:
             # The one number that says the bundle is alive. A build that would ship a timetable
             # where nothing runs today is a build that should fail, not one to upload and discover.
             "activeServicesToday": len(active_services(services, exceptions, dt.date.today())),
+            "stopsWithDepartures": len(boards),
         },
     }
+    return {"header": header, "boards": boards}
 
 
 def active_services(services: list[dict], exceptions: list[list], on: dt.date) -> set[int]:
@@ -285,6 +293,29 @@ def active_services(services: list[dict], exceptions: list[list], on: dt.date) -
     return out
 
 
+def serialise(doc: dict) -> bytes:
+    """One header line, then one line per stop.
+
+    Newline-delimited so a client can index the file by offset in a single pass at install and then
+    read one stop at a time.
+
+    Stop lines stay in the order stop_times produced them, which is not sorted and is deliberate:
+    that order puts consecutive stops of the same route next to each other, and consecutive stops of
+    one route share almost identical delta patterns. Sorting by stop index scatters them beyond
+    gzip's 32 KB window and doubled Toronto's download, 0.82 MB to 1.63 MB, for the same bytes
+    uncompressed. The order is still deterministic — the file is streamed once and dict insertion
+    order is stable — so two builds of an unchanged feed are byte-identical either way.
+    """
+    out = bytearray()
+    out += json.dumps(doc["header"], separators=(",", ":"), ensure_ascii=False).encode()
+    out += b"\n"
+    for si in doc["boards"]:
+        out += json.dumps({"s": int(si), "g": doc["boards"][si]},
+                          separators=(",", ":"), ensure_ascii=False).encode()
+        out += b"\n"
+    return bytes(out)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -301,13 +332,16 @@ def main() -> int:
         return 1
 
     doc = build(zip_path, a.city)
-    raw = json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode()
+    head = doc["header"]
+    raw = serialise(doc)
     gz = gzip.compress(raw, 9)
-    st = doc["stats"]
+    st = head["stats"]
+    header_bytes = raw.index(b"\n") + 1
     print(f"{a.city:13} departures={st['departures']:>9} groups={st['groups']:>7} "
-          f"stops={len(doc['stops']):>6} routes={len(doc['routes']):>5} "
-          f"services={len(doc['services']):>4} activeToday={st['activeServicesToday']:>4} "
-          f"json={len(raw)/1048576:>6.1f}M gz={len(gz)/1048576:>5.2f}M", file=sys.stderr)
+          f"stops={len(head['stops']):>6} routes={len(head['routes']):>5} "
+          f"services={len(head['services']):>4} activeToday={st['activeServicesToday']:>4} "
+          f"header={header_bytes/1048576:>5.2f}M ndjson={len(raw)/1048576:>6.1f}M "
+          f"gz={len(gz)/1048576:>5.2f}M", file=sys.stderr)
     if st["activeServicesToday"] == 0:
         print(f"{a.city}: no service runs today in this bundle — refusing to publish a dead "
               f"timetable. Check calendar.txt / calendar_dates.txt coverage.", file=sys.stderr)
@@ -315,7 +349,7 @@ def main() -> int:
     if a.stats:
         return 0
 
-    out = Path(a.out) if a.out and a.out != "-" else (zip_path.parent / "offline-bundle.json.gz")
+    out = Path(a.out) if a.out and a.out != "-" else (zip_path.parent / "offline-bundle.ndjson.gz")
     if a.out == "-":
         sys.stdout.buffer.write(gz)
     else:

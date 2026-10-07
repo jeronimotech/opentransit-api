@@ -19,12 +19,18 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
+import json
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from scripts.build_offline_bundle import NotATimetable, active_services, build
+from scripts.build_offline_bundle import (
+    NotATimetable,
+    active_services,
+    build,
+    serialise,
+)
 
 
 def _zip(tmp: Path, **tables: list[dict]) -> Path:
@@ -52,6 +58,11 @@ BASE = {
 }
 
 
+def _flat(doc: dict) -> dict:
+    """The old single-object view, so each test still reads as one document."""
+    return {**doc["header"], "boards": doc["boards"]}
+
+
 def _times(trip: str, pairs: list[tuple[str, str]]) -> list[dict]:
     return [{"trip_id": trip, "stop_id": s, "stop_sequence": str(i + 1), "departure_time": t,
              "arrival_time": t} for i, (s, t) in enumerate(pairs)]
@@ -66,7 +77,7 @@ def test_a_plain_timetable_becomes_delta_encoded_departures(tmp_path):
                         "start_date": "20260101", "end_date": "20261231"}],
              stop_times=_times("T1", [("S1", "06:00:00"), ("S2", "06:20:00")])
                         + _times("T2", [("S1", "06:10:00"), ("S2", "06:32:00")]))
-    d = build(z, "testville")
+    d = _flat(build(z, "testville"))
 
     # Stop S1 has one group (route, headsign, service) holding both departures, as first + gap.
     s1 = d["stops"].index(next(s for s in d["stops"] if s["id"] == "S1"))
@@ -92,7 +103,7 @@ def test_a_frequency_trip_is_expanded_not_taken_literally(tmp_path):
              stop_times=_times("T1", [("S1", "06:00:00"), ("S2", "06:20:00")]),
              frequencies=[{"trip_id": "T1", "start_time": "07:00:00", "end_time": "08:00:00",
                            "headway_secs": "900"}])
-    d = build(z, "testville")
+    d = _flat(build(z, "testville"))
 
     s1 = d["stops"].index(next(s for s in d["stops"] if s["id"] == "S1"))
     s2 = d["stops"].index(next(s for s in d["stops"] if s["id"] == "S2"))
@@ -117,7 +128,7 @@ def test_a_feed_with_no_calendar_still_has_services(tmp_path):
                      "trip_headsign": "Norte"}],
              stop_times=_times("T1", [("S1", "06:00:00"), ("S2", "06:20:00")]),
              calendar_dates=[{"service_id": "D20261007", "date": "20261007", "exception_type": "1"}])
-    d = build(z, "testville")
+    d = _flat(build(z, "testville"))
 
     assert [s["id"] for s in d["services"]] == ["D20261007"]
     assert d["services"][0]["from"] is None          # no calendar row, and that is valid GTFS
@@ -148,7 +159,7 @@ def test_a_trip_referring_to_a_missing_stop_is_counted_not_crashed_on(tmp_path):
                         "start_date": "20260101", "end_date": "20261231"}],
              stop_times=_times("T1", [("S1", "06:00:00"), ("GHOST", "06:10:00")])
                         + _times("T_UNKNOWN", [("S1", "07:00:00")]))
-    d = build(z, "testville")
+    d = _flat(build(z, "testville"))
     # One row for a stop the feed never declared, one for a trip trips.txt never declared.
     assert d["stats"]["skippedStopTimeRows"] == 2
     assert d["stats"]["departures"] == 1
@@ -163,7 +174,7 @@ def test_times_past_midnight_keep_gtfs_semantics(tmp_path):
                         "thursday": "1", "friday": "1", "saturday": "1", "sunday": "1",
                         "start_date": "20260101", "end_date": "20261231"}],
              stop_times=_times("T1", [("S1", "25:10:00")]))
-    d = build(z, "testville")
+    d = _flat(build(z, "testville"))
     s1 = d["stops"].index(next(s for s in d["stops"] if s["id"] == "S1"))
     assert d["boards"][str(s1)][0][3] == [25 * 60 + 10]
 
@@ -177,3 +188,54 @@ def test_a_feed_without_stop_times_is_refused_rather_than_shipped_empty(tmp_path
     z = _zip(tmp_path, **BASE, trips=[{"trip_id": "T1", "route_id": "R1", "service_id": "WK"}])
     with pytest.raises(NotATimetable):
         build(z, "testville")
+
+
+def test_the_file_is_one_header_line_then_one_line_per_stop(tmp_path):
+    """Small on the wire is not small in memory.
+
+    Expanded into client objects, Lisboa's twelve million departures are ~160 MB resident and
+    several hundred at the peak of a whole-document parse, which gets an app killed on a mid-range
+    phone. So the header — stops, routes, headsigns, calendar, the only part a client keeps — is
+    line one, and each stop is its own line, indexed by offset once at install."""
+    z = _zip(tmp_path, **BASE,
+             trips=[{"trip_id": "T1", "route_id": "R1", "service_id": "WK", "trip_headsign": "Norte"}],
+             calendar=[{"service_id": "WK", "monday": "1", "tuesday": "1", "wednesday": "1",
+                        "thursday": "1", "friday": "1", "saturday": "1", "sunday": "1",
+                        "start_date": "20260101", "end_date": "20261231"}],
+             stop_times=_times("T1", [("S1", "06:00:00"), ("S2", "06:20:00")]))
+    doc = build(z, "testville")
+    lines = serialise(doc).decode().rstrip("\n").split("\n")
+
+    header = json.loads(lines[0])
+    assert "boards" not in header                     # the heavy part is never in the header
+    assert [s["id"] for s in header["stops"]] == ["S1", "S2"]
+    assert header["stats"]["stopsWithDepartures"] == 2
+
+    stop_lines = [json.loads(x) for x in lines[1:]]
+    assert len(stop_lines) == 2
+    # In the order stop_times produced them, not sorted. Consecutive stops of a route share almost
+    # identical delta patterns, and keeping them adjacent is worth real bytes: sorting by stop index
+    # scattered them past gzip's window and doubled Toronto's download, 0.82 MB to 1.63 MB.
+    assert {x["s"] for x in stop_lines} == {0, 1}
+    by_stop = {x["s"]: x for x in stop_lines}
+    assert by_stop[0]["g"][0][3] == [360]             # S1 at 06:00
+
+    # Two builds of an unchanged feed produce the same bytes.
+    assert serialise(doc) == serialise(build(z, "testville"))
+
+
+def test_a_stop_nothing_calls_at_gets_no_line(tmp_path):
+    base = {**BASE, "stops": BASE["stops"] + [
+        {"stop_id": "S3", "stop_name": "Nunca", "stop_lat": "4.7", "stop_lon": "-74.2",
+         "location_type": "0"}]}
+    z = _zip(tmp_path, **base,
+             trips=[{"trip_id": "T1", "route_id": "R1", "service_id": "WK", "trip_headsign": "Norte"}],
+             calendar=[{"service_id": "WK", "monday": "1", "tuesday": "1", "wednesday": "1",
+                        "thursday": "1", "friday": "1", "saturday": "1", "sunday": "1",
+                        "start_date": "20260101", "end_date": "20261231"}],
+             stop_times=_times("T1", [("S1", "06:00:00"), ("S2", "06:20:00")]))
+    doc = build(z, "testville")
+    # S3 is still in the header, because a rider can search for it and see it on the map; it simply
+    # has no board. Shipping an empty line for it would say "no service" rather than "no data".
+    assert len(doc["header"]["stops"]) == 3
+    assert "2" not in doc["boards"]
