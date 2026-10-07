@@ -46,13 +46,24 @@ def _minutes_until(iso_time: str, now_ts: float) -> int:
 def board_source(dep: dict) -> str:
     """How much to trust one departure's time, in `/next`'s vocabulary.
 
-    `realtime` is true for two quite different things: a prediction whose trip id the schedule
-    knows, and one we rescued by pairing on stop and route after the id did not resolve. The second
-    is an inference of ours. Collapsing both into "live" is the lie the board has been telling, and
-    in cities whose feeds rotate trip ids it is the common case rather than the edge one.
+    `realtime` is true for things that are not equally certain, and the board used to flatten them
+    all into "live". Two of them are inferences of ours:
+
+    - `realtimeSource == "stop"`, a prediction paired by stop and route after the trip id did not
+      resolve (`apply_stop_predictions`; today that runs on `/departures`, not here).
+    - the matched vehicle's `tripMatch == "schedule"`, meaning the bus was attached to this trip by
+      where and when it is rather than by an id the feed gave us. Bogota's feed rotates ids between
+      publications, so this is hundreds of buses at a time, not an edge case.
+
+    Either way the time is better than the timetable's and worse than a bus reporting itself, which
+    is what "estimated" is for.
     """
     if not dep.get("realtime"):
         return "scheduled"
+    if dep.get("realtimeSource") == "stop":
+        return "estimated"
+    if ((dep.get("vehicle") or {}).get("tripMatch")) == "schedule":
+        return "estimated"
     return "live" if dep.get("realtimeSource") == "trip" else "estimated"
 
 

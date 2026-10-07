@@ -65,6 +65,35 @@ def test_board_separates_a_rescued_arrival_from_a_live_one():
     assert by_route["B13"]["realtime"] is True
 
 
+def test_a_bus_matched_to_its_trip_by_schedule_is_an_estimate_too():
+    """The other inference, and on `/board` the only one that actually occurs.
+
+    `apply_stop_predictions` runs on `/departures`, so `realtimeSource` here is only ever "trip".
+    But the vehicle the board carries records how it was attached to that trip: `tripMatch` is
+    "schedule" when the id the feed gave us was not one the graph knows and we placed the bus by
+    where and when it is instead. Bogota's feed rotates ids between publications, so that is
+    hundreds of buses at a time. The time is real; the pairing is ours."""
+    by_id = {"id": "V1", "lat": 4.63, "lon": -74.08, "tripMatch": "id"}
+    by_sched = {"id": "V2", "lat": 4.64, "lon": -74.09, "tripMatch": "schedule"}
+    rows = group_board([dict(_dep("G12", 5, "t2", rt=True), vehicle=by_id),
+                        dict(_dep("B13", 7, "t3", rt=True), vehicle=by_sched)],
+                       per_route=3, now_ts=NOW_TS)
+    by_route = {r["route"]["shortName"]: r["next"][0] for r in rows}
+    assert by_route["G12"]["source"] == "live"
+    assert by_route["B13"]["source"] == "estimated"
+
+
+def test_a_departure_with_no_vehicle_is_still_live_when_the_trip_matched():
+    """Not having a position is not a reason to doubt the time.
+
+    OTP matched the trip and gave us a prediction; our separate vehicle frame simply has no bus on
+    it this second. Downgrading that to "estimated" would under-claim on every feed that publishes
+    trip updates without positions."""
+    rows = group_board([_dep("G12", 5, "t2", rt=True)], per_route=3, now_ts=NOW_TS)
+    assert rows[0]["next"][0]["vehicle"] is None
+    assert rows[0]["next"][0]["source"] == "live"
+
+
 # ---- next buses -------------------------------------------------------------
 
 LINE = [(-74.0500, 4.7500), (-74.0500, 4.7000), (-74.0500, 4.6500)]   # straight south, ~11 km
