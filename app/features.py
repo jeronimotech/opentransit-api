@@ -140,6 +140,31 @@ def accessibility_unverified(counts: dict[int, int], threshold: float = 0.99) ->
     return value != 0 and n / total >= threshold
 
 
+def accessibility_support(counts: dict[int, int], threshold: float = 0.99,
+                          min_coverage: float = 0.5) -> str:
+    """Whether this feed's wheelchair data can carry a step-free *filter*: verified | unverified | none.
+
+    `accessibility_unverified` answers a narrower question — is this value a blanket default — and
+    returns False for two opposite feeds: one with a real survey, and one with no data at all. A
+    filter cannot tell those apart safely, so classify three ways:
+
+    - **none**: no stop carries an informative value. There is nothing to filter on, and a filter
+      that returns everything or nothing would both be lies. Roma, Brisbane, Kuala Lumpur, Lisboa.
+    - **unverified**: values exist but cannot be trusted, either because one of them blankets the
+      system (Bogota publishes `wheelchair_boarding=1` for every stop, which is a default dressed
+      as a survey) or because informative values cover less than [min_coverage] of stops, so most
+      of the network would be judged on silence. Santiago has nine of ninety-two.
+    - **verified**: informative values on most stops and more than one of them. Boston, Toronto.
+    """
+    total = sum(counts.values())
+    informative = sum(v for k, v in counts.items() if k != 0)
+    if total == 0 or informative == 0:
+        return "none"
+    if accessibility_unverified(counts, threshold) or informative / total < min_coverage:
+        return "unverified"
+    return "verified"
+
+
 def accessibility_block(wheelchair: str, unverified: bool, locale: str = "es") -> dict:
     if wheelchair == "unknown":
         return {"wheelchair": "unknown", "source": "none", "verified": False, "note": None}

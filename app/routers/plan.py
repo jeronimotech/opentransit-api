@@ -17,7 +17,7 @@ from ..forecast import (
 from ..gbfs import GbfsNetwork as GbfsNetworkForms
 from ..geocode import reverse
 from ..models import ForecastResponse, PlanResponse
-from ..normalize import apply_endpoint_names, enrich_rental, plan_from_otp
+from ..normalize import apply_endpoint_names, enrich_rental, feed_flags, plan_from_otp
 from ..ondemand import attach_to_plan, haversine_m, is_ondemand_leg
 from ..otp import PLAN_QUERY
 from ..parkride import attach_park_ride, merge_park_ride
@@ -101,6 +101,32 @@ def build_variables(*, from_lat: float, from_lon: float, to_lat: float, to_lon: 
         "dateTime": {"latestArrival" if arrive_by else "earliestDeparture": when.isoformat()},
         "modes": modes, "first": num, "preferences": prefs, "locale": locale,
     }
+
+
+def accessibility_warnings(city_id: str, wheelchair: bool) -> list[str]:
+    """What the step-free search can honestly claim in this city.
+
+    OTP is asked for wheelchair routing and answers with whatever the feed gave it, which in most of
+    our cities is nothing. `wheelchairAccessibility` is configured with `onlyConsiderAccessible:
+    false`, so unknown stops and trips are allowed at a cost rather than dropped — otherwise a city
+    with no data would return no itineraries at all, which reads as "no accessible service exists".
+    That is the right routing choice and a dishonest silence: the results come back looking the same
+    as an unfiltered search, because they are.
+
+    So say which it is. The client needs this to write an empty state that blames the data rather
+    than the city, and to stop implying a filter ran when nothing could be filtered.
+    """
+    if not wheelchair:
+        return []
+    support = feed_flags(city_id).get("accessibilitySupport")
+    if support == "verified":
+        return []
+    if support == "unverified":
+        return ["ACCESSIBILITY_UNVERIFIED: this feed publishes the same wheelchair value for nearly "
+                "every stop, or for too few of them; step-free results here are not a survey"]
+    # None covers both "no informative value anywhere" and a feed we have not classified yet.
+    return ["ACCESSIBILITY_NO_DATA: this city publishes no stop or trip accessibility data, so the "
+            "step-free option cannot filter anything"]
 
 
 def resolve_rental_modes(street: list[str], availability: dict[str, bool | None]) -> tuple[list[str], list[str]]:
@@ -450,7 +476,7 @@ async def plan(
     if len(plans) > 1 or pr_plan is not None or direct_plans:
         plan_out["warnings"] = [w for w in plan_out["warnings"]
                                 if not (w.startswith("NO_ITINERARIES") and plan_out["itineraries"])]
-    plan_out["warnings"] = mode_warnings + plan_out["warnings"]
+    plan_out["warnings"] = mode_warnings + accessibility_warnings(city.id, wheelchair) + plan_out["warnings"]
     for it in plan_out["itineraries"]:
         for leg in it["legs"]:
             rt.with_window(leg.get("route"))

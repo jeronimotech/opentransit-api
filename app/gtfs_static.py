@@ -22,7 +22,7 @@ import httpx
 from .cities import City
 from .config import settings
 from .db import pool
-from .features import ServiceIndex, accessibility_unverified, hms_to_seconds
+from .features import ServiceIndex, accessibility_support, accessibility_unverified, hms_to_seconds
 from .geo import encode_polyline, rdp
 from .network_dedupe import ShapeIn, dedupe_shapes
 
@@ -265,6 +265,8 @@ async def ingest(city: City, force: bool = False) -> dict:
     n_canonical = sum(1 for o in dd.values() if o.is_canonical)
 
     meta = {"wheelchairUnverified": accessibility_unverified(dict(wheelchair_counts)),
+            # Three-state, because "not a blanket default" covers both a real survey and no data.
+            "accessibilitySupport": accessibility_support(dict(wheelchair_counts)),
             "wheelchairCounts": {str(k): v for k, v in wheelchair_counts.items()},
             "serviceWindows": len(windows), "calendars": len(calendars), "calendarExceptions": len(exceptions),
             "shapes": len(shapes_out), "canonicalShapes": n_canonical}

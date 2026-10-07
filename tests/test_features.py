@@ -6,6 +6,7 @@ from app.cities import City
 from app.features import (
     ServiceIndex,
     accessibility_block,
+    accessibility_support,
     accessibility_unverified,
     estimate_fare,
     hms_to_seconds,
@@ -134,6 +135,34 @@ def test_accessibility_constant_value_is_unverified():
     assert accessibility_unverified({1: 500, 2: 500}) is False
     assert accessibility_unverified({0: 8335}) is False          # "no information" is honest
     assert accessibility_unverified({}) is False
+
+
+def test_accessibility_support_separates_a_survey_from_a_silence():
+    """`accessibility_unverified` returns False for two opposite feeds, and a filter has to tell
+    them apart: Boston surveyed its stops, Roma published nothing. Counts are GTFS
+    `wheelchair_boarding`: 0 unknown, 1 accessible, 2 not accessible.
+
+    Numbers are the shape measured per city against production on 2026-10-06."""
+    # Boston and Toronto: informative values on nearly every stop, and more than one of them.
+    assert accessibility_support({1: 97, 2: 3, 0: 3}) == "verified"
+    assert accessibility_support({1: 47, 2: 18}) == "verified"
+
+    # Bogota: `wheelchair_boarding=1` for every stop in the system. A default dressed as a survey,
+    # and the reason a step-free filter there would hand back everything stamped accessible.
+    assert accessibility_support({1: 8335}) == "unverified"
+
+    # Santiago: nine informative stops out of ninety-two. Real data, far too little of it to judge
+    # the other ninety percent on, so trusting it would mean judging the network on silence.
+    assert accessibility_support({1: 9, 0: 83}) == "unverified"
+
+    # Roma, Brisbane, Kuala Lumpur, Lisboa: nothing informative anywhere. Not a bad survey, no
+    # survey — there is literally nothing for a filter to act on.
+    assert accessibility_support({0: 8000}) == "none"
+    assert accessibility_support({}) == "none"
+
+    # A feed on the coverage boundary is judged by coverage, not by how varied the few values are.
+    assert accessibility_support({1: 30, 2: 30, 0: 40}) == "verified"      # 60 % informative
+    assert accessibility_support({1: 20, 2: 20, 0: 60}) == "unverified"    # 40 % informative
     blk = accessibility_block("accessible", True)
     assert blk["verified"] is False and blk["source"] == "gtfs" and "no verificado" in blk["note"]
     assert accessibility_block("accessible", False)["verified"] is True
