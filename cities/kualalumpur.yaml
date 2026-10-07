@@ -113,3 +113,9 @@ landing:
     title: "Kuala Lumpur transit, live · open-source trip planner"
     description: "Plan trips across Kuala Lumpur with LRT, MRT, monorail and live Rapid KL buses, next departures at your stop and open data. Free and open source."
     og_image_url: null
+
+# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
+offline:
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-kualalumpur.ndjson.gz
+  bytes: 266763
+  built_at: "2026-10-07"

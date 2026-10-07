@@ -125,3 +125,9 @@ landing:
     title: "Brisbane & South East Queensland transit, live · open-source trip planner"
     description: "Plan trips across South East Queensland with live TransLink vehicles, arrivals at your stop and open data. Free and open source."
     og_image_url: null
+
+# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
+offline:
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-brisbane.ndjson.gz
+  bytes: 1318368
+  built_at: "2026-10-07"

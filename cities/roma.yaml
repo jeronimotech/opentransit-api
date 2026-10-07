@@ -126,3 +126,9 @@ landing:
     title: "Roma in tempo reale · pianificatore di viaggi open source"
     description: "Pianifica viaggi a Roma con metro, tram e autobus in tempo reale, arrivi alla fermata e dati aperti. Gratis e open source."
     og_image_url: null
+
+# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
+offline:
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-roma.ndjson.gz
+  bytes: 2210688
+  built_at: "2026-10-07"

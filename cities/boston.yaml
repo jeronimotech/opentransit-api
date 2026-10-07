@@ -145,3 +145,9 @@ landing:
     title: "Boston transit, live · open-source trip planner"
     description: "Plan trips across Greater Boston with live MBTA vehicles, arrivals at your stop, Bluebikes and open data. Free and open source."
     og_image_url: null
+
+# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
+offline:
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-boston.ndjson.gz
+  bytes: 792885
+  built_at: "2026-10-07"

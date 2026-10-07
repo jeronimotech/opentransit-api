@@ -118,3 +118,9 @@ landing:
     title: "Lisboa em tempo real · planeador de viagens open source"
     description: "Planeia viagens na Área Metropolitana de Lisboa com autocarros em tempo real, próximas passagens na paragem e dados abertos. Grátis e open source."
     og_image_url: null
+
+# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
+offline:
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-lisboa.ndjson.gz
+  bytes: 4637097
+  built_at: "2026-10-07"

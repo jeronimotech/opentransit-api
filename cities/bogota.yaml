@@ -410,3 +410,9 @@ landing:
     title: "Bogotá en vivo · planeador de transporte público"
     description: "Planea viajes en Bogotá en bus, bici, taxi o carro + bus, con buses en vivo, avisos de cuándo salir y direcciones de verdad. Gratis y de código abierto."
     og_image_url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/hub-desktop-live-api.png
+
+# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
+offline:
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-bogota.ndjson.gz
+  bytes: 5680355
+  built_at: "2026-10-07"

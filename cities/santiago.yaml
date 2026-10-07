@@ -137,3 +137,9 @@ landing:
     title: "Santiago · planificador de viajes de código abierto (Metro, Red y tren)"
     description: "Planea viajes en Santiago con Metro, buses Red, tren y Bike Santiago, de una dirección a otra, con próximos buses en tu paradero. Gratis y de código abierto."
     og_image_url: null
+
+# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
+offline:
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-santiago.ndjson.gz
+  bytes: 2439570
+  built_at: "2026-10-07"

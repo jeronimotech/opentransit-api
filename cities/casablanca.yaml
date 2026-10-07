@@ -102,3 +102,9 @@ landing:
     title: "Casablanca · planificateur de trajets open source (tramway et busway)"
     description: "Planifiez vos trajets à Casablanca en tramway et busway, d’une adresse à l’autre, avec les prochains passages à votre station. Gratuit et open source."
     og_image_url: null
+
+# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
+offline:
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-casablanca.ndjson.gz
+  bytes: 9945
+  built_at: "2026-10-07"
