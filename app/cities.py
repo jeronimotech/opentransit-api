@@ -66,6 +66,25 @@ class Otp(BaseModel):
     trip_ids_url: str | None = None
 
 
+class OfflineBundle(BaseModel):
+    """Where this city's offline timetable lives, and how big it is before anyone downloads it.
+
+    Built by scripts/build_offline_bundle.py from the same GTFS zip as the graph and published as a
+    release asset beside it. The size is configured rather than discovered because the app has to
+    say "5.4 MB" *before* starting the download, and because on a metered connection the honest
+    thing is to ask first — a question that needs the number to be worth asking.
+
+    Null, or absent, means this city has no bundle yet, and the app offers no download rather than
+    offering one that 404s.
+    """
+    url: str
+    bytes: int = Field(gt=0)
+    format_version: int = 1
+    # What the rider gets for those bytes, and what a stale bundle can be compared against.
+    departures: int | None = None
+    built_at: str | None = None
+
+
 class IdecaGeocoder(BaseModel):
     """Bogotá's official address geocoder (IDECA / Catastro Distrital, `cmd=geocodificar`). It resolves the
     city's own nomenclature — "Cra 10 # 15-22 Sur", "Calle 127 con Carrera 7" — to the cadastral point,
@@ -776,6 +795,8 @@ class City(BaseModel):
     open_mobility: OpenMobility = OpenMobility()
     landing: Landing = Landing()
     pois_file: str | None = None      # path relative to the cities dir; default cities/<id>/pois.geojson
+    # v1.6: the downloadable timetable, for riders underground or out of data. See OfflineBundle.
+    offline: OfflineBundle | None = None
 
     @field_validator("bbox")
     @classmethod
@@ -915,6 +936,14 @@ class City(BaseModel):
                 "onDemand": self.on_demand_enabled(),
                 "openMobility": self.open_mobility_enabled(),
             },
+            # Only when a bundle actually exists: the app must not offer a download it cannot make.
+            "offline": {
+                "url": self.offline.url,
+                "bytes": self.offline.bytes,
+                "formatVersion": self.offline.format_version,
+                "departures": self.offline.departures,
+                "builtAt": self.offline.built_at,
+            } if self.offline else None,
             "agencies": [{"id": a.id, "name": a.name, "component": a.component, "color": a.color}
                          for a in self.agencies],
             "components": [c.model_dump() for c in self.components] or self._components_from_agencies(),

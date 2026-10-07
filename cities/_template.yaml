@@ -33,6 +33,20 @@ otp:
   base_url: ${OTP_MYCITY_URL:-${OTP_URL:-http://localhost:8081}}   # OTP_<CITY>_URL overrides the shared OTP_URL
   feed_id: mycity                # == transitFeeds[].feedId in otp/<slug>/build-config.json
 
+# v1.6: the downloadable timetable, for riders underground or out of data. Built by
+# scripts/build_offline_bundle.py from the same GTFS zip as the graph and published as a release
+# asset beside it. Leave this out until the asset exists: the app then offers no download at all,
+# which is better than offering one that 404s.
+#
+# `bytes` is configured, not discovered, because the app must say how big before a rider commits
+# and must ask first on a metered connection. Measured sizes for the whole timetable of a city run
+# from 0.01 MB (Casablanca) to 5.4 MB (Bogotá) -- there is no need to slice it by date.
+# offline:
+#   url: https://github.com/jeronimotech/opentransit-api/releases/download/bundle-<city>-<date>/offline-bundle.json.gz
+#   bytes: 5672345
+#   departures: 9560672
+#   built_at: "2026-10-07"
+
 geocoder:
   photon_url: https://photon.komoot.io
 

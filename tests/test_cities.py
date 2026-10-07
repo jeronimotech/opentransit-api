@@ -86,3 +86,63 @@ def test_toronto_bike_share_matches_the_otp_updater():
     assert len(rental) == 1
     assert rental[0]["network"] == net.network
     assert rental[0]["url"] == net.gbfs_url
+
+
+def test_offline_bundle_is_absent_until_one_is_published(bogota: City):
+    """No bundle means the app offers no download, rather than one that 404s.
+
+    The nine cities ship without `offline:` until the release assets exist, so the honest public
+    shape is an explicit null the client can branch on."""
+    assert bogota.offline is None
+    assert "offline" in bogota.public()
+    assert bogota.public()["offline"] is None
+
+
+def test_offline_bundle_publishes_its_size_before_the_download_starts(tmp_path: Path):
+    """The app has to say "5.4 MB" before a rider commits, and has to ask first on a metered
+    connection — a question that needs the number to be worth asking. So the size is configured
+    rather than discovered with a HEAD request the download would then race."""
+    p = tmp_path / "testville.yaml"
+    p.write_text(
+        """
+id: testville
+name: Testville
+country: XX
+timezone: UTC
+center: {lat: 0.1, lon: 0.1}
+bbox: [-1, -1, 1, 1]
+feeds: {gtfs_static_url: https://example.com/gtfs.zip}
+otp: {base_url: http://localhost:8080, feed_id: testville}
+offline:
+  url: https://example.com/releases/offline-bundle.json.gz
+  bytes: 5672345
+  departures: 9560672
+  built_at: "2026-10-07"
+""")
+    c = load_city_file(p)
+    pub = c.public()["offline"]
+    assert pub == {
+        "url": "https://example.com/releases/offline-bundle.json.gz",
+        "bytes": 5672345,
+        "formatVersion": 1,
+        "departures": 9560672,
+        "builtAt": "2026-10-07",
+    }
+
+
+def test_a_zero_byte_bundle_is_a_misconfiguration_not_an_empty_download(tmp_path: Path):
+    p = tmp_path / "testville.yaml"
+    p.write_text(
+        """
+id: testville
+name: Testville
+country: XX
+timezone: UTC
+center: {lat: 0.1, lon: 0.1}
+bbox: [-1, -1, 1, 1]
+feeds: {gtfs_static_url: https://example.com/gtfs.zip}
+otp: {base_url: http://localhost:8080, feed_id: testville}
+offline: {url: https://example.com/b.json.gz, bytes: 0}
+""")
+    with pytest.raises(ValueError):
+        load_city_file(p)
