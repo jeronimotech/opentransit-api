@@ -37,11 +37,28 @@ def test_a_city_with_no_accessibility_data_says_so():
     assert _codes("roma") == ["ACCESSIBILITY_NO_DATA"]
 
 
-def test_an_unclassified_feed_under_claims_rather_than_over_claims():
-    """A feed ingested before this flag existed has no `accessibilitySupport`. Treat that as no
-    data: the cost of being wrong is a warning the rider did not need, not a step-free promise the
-    network cannot keep."""
+def test_an_unclassified_feed_is_judged_on_the_counts_it_already_stored():
+    """Flags come from the stored `feed_version.meta`, and ingests only run when the feed changes.
+
+    So a feed ingested before `accessibilitySupport` existed would keep reporting the fallback for
+    as long as its agency takes to republish — months, for Boston or Toronto, which are the two
+    cities where the filter actually works. `wheelchairCounts` has been in that meta all along, so
+    classify from it. JSON made its keys strings."""
+    set_feed_flags("boston", {"wheelchairCounts": {"1": 97, "2": 3, "0": 3}})
+    assert _codes("boston") == []
+
+    set_feed_flags("bogota", {"wheelchairCounts": {"1": 8335}})
+    assert _codes("bogota") == ["ACCESSIBILITY_UNVERIFIED"]
+
+
+def test_a_feed_with_neither_the_flag_nor_the_counts_under_claims():
+    """The cost of being wrong this way is a warning the rider did not need, not a step-free
+    promise the network cannot keep."""
     set_feed_flags("lisboa", {})
+    assert _codes("lisboa") == ["ACCESSIBILITY_NO_DATA"]
+
+    # and a meta we cannot read is treated the same way rather than raising mid-request
+    set_feed_flags("lisboa", {"wheelchairCounts": {"not-an-int": "nonsense"}})
     assert _codes("lisboa") == ["ACCESSIBILITY_NO_DATA"]
 
 

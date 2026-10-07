@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query, Request
 
 from ..errors import ApiError
+from ..features import accessibility_support
 from ..forecast import (
     MAX_FANOUT,
     ForecastCache,
@@ -118,7 +119,19 @@ def accessibility_warnings(city_id: str, wheelchair: bool) -> list[str]:
     """
     if not wheelchair:
         return []
-    support = feed_flags(city_id).get("accessibilitySupport")
+    flags = feed_flags(city_id)
+    support = flags.get("accessibilitySupport")
+    if support is None:
+        # Flags are loaded from the stored `feed_version.meta`, not recomputed at boot, so a feed
+        # ingested before `accessibilitySupport` existed has no such key — and ingests only run when
+        # the feed changes, so waiting for one would mislead Boston and Toronto for however long
+        # their agencies take to republish. `wheelchairCounts` has been stored all along, with
+        # string keys because it went through JSON, so classify from that instead.
+        counts = flags.get("wheelchairCounts") or {}
+        try:
+            support = accessibility_support({int(k): int(v) for k, v in counts.items()})
+        except (TypeError, ValueError):
+            support = None
     if support == "verified":
         return []
     if support == "unverified":
