@@ -2,6 +2,7 @@
 import datetime as dt
 
 from app.geo import along_track, encode_polyline
+from app.normalize import apply_stop_predictions, merge_departures
 from app.routers.board import group_board, locate_vehicle, next_rows
 
 NOW = dt.datetime(2026, 9, 4, 15, 0, tzinfo=dt.UTC)
@@ -92,6 +93,38 @@ def test_a_departure_with_no_vehicle_is_still_live_when_the_trip_matched():
     rows = group_board([_dep("G12", 5, "t2", rt=True)], per_route=3, now_ts=NOW_TS)
     assert rows[0]["next"][0]["vehicle"] is None
     assert rows[0]["next"][0]["source"] == "live"
+
+
+def test_stop_paired_arrivals_reach_the_board_as_estimates_without_bare_rows():
+    """What `/board` does with a feed whose trip ids are not the schedule's.
+
+    Toronto's and Kuala Lumpur's realtime resolves by trip id almost never, so the board used to
+    show plain timetable times for arrivals the API already had on `/departures`. The board now runs
+    the same stop-keyed pairing, and keeps only the departures that got paired: the leftovers that
+    `apply_stop_predictions` appends have no headsign and no scheduled time, and on a board grouped
+    by (route, headsign) they would appear as a second half-empty row for a route already listed.
+    """
+    deps = [_dep("501", 10, "t1"), _dep("504", 30, "t2")]
+    arrivals = [
+        {"route": "501", "eta": int((NOW + dt.timedelta(minutes=8)).timestamp()), "seq": 3},
+        # same route, far outside the 15-minute window of any scheduled departure -> a leftover
+        {"route": "501", "eta": int((NOW + dt.timedelta(minutes=70)).timestamp()), "seq": 4},
+    ]
+    out = apply_stop_predictions(deps, arrivals, _City(), int(NOW_TS))
+    kept = [d for d in out if d.get("scheduledTime")]
+    assert len(out) == 3 and len(kept) == 2          # one leftover appended, then dropped
+
+    rows = group_board(merge_departures(kept), per_route=3, now_ts=NOW_TS)
+    by_route = {r["route"]["shortName"]: r for r in rows}
+    # the paired one is realtime and honest about how it got there
+    assert by_route["501"]["next"][0]["source"] == "estimated"
+    assert by_route["501"]["next"][0]["realtime"] is True
+    assert by_route["501"]["next"][0]["minutes"] == 8
+    # the untouched one stays on the timetable
+    assert by_route["504"]["next"][0]["source"] == "scheduled"
+    # and no row lost its identity to a bare route ref
+    assert all(r["route"].get("shortName") for r in rows)
+    assert len(rows) == 2
 
 
 # ---- next buses -------------------------------------------------------------

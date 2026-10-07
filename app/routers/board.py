@@ -16,6 +16,7 @@ from ..errors import RouteNotFound, StopNotFound
 from ..geo import along_track, decode_polyline
 from ..models import BoardResponse, NextResponse
 from ..normalize import (
+    apply_stop_predictions,
     clean_headsign,
     departure_from_otp,
     merge_departures,
@@ -101,6 +102,22 @@ async def board(stopId: str, rt: CityRuntime = Depends(city_runtime),
         d["vehicleId"] = e["id"] if e else None
         d["vehicle"] = rt.rt.public_vehicle(e) if e else None
     now_ts = time.time()
+    # Predictions keyed by stop, for a feed whose trip ids are not the schedule's. `/departures` has
+    # done this all along; the board did not, so in Toronto and Kuala Lumpur — where almost nothing
+    # resolves by trip id — it showed plain timetable times for arrivals the API already knew about.
+    #
+    # Only the pairing is kept. `apply_stop_predictions` also appends the leftovers, arrivals the
+    # schedule never described: those carry no headsign, no scheduled time and a bare route ref, so
+    # on a board grouped by (route, headsign) they would show up as a second half-empty row for a
+    # route already listed. Measured against production they are a small minority of the rescue
+    # (one in fourteen across ten Toronto stops), and they remain available on `/departures`.
+    raw_ids = [rt.city.unscoped(stopId)]
+    if stop.get("locationType") == "station":
+        raw_ids += [rt.city.unscoped(c["id"]) for c in await _db_children(rt, rt.city.unscoped(stopId))]
+    arrivals = [a for sid in raw_ids for a in rt.rt.stop_arrivals.get(sid or "", [])]
+    if arrivals:
+        deps = [d for d in apply_stop_predictions(deps, arrivals, rt.city, int(now_ts))
+                if d.get("scheduledTime")]
     rows = group_board(merge_departures(deps), perRoute, now_ts)
     seen = {r["route"]["id"] for r in rows}
     # routes serving the stop with nothing in the window -> empty rows carrying the service window
