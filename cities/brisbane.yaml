@@ -128,6 +128,6 @@ landing:
 
 # v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
 offline:
-  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-brisbane.ndjson.gz
-  bytes: 1318368
-  built_at: "2026-10-07"
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-08/offline-brisbane.ndjson.gz
+  bytes: 1318739
+  built_at: "2026-10-08"

@@ -105,6 +105,6 @@ landing:
 
 # v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
 offline:
-  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-casablanca.ndjson.gz
-  bytes: 9945
-  built_at: "2026-10-07"
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-08/offline-casablanca.ndjson.gz
+  bytes: 9961
+  built_at: "2026-10-08"

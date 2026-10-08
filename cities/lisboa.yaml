@@ -121,6 +121,6 @@ landing:
 
 # v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
 offline:
-  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-lisboa.ndjson.gz
-  bytes: 4637097
-  built_at: "2026-10-07"
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-08/offline-lisboa.ndjson.gz
+  bytes: 4637152
+  built_at: "2026-10-08"

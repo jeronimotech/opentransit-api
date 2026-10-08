@@ -148,6 +148,6 @@ landing:
 
 # v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
 offline:
-  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-07/offline-boston.ndjson.gz
-  bytes: 792885
-  built_at: "2026-10-07"
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-08/offline-boston.ndjson.gz
+  bytes: 793031
+  built_at: "2026-10-08"
