@@ -6,6 +6,7 @@ from ..errors import RouteNotFound
 from ..models import RouteDetail
 from ..normalize import alert_from_otp, pattern_from_otp, route_ref, route_ref_from_db
 from ..otp import ROUTE_QUERY
+from ..route_merge import merge_duplicate_routes
 from ..runtime import CityRuntime, city_runtime
 
 router = APIRouter(tags=["routes"])
@@ -21,7 +22,11 @@ async def list_routes(rt: CityRuntime = Depends(city_runtime), component: str | 
                   AND ($2::text IS NULL OR component=$2)
                   AND ($3::text IS NULL OR short_name ILIKE $3 || '%' OR long_name ILIKE '%' || $3 || '%')
                 ORDER BY component, short_name""", fv, component, q) if fv else []
-    return JSONResponse({"routes": [rt.with_window(route_ref_from_db(rt.city, dict(r))) for r in rows]},
+    refs = [rt.with_window(route_ref_from_db(rt.city, dict(r))) for r in rows]
+    # Feeds list the same route many times: Brisbane ships thirteen identical "BRBD · Brisbane City
+    # - Airport" rows, 728 of its 1115 entries. Collapsed only on an exact match of what a rider is
+    # shown, so Boston's thirty-eight differently-destined "Red Line Shuttle" rows all survive.
+    return JSONResponse({"routes": merge_duplicate_routes(refs)},
                         headers={"Cache-Control": "public, max-age=300" if not q else "no-store"})
 
 
