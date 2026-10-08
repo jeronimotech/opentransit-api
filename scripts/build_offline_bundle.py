@@ -85,6 +85,95 @@ class Interner:
         return self._index.get(s)
 
 
+def build_patterns(zip_path: Path, city: str) -> dict:
+    """The same timetable, indexed by pattern instead of by stop — what journey planning needs.
+
+    A departure board answers "when does something leave here", and the shipped bundle is shaped for
+    exactly that: per stop, times grouped by route. It cannot answer "if I board at A, when do I
+    reach B", because nothing links a departure at one stop to an arrival at another.
+
+    A pattern — one ordered stop sequence, with every trip that runs it — restores that link, and is
+    what RAPTOR and connection-scan both consume. Measured on Bogota: 1 521 patterns over 181 051
+    trips and 9 471 772 times, 8.06 MB gzipped against the board bundle's 5.42 MB. A 49 % larger
+    download that serves both questions, since a board is derivable from the patterns calling at a
+    stop.
+
+    Emitted as its own artefact rather than folded into the bundle, so the shipped format and the
+    client reading it stay exactly as they are until there is something on the other side to use
+    this. Nothing downloads it yet.
+
+    **Memory**: this holds every trip's stop sequence at once, because `stop_times.txt` is not
+    sorted by trip in every feed — Bogota's is not, and streaming it as though it were split each
+    trip into fragments and reported 1.35 million patterns instead of 1 521.
+    """
+    z = zipfile.ZipFile(zip_path)
+    if "stop_times.txt" not in z.namelist():
+        raise NotATimetable(f"{zip_path} has no stop_times.txt")
+
+    trips: dict[str, tuple[str, str, str]] = {}
+    for r in _rows(z, "trips.txt"):
+        trips[r["trip_id"]] = (r.get("route_id") or "", r.get("service_id") or "",
+                               (r.get("trip_headsign") or "").strip())
+
+    stops_ix = Interner()
+    for r in _rows(z, "stops.txt"):
+        stops_ix(r["stop_id"])
+
+    seqs: dict[str, list[tuple[int, int, int]]] = defaultdict(list)
+    for r in _rows(z, "stop_times.txt"):
+        tid = r["trip_id"]
+        if tid not in trips:
+            continue
+        t = _secs(r.get("departure_time") or r.get("arrival_time"))
+        si = stops_ix.get(r.get("stop_id") or "")
+        if t is None or si is None:
+            continue
+        seqs[tid].append((int(r.get("stop_sequence") or 0), si, t // 60))
+
+    routes_ix, heads_ix, svc_ix = Interner(), Interner(), Interner()
+    patterns: dict[tuple, int] = {}
+    pattern_stops: list[list[int]] = []
+    pattern_meta: list[tuple[int, int]] = []
+    runs: list[list] = []
+    for tid, seq in seqs.items():
+        if len(seq) < 2:
+            continue
+        seq.sort()
+        route, service, headsign = trips[tid]
+        key = (route, headsign, tuple(s for _, s, _ in seq))
+        i = patterns.get(key)
+        if i is None:
+            i = patterns[key] = len(pattern_stops)
+            pattern_stops.append([s for _, s, _ in seq])
+            pattern_meta.append((routes_ix(route), heads_ix(headsign)))
+            runs.append([])
+        runs[i].append([svc_ix(service), [t for _, _, t in seq]])
+
+    for r in runs:
+        r.sort(key=lambda x: x[1][0] if x[1] else 0)
+
+    return {
+        "v": 1,
+        "city": city,
+        "builtAt": dt.datetime.now(dt.UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "stops": stops_ix.values,
+        "routes": routes_ix.values,
+        "headsigns": heads_ix.values,
+        "services": svc_ix.values,
+        # One entry per pattern: the stops it calls at, which route and headsign it is, and every
+        # trip that runs it as [service, times], sorted by departure so a scan can binary-search.
+        "patterns": [
+            {"r": pattern_meta[i][0], "h": pattern_meta[i][1], "s": pattern_stops[i], "t": runs[i]}
+            for i in range(len(pattern_stops))
+        ],
+        "stats": {
+            "patterns": len(pattern_stops),
+            "trips": sum(len(r) for r in runs),
+            "times": sum(len(t[1]) for r in runs for t in r),
+        },
+    }
+
+
 def _city_config(city: str):
     """The city's own YAML, for the agency-to-component mapping the app draws with.
 
@@ -359,6 +448,9 @@ def main() -> int:
     ap.add_argument("--out", default=None,
                     help="output path, or - for stdout; default <data>/<city>/offline-bundle.json.gz")
     ap.add_argument("--stats", action="store_true", help="print sizes to stderr and write nothing")
+    ap.add_argument("--patterns-out", default=None,
+                    help="also write the pattern-indexed timetable here (journey planning); "
+                         "nothing downloads it yet")
     a = ap.parse_args()
 
     zip_path = Path(a.data) / a.city / f"{a.city}-gtfs.zip"
@@ -383,6 +475,16 @@ def main() -> int:
         return 2
     if a.stats:
         return 0
+
+    if a.patterns_out:
+        pat = build_patterns(zip_path, a.city)
+        pat_raw = json.dumps(pat, separators=(",", ":"), ensure_ascii=False).encode()
+        pat_gz = gzip.compress(pat_raw, 9)
+        Path(a.patterns_out).write_bytes(pat_gz)
+        ps = pat["stats"]
+        print(f"{a.city:13} patterns={ps['patterns']:>6} trips={ps['trips']:>7} "
+              f"times={ps['times']:>9} gz={len(pat_gz)/1048576:>5.2f}M -> {a.patterns_out}",
+              file=sys.stderr)
 
     out = Path(a.out) if a.out and a.out != "-" else (zip_path.parent / "offline-bundle.ndjson.gz")
     if a.out == "-":

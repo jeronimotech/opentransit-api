@@ -29,6 +29,7 @@ from scripts.build_offline_bundle import (
     NotATimetable,
     active_services,
     build,
+    build_patterns,
     serialise,
 )
 
@@ -239,3 +240,100 @@ def test_a_stop_nothing_calls_at_gets_no_line(tmp_path):
     # has no board. Shipping an empty line for it would say "no service" rather than "no data".
     assert len(doc["header"]["stops"]) == 3
     assert "2" not in doc["boards"]
+
+
+def test_patterns_link_a_departure_to_the_arrival_it_becomes(tmp_path):
+    """What the board bundle cannot answer, and journey planning needs.
+
+    The shipped bundle stores, per stop, times grouped by route. Nothing in it connects a departure
+    at A to an arrival at B, so it can say when something leaves and never when you get there. A
+    pattern — one ordered stop sequence with every trip that runs it — restores the link, and is
+    what RAPTOR and connection-scan both consume."""
+    z = _zip(tmp_path, **BASE,
+             trips=[{"trip_id": "T1", "route_id": "R1", "service_id": "WK", "trip_headsign": "Norte"},
+                    {"trip_id": "T2", "route_id": "R1", "service_id": "WK", "trip_headsign": "Norte"}],
+             calendar=[{"service_id": "WK", "monday": "1", "tuesday": "1", "wednesday": "1",
+                        "thursday": "1", "friday": "1", "saturday": "1", "sunday": "1",
+                        "start_date": "20260101", "end_date": "20261231"}],
+             stop_times=_times("T1", [("S1", "06:00:00"), ("S2", "06:20:00")])
+                        + _times("T2", [("S1", "07:00:00"), ("S2", "07:18:00")]))
+    d = build_patterns(z, "testville")
+
+    # Both trips call at the same stops in the same order, so they share one pattern.
+    assert d["stats"] == {"patterns": 1, "trips": 2, "times": 4}
+    pat = d["patterns"][0]
+    assert [d["stops"][i] for i in pat["s"]] == ["S1", "S2"]
+    assert d["routes"][pat["r"]] == "R1"
+    assert d["headsigns"][pat["h"]] == "Norte"
+
+    # Each trip carries one time per stop, so boarding at index 0 and alighting at index 1 is a
+    # lookup rather than a guess.
+    assert [t[1] for t in pat["t"]] == [[360, 380], [420, 438]]
+    assert all(d["services"][t[0]] == "WK" for t in pat["t"])
+
+
+def test_trips_are_sorted_by_departure_so_a_scan_can_stop_early(tmp_path):
+    """A planner walks a pattern's trips in time order and takes the first that works. Unsorted, it
+    would have to read all of them to be sure."""
+    z = _zip(tmp_path, **BASE,
+             trips=[{"trip_id": f"T{i}", "route_id": "R1", "service_id": "WK", "trip_headsign": "N"}
+                    for i in range(3)],
+             calendar=[{"service_id": "WK", "monday": "1", "tuesday": "1", "wednesday": "1",
+                        "thursday": "1", "friday": "1", "saturday": "1", "sunday": "1",
+                        "start_date": "20260101", "end_date": "20261231"}],
+             # Written latest-first, so sorting has to be the builder's doing and not the feed's.
+             stop_times=_times("T2", [("S1", "08:00:00"), ("S2", "08:20:00")])
+                        + _times("T0", [("S1", "06:00:00"), ("S2", "06:20:00")])
+                        + _times("T1", [("S1", "07:00:00"), ("S2", "07:20:00")]))
+    d = build_patterns(z, "testville")
+    firsts = [t[1][0] for t in d["patterns"][0]["t"]]
+    assert firsts == sorted(firsts) == [360, 420, 480]
+
+
+def test_a_different_stop_sequence_is_a_different_pattern(tmp_path):
+    base = {**BASE, "stops": BASE["stops"] + [
+        {"stop_id": "S3", "stop_name": "Extra", "stop_lat": "4.7", "stop_lon": "-74.2",
+         "location_type": "0"}]}
+    z = _zip(tmp_path, **base,
+             trips=[{"trip_id": "T1", "route_id": "R1", "service_id": "WK", "trip_headsign": "Norte"},
+                    {"trip_id": "T2", "route_id": "R1", "service_id": "WK", "trip_headsign": "Norte"}],
+             calendar=[{"service_id": "WK", "monday": "1", "tuesday": "1", "wednesday": "1",
+                        "thursday": "1", "friday": "1", "saturday": "1", "sunday": "1",
+                        "start_date": "20260101", "end_date": "20261231"}],
+             # The second trip detours through S3; a planner must not believe it stops where it does not.
+             stop_times=_times("T1", [("S1", "06:00:00"), ("S2", "06:20:00")])
+                        + _times("T2", [("S1", "07:00:00"), ("S3", "07:10:00"), ("S2", "07:25:00")]))
+    d = build_patterns(z, "testville")
+    assert d["stats"]["patterns"] == 2
+
+
+def test_a_feed_whose_stop_times_are_not_sorted_by_trip(tmp_path):
+    """Bogota's are not, and reading them as though they were split each trip into fragments —
+    1.35 million patterns instead of 1 521. Every row is accumulated by trip before anything is
+    decided."""
+    z = _zip(tmp_path, **BASE,
+             trips=[{"trip_id": "T1", "route_id": "R1", "service_id": "WK", "trip_headsign": "N"},
+                    {"trip_id": "T2", "route_id": "R1", "service_id": "WK", "trip_headsign": "N"}],
+             calendar=[{"service_id": "WK", "monday": "1", "tuesday": "1", "wednesday": "1",
+                        "thursday": "1", "friday": "1", "saturday": "1", "sunday": "1",
+                        "start_date": "20260101", "end_date": "20261231"}],
+             # Interleaved on purpose.
+             stop_times=[
+                 {"trip_id": "T1", "stop_id": "S1", "stop_sequence": "1",
+                  "departure_time": "06:00:00", "arrival_time": "06:00:00"},
+                 {"trip_id": "T2", "stop_id": "S1", "stop_sequence": "1",
+                  "departure_time": "07:00:00", "arrival_time": "07:00:00"},
+                 {"trip_id": "T1", "stop_id": "S2", "stop_sequence": "2",
+                  "departure_time": "06:20:00", "arrival_time": "06:20:00"},
+                 {"trip_id": "T2", "stop_id": "S2", "stop_sequence": "2",
+                  "departure_time": "07:18:00", "arrival_time": "07:18:00"},
+             ])
+    d = build_patterns(z, "testville")
+    assert d["stats"] == {"patterns": 1, "trips": 2, "times": 4}
+    assert [t[1] for t in d["patterns"][0]["t"]] == [[360, 380], [420, 438]]
+
+
+def test_patterns_need_a_timetable_too(tmp_path):
+    z = _zip(tmp_path, **BASE, trips=[{"trip_id": "T1", "route_id": "R1", "service_id": "WK"}])
+    with pytest.raises(NotATimetable):
+        build_patterns(z, "testville")
