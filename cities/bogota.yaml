@@ -411,7 +411,13 @@ landing:
     og_image_url: https://raw.githubusercontent.com/jeronimotech/opentransit-web/main/docs/screenshots/hub-desktop-live-api.png
 
 # v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
+
+# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
 offline:
   url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-08/offline-bogota.ndjson.gz
   bytes: 5680665
+  built_at: "2026-10-08"
+offline_patterns:
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-08/patterns-bogota.json.gz
+  bytes: 8604597
   built_at: "2026-10-08"

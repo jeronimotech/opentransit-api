@@ -120,7 +120,13 @@ landing:
     og_image_url: null
 
 # v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
+
+# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.
 offline:
   url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-08/offline-lisboa.ndjson.gz
   bytes: 4637152
+  built_at: "2026-10-08"
+offline_patterns:
+  url: https://github.com/jeronimotech/opentransit-api/releases/download/offline-bundles-2026-10-08/patterns-lisboa.json.gz
+  bytes: 3252551
   built_at: "2026-10-08"
