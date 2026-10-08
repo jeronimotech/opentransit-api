@@ -84,7 +84,7 @@ landing:
     subtitle: "Planeia a viagem, vê onde vai o teu autocarro e chega a horas. Grátis, sem conta, open source."
     cta_primary: { label: "Abrir a web app", url: null }
     cta_secondary: { label: "Como funciona", url: "#features" }
-  apps: { ios: "https://apps.apple.com/app/id6809010622", android: null, web: null }
+  apps: { ios: "https://apps.apple.com/app/id6809010622", android: "https://play.google.com/store/apps/details?id=com.jeronimotech.opentransit", web: null }
   highlights:
     - { icon: route, title: "Porta a porta", text: "As 941 linhas da Carris Metropolitana em 15 municípios, combinadas com caminhada num único itinerário, a partir de uma morada e não de uma paragem." }
     - { icon: live,  title: "Autocarros em tempo real", text: "As posições publicadas pela Carris Metropolitana no mapa, com a direção de cada autocarro." }
