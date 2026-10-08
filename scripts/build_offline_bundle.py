@@ -85,6 +85,33 @@ class Interner:
         return self._index.get(s)
 
 
+def _city_config(city: str):
+    """The city's own YAML, for the agency-to-component mapping the app draws with.
+
+    Tolerated when absent, because this script is useful against a bare GTFS zip and a missing
+    config should cost the component rather than the whole bundle — but it says so. The first
+    version swallowed the failure silently and shipped a bundle whose every route was uncoloured,
+    which looked exactly like a bundle that had no component mapping to apply.
+
+    `sys.path` needs the repo root: running `python3 scripts/build_offline_bundle.py` puts
+    `scripts/` on the path, not the package above it.
+    """
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    path = root / "cities" / f"{city}.yaml"
+    if not path.exists():
+        print(f"{city}: no cities/{city}.yaml — routes will carry no component", file=sys.stderr)
+        return None
+    try:
+        from app.cities import load_city_file
+        return load_city_file(path)
+    except Exception as e:                                        # noqa: BLE001 - reported, not hidden
+        print(f"{city}: could not read cities/{city}.yaml ({type(e).__name__}: {e}); "
+              f"routes will carry no component", file=sys.stderr)
+        return None
+
+
 class NotATimetable(ValueError):
     """The zip cannot produce a timetable, so there is nothing honest to publish."""
 
@@ -96,6 +123,12 @@ def build(zip_path: Path, city: str) -> dict:
     # worst outcome available — it installs, it validates, and it tells a rider their bus never runs.
     if "stop_times.txt" not in z.namelist():
         raise NotATimetable(f"{zip_path} has no stop_times.txt")
+
+    # The app colours and ices routes by *component* — trunk, dual, zonal, cable — not by the
+    # GTFS colour, and that mapping lives in the city's own config. Without it every offline route
+    # chip fell back to a generic grey, so a downloaded board looked like a different app from the
+    # one online. Seen on a real phone.
+    cfg = _city_config(city)
 
     routes_ix = Interner()
     routes: list[dict] = []
@@ -110,6 +143,8 @@ def build(zip_path: Path, city: str) -> dict:
             "color": f"#{colour}" if colour else None,
             "text": f"#{text}" if text else None,
             "type": int(r.get("route_type") or 3),
+            "component": cfg.component_of_route(r.get("agency_id"), r.get("route_type"))
+            if cfg else None,
         })
 
     stops_ix = Interner()
