@@ -88,14 +88,39 @@ def test_toronto_bike_share_matches_the_otp_updater():
     assert rental[0]["url"] == net.gbfs_url
 
 
-def test_offline_bundle_is_absent_until_one_is_published(bogota: City):
-    """No bundle means the app offers no download, rather than one that 404s.
+def test_offline_is_always_in_the_public_shape(bogota: City):
+    """Present or absent, the key is there, so the client branches on a value and not on a KeyError.
 
-    The nine cities ship without `offline:` until the release assets exist, so the honest public
-    shape is an explicit null the client can branch on."""
-    assert bogota.offline is None
-    assert "offline" in bogota.public()
-    assert bogota.public()["offline"] is None
+    This asserted `is None` until the day the bundles were published, which made it a test of the
+    world rather than of the code. What matters is the contract: the key exists, and when a bundle
+    is configured it round-trips with the size the app shows before asking anyone to spend it."""
+    pub = bogota.public()
+    assert "offline" in pub
+    if bogota.offline is None:
+        assert pub["offline"] is None
+    else:
+        assert pub["offline"]["url"] == bogota.offline.url
+        assert pub["offline"]["bytes"] == bogota.offline.bytes > 0
+        assert pub["offline"]["formatVersion"] == 1
+
+
+def test_a_city_with_no_bundle_offers_no_download(tmp_path: Path):
+    """The app must show "not available yet" rather than a button that 404s."""
+    p = tmp_path / "testville.yaml"
+    p.write_text(
+        """
+id: testville
+name: Testville
+country: XX
+timezone: UTC
+center: {lat: 0.1, lon: 0.1}
+bbox: [-1, -1, 1, 1]
+feeds: {gtfs_static_url: https://example.com/gtfs.zip}
+otp: {base_url: http://localhost:8080, feed_id: testville}
+""")
+    c = load_city_file(p)
+    assert c.offline is None
+    assert c.public()["offline"] is None
 
 
 def test_offline_bundle_publishes_its_size_before_the_download_starts(tmp_path: Path):
