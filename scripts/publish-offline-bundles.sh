@@ -40,7 +40,8 @@ for city in "${CITIES[@]}"; do
   fi
   # The builder refuses to write a bundle in which no service runs today, so a feed whose calendar
   # has run out fails here rather than shipping a timetable that shows nothing.
-  python3 scripts/build_offline_bundle.py "$city" --out "$OUT/offline-$city.ndjson.gz"
+  python3 scripts/build_offline_bundle.py "$city" --out "$OUT/offline-$city.ndjson.gz" \
+    --patterns-out "$OUT/patterns-$city.json.gz"
   built+=("$city")
 done
 
@@ -51,13 +52,18 @@ if [ -n "${DRY_RUN:-}" ]; then
   echo "DRY_RUN: would upload to $TAG"
   for city in "${built[@]}"; do
     f="$OUT/offline-$city.ndjson.gz"
-    printf "  %-13s %6.2f MB  ->  offline-%s.ndjson.gz\n" "$city" "$(echo "scale=4; $(wc -c < "$f")/1048576" | bc)" "$city"
+    pf="$OUT/patterns-$city.json.gz"
+    printf "  %-13s board %6.2f MB  ·  patterns %6.2f MB\n" "$city" \
+      "$(echo "scale=4; $(wc -c < "$f")/1048576" | bc)" \
+      "$(echo "scale=4; $(wc -c < "$pf")/1048576" | bc)"
   done
   exit 0
 fi
 
 assets=()
-for city in "${built[@]}"; do assets+=("$OUT/offline-$city.ndjson.gz"); done
+for city in "${built[@]}"; do
+  assets+=("$OUT/offline-$city.ndjson.gz" "$OUT/patterns-$city.json.gz")
+done
 
 if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   gh release upload "$TAG" "${assets[@]}" --repo "$REPO" --clobber
@@ -73,21 +79,31 @@ for city in "${built[@]}"; do
   f="$OUT/offline-$city.ndjson.gz"
   bytes=$(wc -c < "$f" | tr -d ' ')
   url="https://github.com/$REPO/releases/download/$TAG/offline-$city.ndjson.gz"
-  python3 - "$city" "$url" "$bytes" <<'PY'
+  pf="$OUT/patterns-$city.json.gz"
+  pbytes=$(wc -c < "$pf" | tr -d ' ')
+  purl="https://github.com/$REPO/releases/download/$TAG/patterns-$city.json.gz"
+  python3 - "$city" "$url" "$bytes" "$purl" "$pbytes" <<'PY'
 import datetime as dt, pathlib, re, sys
-city, url, nbytes = sys.argv[1], sys.argv[2], int(sys.argv[3])
+city, url, nbytes, purl, pbytes = (sys.argv[1], sys.argv[2], int(sys.argv[3]),
+                                   sys.argv[4], int(sys.argv[5]))
 p = pathlib.Path("cities") / f"{city}.yaml"
 s = p.read_text()
+today = dt.date.today()
 block = (f"offline:\n"
          f"  url: {url}\n"
          f"  bytes: {nbytes}\n"
-         f"  built_at: \"{dt.date.today()}\"\n")
-if re.search(r"^offline:\n(?:[ \t].*\n|\n)*", s, re.M):
-    s = re.sub(r"^offline:\n(?:[ \t].*\n|\n)*", block, s, count=1, flags=re.M)
-else:
-    s = s.rstrip() + "\n\n# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.\n" + block
+         f"  built_at: \"{today}\"\n"
+         f"offline_patterns:\n"
+         f"  url: {purl}\n"
+         f"  bytes: {pbytes}\n"
+         f"  built_at: \"{today}\"\n")
+# Both blocks are rewritten together: they come from one build of one feed, and a mismatched pair
+# would have the planner reading a different day's timetable from the board.
+for key in ("offline", "offline_patterns"):
+    s = re.sub(rf"^{key}:\n(?:[ \t].*\n|\n)*", "", s, count=1, flags=re.M)
+s = s.rstrip() + "\n\n# v1.6 offline timetables. Written by scripts/publish-offline-bundles.sh.\n" + block
 p.write_text(s)
-print(f"  {city:13} {nbytes/1048576:5.2f} MB")
+print(f"  {city:13} board {nbytes/1048576:5.2f} MB · patterns {pbytes/1048576:5.2f} MB")
 PY
 done
 

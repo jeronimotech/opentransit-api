@@ -333,6 +333,32 @@ def test_a_feed_whose_stop_times_are_not_sorted_by_trip(tmp_path):
     assert [t[1] for t in d["patterns"][0]["t"]] == [[360, 380], [420, 438]]
 
 
+def test_patterns_expand_frequencies_like_the_board_does(tmp_path):
+    """The same bug, found twice. Four feeds use frequencies.txt and every Casablanca trip is one,
+    so reading stop_times literally gave the pattern index 36 trips against the board's 3 912 — a
+    planner that finds nothing, in the city with no realtime at all."""
+    z = _zip(tmp_path, **BASE,
+             trips=[{"trip_id": "T1", "route_id": "R1", "service_id": "WK", "trip_headsign": "N"}],
+             calendar=[{"service_id": "WK", "monday": "1", "tuesday": "1", "wednesday": "1",
+                        "thursday": "1", "friday": "1", "saturday": "1", "sunday": "1",
+                        "start_date": "20260101", "end_date": "20261231"}],
+             stop_times=_times("T1", [("S1", "06:00:00"), ("S2", "06:20:00")]),
+             frequencies=[{"trip_id": "T1", "start_time": "07:00:00", "end_time": "08:00:00",
+                           "headway_secs": "900"}])
+    d = build_patterns(z, "testville")
+
+    assert d["stats"]["patterns"] == 1
+    assert d["stats"]["trips"] == 4            # 07:00, 07:15, 07:30, 07:45
+    trips = d["patterns"][0]["t"]
+    # Each run keeps the twenty-minute offset between the two stops.
+    assert [t[1] for t in trips] == [[420, 440], [435, 455], [450, 470], [465, 485]]
+
+    # And it agrees with the board builder, which is the cross-check that matters: one feed, two
+    # indexes, the same number of departures.
+    board = _flat(build(z, "testville"))
+    assert board["stats"]["departures"] == d["stats"]["times"]
+
+
 def test_patterns_need_a_timetable_too(tmp_path):
     z = _zip(tmp_path, **BASE, trips=[{"trip_id": "T1", "route_id": "R1", "service_id": "WK"}])
     with pytest.raises(NotATimetable):

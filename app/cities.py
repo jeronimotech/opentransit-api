@@ -85,6 +85,24 @@ class OfflineBundle(BaseModel):
     built_at: str | None = None
 
 
+class OfflinePatternsBundle(BaseModel):
+    """The pattern-indexed timetable, for planning a journey with no network.
+
+    A second, optional download. The board bundle answers "when does something leave here" and the
+    app installs it to make departures work underground; this answers "if I board at A, when do I
+    reach B", costs more (8.1 MB against 5.4 for Bogota, and it is held in memory rather than paged
+    from disk), and is worth asking for separately rather than making every rider pay for it.
+
+    Null means this city offers no offline planning, and the app says so instead of offering a
+    download that 404s.
+    """
+    url: str
+    bytes: int = Field(gt=0)
+    format_version: int = 1
+    patterns: int | None = None
+    built_at: str | None = None
+
+
 class IdecaGeocoder(BaseModel):
     """Bogotá's official address geocoder (IDECA / Catastro Distrital, `cmd=geocodificar`). It resolves the
     city's own nomenclature — "Cra 10 # 15-22 Sur", "Calle 127 con Carrera 7" — to the cadastral point,
@@ -797,6 +815,8 @@ class City(BaseModel):
     pois_file: str | None = None      # path relative to the cities dir; default cities/<id>/pois.geojson
     # v1.6: the downloadable timetable, for riders underground or out of data. See OfflineBundle.
     offline: OfflineBundle | None = None
+    # The same timetable indexed by pattern, which is what planning needs. Separate and optional.
+    offline_patterns: OfflinePatternsBundle | None = None
 
     @field_validator("bbox")
     @classmethod
@@ -944,6 +964,13 @@ class City(BaseModel):
                 "departures": self.offline.departures,
                 "builtAt": self.offline.built_at,
             } if self.offline else None,
+            "offlinePatterns": {
+                "url": self.offline_patterns.url,
+                "bytes": self.offline_patterns.bytes,
+                "formatVersion": self.offline_patterns.format_version,
+                "patterns": self.offline_patterns.patterns,
+                "builtAt": self.offline_patterns.built_at,
+            } if self.offline_patterns else None,
             "agencies": [{"id": a.id, "name": a.name, "component": a.component, "color": a.color}
                          for a in self.agencies],
             "components": [c.model_dump() for c in self.components] or self._components_from_agencies(),

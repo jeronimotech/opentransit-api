@@ -119,6 +119,18 @@ def build_patterns(zip_path: Path, city: str) -> dict:
     for r in _rows(z, "stops.txt"):
         stops_ix(r["stop_id"])
 
+    # The same frequency expansion the board builder does, and for the same reason: four of nine
+    # feeds use frequencies.txt, Casablanca's every trip is one, and reading stop_times literally
+    # gave it 36 trips instead of thousands — a planner that finds nothing in the city with no
+    # realtime at all, which is the city that needs offline most.
+    freqs: dict[str, list[tuple[int, int, int]]] = defaultdict(list)
+    for r in _rows(z, "frequencies.txt"):
+        start, end = _secs(r.get("start_time")), _secs(r.get("end_time"))
+        headway = int(r.get("headway_secs") or 0)
+        if start is None or end is None or headway <= 0 or end < start:
+            continue
+        freqs[r["trip_id"]].append((start, end, headway))
+
     seqs: dict[str, list[tuple[int, int, int]]] = defaultdict(list)
     for r in _rows(z, "stop_times.txt"):
         tid = r["trip_id"]
@@ -128,7 +140,7 @@ def build_patterns(zip_path: Path, city: str) -> dict:
         si = stops_ix.get(r.get("stop_id") or "")
         if t is None or si is None:
             continue
-        seqs[tid].append((int(r.get("stop_sequence") or 0), si, t // 60))
+        seqs[tid].append((int(r.get("stop_sequence") or 0), si, t))
 
     routes_ix, heads_ix, svc_ix = Interner(), Interner(), Interner()
     patterns: dict[tuple, int] = {}
@@ -147,7 +159,16 @@ def build_patterns(zip_path: Path, city: str) -> dict:
             pattern_stops.append([s for _, s, _ in seq])
             pattern_meta.append((routes_ix(route), heads_ix(headsign)))
             runs.append([])
-        runs[i].append([svc_ix(service), [t for _, _, t in seq]])
+        svc = svc_ix(service)
+        base = seq[0][2]
+        offsets = [t - base for _, _, t in seq]
+        windows = freqs.get(tid)
+        if not windows:
+            runs[i].append([svc, [t // 60 for _, _, t in seq]])
+            continue
+        for start, end, headway in windows:
+            for depart in range(start, end, headway):
+                runs[i].append([svc, [(depart + o) // 60 for o in offsets]])
 
     for r in runs:
         r.sort(key=lambda x: x[1][0] if x[1] else 0)
