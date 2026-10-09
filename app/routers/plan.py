@@ -23,6 +23,7 @@ from ..ondemand import attach_to_plan, haversine_m, is_ondemand_leg
 from ..otp import PLAN_QUERY
 from ..parkride import attach_park_ride, merge_park_ride
 from ..runtime import CityRuntime, city_runtime
+from ..walk_limit import apply_walk_limit, walk_limit_warning
 
 router = APIRouter(tags=["planning"])
 
@@ -363,6 +364,8 @@ async def plan(
     wheelchair: bool = False,
     numItineraries: int = Query(5, ge=1, le=10),
     maxWalkDistance: int = Query(1500, ge=100, le=10000),
+    strictWalk: bool = Query(False, description="treat maxWalkDistance as a hard cap: options that walk "
+                                                "further are dropped and the response says how many"),
     locale: str = Query("es", pattern="^(es|en|it|pt|fr|ms|ar)$"),
     fromName: str | None = Query(None, max_length=120, description="label for the origin, echoed back"),
     toName: str | None = Query(None, max_length=120, description="label for the destination, echoed back"),
@@ -489,6 +492,12 @@ async def plan(
     if len(plans) > 1 or pr_plan is not None or direct_plans:
         plan_out["warnings"] = [w for w in plan_out["warnings"]
                                 if not (w.startswith("NO_ITINERARIES") and plan_out["itineraries"])]
+    if strictWalk:
+        # Last, so it applies to every search that fed the list: the transit plan, the direct
+        # alternatives and the park & ride options.
+        total = len(plan_out["itineraries"])
+        plan_out["itineraries"], dropped = apply_walk_limit(plan_out["itineraries"], maxWalkDistance)
+        plan_out["warnings"] += walk_limit_warning(dropped, total, maxWalkDistance)
     plan_out["warnings"] = mode_warnings + accessibility_warnings(city.id, wheelchair) + plan_out["warnings"]
     for it in plan_out["itineraries"]:
         for leg in it["legs"]:
