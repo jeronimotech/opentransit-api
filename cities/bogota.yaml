@@ -167,11 +167,17 @@ config:
   # v2.0 conversational assistant. Off until a key is configured; the key never leaves the server and the
   # model may only answer from our own tools, so it cannot invent a departure time.
   assistant:
-    # Off by default: a fresh clone has no key, and an enabled-but-keyless
-    # assistant only shows a chat button that errors on every question.
-    # Set ASSISTANT_API_KEY and flip this in the admin panel (the override
-    # lives in the database, not here).
-    enabled: false
+    # On for Bogotá since 2026-10-09, at TransMilenio's request (3.1). The key lives in
+    # ASSISTANT_API_KEY on the api service, never here, and it is set in both environments.
+    # A fresh clone of this file has no key, so any other city stays off until someone sets
+    # one — an enabled-but-keyless assistant is a chat button that errors on every question.
+    #
+    # What a rider is told before typing: the app names the provider whose servers see the
+    # question (`assistantNotice`), because `public()` exposes it. The question text going to
+    # the model is already declared to both stores as user-generated content shared with a
+    # third party; the conversation is not logged (`log_conversations: false`) and the model
+    # answers only from our own tools, so it cannot invent a departure time.
+    enabled: true
     provider: deepseek           # anthropic | openai | deepseek | gemini
     model: null                  # null -> the provider's documented default (see docs/API.md)
     api_key: ${ASSISTANT_API_KEY:-}
