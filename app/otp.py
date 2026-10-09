@@ -154,6 +154,21 @@ class OtpClient:
             return None
 
 # v1.4: a direct car route (distance, time, geometry) for taxi / ride-hailing estimates.
+# v2.7: one pattern's published schedule for a date, plus the routes a rider can change to at each
+# of its stops. `departureStoptime` rather than every stoptime of every trip: the start times are
+# what the headways are computed from, and the full matrix is an order of magnitude more data.
+PATTERN_SCHEDULE_QUERY = f"""
+query PatternSchedule($id: String!, $date: String!) {{
+  pattern(id: $id) {{
+    code headsign directionId
+    route {{ {ROUTE_FIELDS} }}
+    stops {{ gtfsId name code routes {{ {ROUTE_FIELDS} }} }}
+    tripsForDate(serviceDate: $date) {{ gtfsId departureStoptime {{ scheduledDeparture }} }}
+  }}
+}}
+"""
+
+
 CAR_QUERY = """
 query CarRoute($origin: PlanLabeledLocationInput!, $destination: PlanLabeledLocationInput!,
                $dateTime: PlanDateTimeInput, $modes: PlanModesInput, $first: Int) {

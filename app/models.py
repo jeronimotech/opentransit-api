@@ -461,6 +461,49 @@ class SegmentServices(Out):
     services: list[SegmentService] = []
 
 
+class Headway(Out):
+    min: int
+    typical: int
+    max: int
+
+
+class ScheduleBand(Out):
+    hour: int
+    from_: str = Field(alias="from")
+    to: str
+    trips: int
+    #: Null when the hour holds the last departure of the day: one bus and nothing after it is a
+    #: count, not a wait.
+    headway_minutes: Headway | None = None
+
+
+class StopConnections(Out):
+    stop_id: str
+    name: str | None = None
+    code: str | None = None
+    routes: list[RouteRef] = []
+
+
+class PatternSchedule(Out):
+    """What one direction of a route runs on one day, and what a rider can change to along it."""
+    route_id: str
+    pattern_id: str | None = None
+    headsign: str | None = None
+    direction_id: int | None = None
+    date: str
+    #: Always "schedule": the intervals are computed from the published timetable, which is not the
+    #: same as a feed publishing headways itself.
+    source: Literal["schedule"] = "schedule"
+    trips: int = 0
+    first: str | None = None
+    last: str | None = None
+    typical_headway_minutes: int | None = None
+    frequent: bool = False
+    bands: list[ScheduleBand] = []
+    departures: list[str] = []
+    connections: list[StopConnections] = []
+
+
 class NetworkShape(Out):
     id: str
     route_id: str | None = None

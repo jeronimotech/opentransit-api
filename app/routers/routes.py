@@ -1,16 +1,19 @@
 import asyncio
+import datetime as dt
 import time
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
 from ..db import pool
 from ..errors import RouteNotFound, RouterUnavailable, StopNotFound
-from ..models import RouteDetail, SegmentServices
+from ..models import PatternSchedule, RouteDetail, SegmentServices
 from ..normalize import alert_from_otp, clean_headsign, pattern_from_otp, route_ref, route_ref_from_db
-from ..otp import ROUTE_QUERY, STATION_PATTERNS_QUERY, STOP_PATTERNS_QUERY
+from ..otp import PATTERN_SCHEDULE_QUERY, ROUTE_QUERY, STATION_PATTERNS_QUERY, STOP_PATTERNS_QUERY
 from ..route_merge import merge_duplicate_routes
 from ..runtime import CityRuntime, city_runtime
+from ..schedule import hhmm, schedule_summary
 from ..segments import MAX_ORIGIN_STOPS, equivalent_services, stop_family
 
 router = APIRouter(tags=["routes"])
@@ -167,3 +170,92 @@ async def segment_services(rt: CityRuntime = Depends(city_runtime),
 
     return JSONResponse({"from": _ref(a), "to": _ref(b), "match": match, "services": services},
                         headers={"Cache-Control": "public, max-age=300"})
+
+
+# ------------------------------------------------------------------ published schedule (v2.7)
+
+_SCHEDULE_TTL_S = 900
+
+
+def _city_today(rt: CityRuntime) -> dt.date:
+    return dt.datetime.now(ZoneInfo(rt.city.timezone)).date()
+
+
+async def _pattern_schedule(rt: CityRuntime, pattern_code: str, day: dt.date) -> dict | None:
+    """OTP's answer for one pattern on one date, cached: it carries every trip of the day."""
+    cache = rt.meta.setdefault("patternSchedule", {})
+    key = f"{pattern_code}|{day.isoformat()}"
+    hit = cache.get(key)
+    if hit and time.time() - hit[0] < _SCHEDULE_TTL_S:
+        return hit[1]
+    # `tripsForDate` takes YYYYMMDD in some OTP builds and YYYY-MM-DD in others, and the wrong one
+    # is a GraphQL error rather than an empty day. Try both and remember which this router speaks.
+    formats = rt.meta.get("serviceDateFormat") or ["%Y%m%d", "%Y-%m-%d"]
+    data = None
+    for i, fmt in enumerate(formats):
+        try:
+            data = await rt.otp.graphql(PATTERN_SCHEDULE_QUERY, {"id": pattern_code, "date": day.strftime(fmt)})
+        except RouterUnavailable:
+            if i == len(formats) - 1:
+                raise
+            continue
+        rt.meta["serviceDateFormat"] = [fmt]
+        break
+    p = (data or {}).get("pattern")
+    if p:
+        cache[key] = (time.time(), p)
+    return p
+
+
+@router.get("/v1/cities/{city}/routes/{routeId}/schedule", response_model=PatternSchedule)
+async def route_schedule(routeId: str, rt: CityRuntime = Depends(city_runtime),
+                         pattern: str | None = Query(None, description="pattern code; the route's main one by default"),
+                         date: dt.date | None = Query(None, description="service date; today in the city by default")):
+    """What this direction actually runs today: every departure, the interval per hour, and the
+    routes a rider can change to at each stop."""
+    city = rt.city
+    day = date or _city_today(rt)
+    code = pattern
+    if not code:
+        data = await rt.otp.graphql(ROUTE_QUERY, {"id": city.scoped(routeId)})
+        pats = [p for p in ((data.get("route") or {}).get("patterns") or []) if p and p.get("code")]
+        if not pats:
+            raise RouteNotFound(f"route '{routeId}' has no patterns")
+        # The main direction: the longest pattern, which is the one the route page opens on.
+        code = max(pats, key=lambda p: len(p.get("stops") or []))["code"]
+    p = await _pattern_schedule(rt, code, day)
+    if not p:
+        raise RouteNotFound(f"pattern '{code}' not found")
+
+    departures = [
+        (t.get("departureStoptime") or {}).get("scheduledDeparture")
+        for t in (p.get("tripsForDate") or []) if t
+    ]
+    summary = schedule_summary([d for d in departures if isinstance(d, int)])
+    route_id = (p.get("route") or {}).get("gtfsId") or city.scoped(routeId)
+    connections = []
+    for st in (p.get("stops") or []):
+        if not st:
+            continue
+        others = [rt.with_window(route_ref(city, r)) for r in (st.get("routes") or [])
+                  if r and r.get("gtfsId") != route_id]
+        connections.append({
+            "stopId": st["gtfsId"], "name": st.get("name"), "code": st.get("code"),
+            "routes": merge_duplicate_routes([r for r in others if r]),
+        })
+    return JSONResponse(
+        {
+            "routeId": route_id,
+            "patternId": p.get("code"),
+            "headsign": clean_headsign(p.get("headsign"), (p.get("route") or {}).get("shortName")),
+            "directionId": p.get("directionId") if p.get("directionId") in (0, 1) else None,
+            "date": day.isoformat(),
+            # Computed from the published schedule — the feed does not say "every 5 minutes", and
+            # claiming it published something it did not would be the wrong kind of certainty.
+            "source": "schedule",
+            **summary,
+            "departures": [hhmm(d) for d in sorted(d for d in departures if isinstance(d, int))],
+            "connections": connections,
+        },
+        headers={"Cache-Control": "public, max-age=900"},
+    )
