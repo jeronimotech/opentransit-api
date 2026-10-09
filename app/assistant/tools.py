@@ -92,6 +92,14 @@ TOOLS: list[dict] = [
     {"name": "route_info",
      "description": "Look up routes by name or number: their component, long name and today's service hours.",
      "schema": _obj({"routeQuery": _STR}, ["routeQuery"])},
+    {"name": "route_schedule",
+     "description": "How often a route runs today and at what times: the typical interval, the interval "
+                    "hour by hour, the first and last departure, and every departure of one direction. "
+                    "Use this for \"how often does X run\" — route_info only gives the service hours. "
+                    "Pass routeId from route_info, or routeQuery to resolve it first.",
+     "schema": _obj({"routeId": {"type": ["string", "null"]},
+                     "routeQuery": {"type": ["string", "null"]}},
+                    ["routeId", "routeQuery"])},
 ]
 
 TOOL_NAMES = {t["name"] for t in TOOLS}
@@ -286,6 +294,37 @@ async def _dispatch(ctx: ToolContext, name: str, args: dict) -> tuple[Any, dict 
         slim = [{"routeId": r.get("id"), "shortName": r.get("shortName"), "longName": r.get("longName"),
                  "component": r.get("component"), "serviceWindow": r.get("serviceWindow")} for r in found]
         return {"routes": slim}, {"kind": "routes", "payload": {"routes": found}} if found else None
+
+    if name == "route_schedule":
+        from ..routers.routes import list_routes, route_schedule
+        route_id = args.get("routeId")
+        if not route_id and args.get("routeQuery"):
+            found = _body(await list_routes(rt=rt, component=None,
+                                            q=str(args["routeQuery"])[:60])).get("routes", [])
+            if not found:
+                return {"found": False, "routeQuery": args.get("routeQuery")}, None
+            route_id = found[0].get("id")
+        if not route_id:
+            return {"error": "MISSING_ROUTE", "message": "pass routeId or routeQuery"}, None
+        body = _body(await route_schedule(routeId=city.unscoped(str(route_id)), rt=rt,
+                                          pattern=None, date=None))
+        # The interval per hour, not every departure: a model that reads two hundred clock times
+        # answers more slowly and no better. The full list stays one question away.
+        bands = [{"from": b.get("from"), "trips": b.get("trips"),
+                  "everyMinutes": (b.get("headwayMinutes") or {}).get("typical")}
+                 for b in body.get("bands", [])]
+        return ({"routeId": body.get("routeId"), "towards": body.get("headsign"),
+                 "date": body.get("date"), "departures": body.get("trips"),
+                 "first": body.get("first"), "last": body.get("last"),
+                 "typicalEveryMinutes": body.get("typicalHeadwayMinutes"),
+                 "turnUpAndGo": body.get("frequent"),
+                 # Ours, computed from the timetable: no feed of ours publishes frequencies, and the
+                 # model must not say the operator did.
+                 "source": "calculado del horario publicado",
+                 "byHour": bands},
+                # No card: the app has no renderer for a schedule, and a card the client drops in
+                # silence is worse than none. Here the answer is the sentence.
+                None)
 
     return {"error": "UNKNOWN_TOOL", "message": f"no tool named {name}"}, None
 

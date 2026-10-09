@@ -345,7 +345,21 @@ def test_every_tool_schema_is_strict():
         schema = tool["schema"]
         assert schema["additionalProperties"] is False
         assert sorted(schema["required"]) == sorted(schema["properties"]), tool["name"]
-    assert len(TOOLS) == 10
+    assert len(TOOLS) == 11
+
+
+async def test_the_assistant_can_answer_how_often_a_route_runs(bogota: City, monkeypatch):
+    """It used to answer "no tengo un dato exacto de frecuencia" while the API had one: route_info
+    only carries the service hours, and nothing carried the interval."""
+    ran = _stub_tools(monkeypatch)
+    provider = FakeProvider([
+        ("", [ToolCall("1", "route_schedule", {"routeQuery": "B74", "routeId": None})]),
+        ("Cada 17 minutos.", []),
+    ])
+    app, _ = _app(bogota, provider)
+    events = await _events(app, {**ASK, "messages": [{"role": "user", "content": "¿cada cuánto pasa el B74?"}]})
+    assert ran == ["route_schedule"]
+    assert "".join(d["text"] for e, d in events if e == "token").strip() == "Cada 17 minutos."
 
 
 def test_anthropic_tool_definitions_carry_strict_at_the_top_level():
