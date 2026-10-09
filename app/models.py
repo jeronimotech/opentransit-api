@@ -436,6 +436,31 @@ class RouteDetail(RouteRef):
     alerts: list[Alert] = []
 
 
+class SegmentStopRef(Out):
+    id: str
+    name: str | None = None
+    code: str | None = None
+
+
+class SegmentService(RouteRef):
+    """A route that serves the segment, with the platform to stand at — at a station with several
+    platforms the equivalent service often boards at a different one."""
+    headsign: str | None = None
+    direction_id: int | None = None
+    board_at: SegmentStopRef | None = None
+    get_off_at: SegmentStopRef | None = None
+    stops: int | None = None
+
+
+class SegmentServices(Out):
+    from_: SegmentStopRef = Field(alias="from")
+    to: SegmentStopRef
+    #: "pattern" — the service runs this segment in this direction; "stop" — the pattern index was
+    #: unavailable and all we know is that the route calls at both stops.
+    match: Literal["pattern", "stop"] = "pattern"
+    services: list[SegmentService] = []
+
+
 class NetworkShape(Out):
     id: str
     route_id: str | None = None

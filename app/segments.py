@@ -1,0 +1,75 @@
+"""Equivalent services for one segment of a trip.
+
+An itinerary names a single route per leg, so a rider waiting at a trunk station watches three buses
+that would all have taken them where they are going go by, because the app only told them about the
+fourth. This answers "what else serves this segment", meaning: which patterns call at the boarding
+place and then, later in the same run, at the alighting place.
+
+Patterns rather than routes, because a route that calls at both stops in the *other* direction is not
+an alternative, and neither is one whose branch only reaches one of them. Where the pattern index is
+unavailable we fall back to the route sets the static ingest learned per stop, which can only claim
+that both stops are served — the response says which of the two it is, so the app can word it
+honestly.
+"""
+
+import re
+
+# A TransMilenio station is a parent with one stop per platform ("San Victorino B - 2 ó 5"), and two
+# routes along the same corridor commonly board at different platforms of it. The equivalent service
+# is still the one a rider wants, so the segment is resolved at station level and each alternative
+# carries the platform to stand at.
+MAX_ORIGIN_STOPS = 8
+
+
+def stop_family(rows: list[dict], seed: str) -> set[str]:
+    """`seed` plus everything that shares its station: siblings, its parent, or its children."""
+    by_id = {r["stop_id"]: r for r in rows}
+    s = by_id.get(seed)
+    if s is None:
+        return {seed}
+    out = {seed}
+    parent = s.get("parent_station")
+    if parent:
+        out.add(parent)
+    for r in rows:
+        if parent and r.get("parent_station") == parent:
+            out.add(r["stop_id"])
+        if r.get("parent_station") == seed:
+            out.add(r["stop_id"])
+    return out
+
+
+def natural_key(s: str | None) -> tuple:
+    """'B9' before 'B74': digit runs compare as numbers, so route lists read the way signage does."""
+    return tuple((int(p), "") if p.isdigit() else (0, p) for p in re.findall(r"\d+|\D+", (s or "").strip()))
+
+
+def equivalent_services(patterns: list[dict], origins: set[str], destinations: set[str],
+                        exclude: set[str] | None = None) -> list[dict]:
+    """One entry per (route, platform) that gets a rider from `origins` to `destinations`.
+
+    `patterns` are normalised as {route, headsign, directionId, stops:[{id,name,code}]}. A pattern
+    qualifies when it calls at an origin and then, after it, at a destination — the direction check
+    and the branch check are the same check. Of several patterns of one route from one platform the
+    one with the fewest intermediate stops wins, so an express is not hidden behind its local.
+    """
+    exclude = exclude or set()
+    best: dict[tuple[str, str], dict] = {}
+    for p in patterns:
+        route = p.get("route") or {}
+        rid = route.get("id")
+        stops = p.get("stops") or []
+        if not rid or rid in exclude:
+            continue
+        board = next((i for i, s in enumerate(stops) if s["id"] in origins), None)
+        if board is None:
+            continue
+        off = next((j for j in range(board + 1, len(stops)) if stops[j]["id"] in destinations), None)
+        if off is None:
+            continue
+        item = {**route, "headsign": p.get("headsign"), "directionId": p.get("directionId"),
+                "boardAt": stops[board], "getOffAt": stops[off], "stops": off - board}
+        key = (rid, stops[board]["id"])
+        if key not in best or item["stops"] < best[key]["stops"]:
+            best[key] = item
+    return sorted(best.values(), key=lambda r: (r.get("component") or "", natural_key(r.get("shortName"))))

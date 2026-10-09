@@ -80,6 +80,19 @@ query Departures($id: String!, $n: Int!, $range: Int!) {{
   }}
 }}
 """
+# v2.7: the patterns calling at a stop, with their stop lists, so "what else serves this segment"
+# can be answered without asking OTP for every candidate route (pattern queries are heavy). Only the
+# fields the comparison needs: the ids to match on and the names to show.
+STOP_PATTERNS_QUERY = f"""
+query StopPatterns($id: String!) {{
+  stop(id: $id) {{
+    gtfsId
+    patterns {{ code headsign directionId route {{ {ROUTE_FIELDS} }} stops {{ gtfsId name code }} }}
+  }}
+}}
+"""
+STATION_PATTERNS_QUERY = STOP_PATTERNS_QUERY.replace("query StopPatterns", "query StationPatterns") \
+    .replace("stop(id: $id)", "station(id: $id)")
 STATION_QUERY = STOP_QUERY.replace("query StopDetail", "query StationDetail") \
     .replace("stop(id: $id)", "station(id: $id)")
 STATION_DEPARTURES_QUERY = DEPARTURES_QUERY.replace("query Departures", "query StationDepartures") \
