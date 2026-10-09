@@ -14,6 +14,8 @@ honestly.
 
 import re
 
+from .route_merge import merge_duplicate_routes
+
 # A TransMilenio station is a parent with one stop per platform ("San Victorino B - 2 ó 5"), and two
 # routes along the same corridor commonly board at different platforms of it. The equivalent service
 # is still the one a rider wants, so the segment is resolved at station level and each alternative
@@ -44,6 +46,15 @@ def natural_key(s: str | None) -> tuple:
     return tuple((int(p), "") if p.isdigit() else (0, p) for p in re.findall(r"\d+|\D+", (s or "").strip()))
 
 
+#: How much longer than the quickest equivalent a service may be and still count as one. Measured
+#: against San Victorino, where the same stop pair is served in 5 calls by one route and in 31 by
+#: another that loops through half the city first: boarding that one because it came first would
+#: cost the rider the trip. Two-and-a-bit rather than tight, because a local is a real alternative
+#: to an express.
+DETOUR_FACTOR = 2.5
+DETOUR_FLOOR = 3
+
+
 def equivalent_services(patterns: list[dict], origins: set[str], destinations: set[str],
                         exclude: set[str] | None = None) -> list[dict]:
     """One entry per (route, platform) that gets a rider from `origins` to `destinations`.
@@ -52,6 +63,11 @@ def equivalent_services(patterns: list[dict], origins: set[str], destinations: s
     qualifies when it calls at an origin and then, after it, at a destination — the direction check
     and the branch check are the same check. Of several patterns of one route from one platform the
     one with the fewest intermediate stops wins, so an express is not hidden behind its local.
+
+    Two kinds of answer are then dropped, both learned from the live feed: services that reach the
+    destination only after a long detour (see [DETOUR_FACTOR]), and the feed's own duplicate route
+    rows — Bogotá lists "GA506" three times with different ids, and three identical chips read as a
+    bug rather than as three buses.
     """
     exclude = exclude or set()
     best: dict[tuple[str, str], dict] = {}
@@ -72,4 +88,36 @@ def equivalent_services(patterns: list[dict], origins: set[str], destinations: s
         key = (rid, stops[board]["id"])
         if key not in best or item["stops"] < best[key]["stops"]:
             best[key] = item
-    return sorted(best.values(), key=lambda r: (r.get("component") or "", natural_key(r.get("shortName"))))
+    out = _drop_detours(list(best.values()))
+    out = _dedupe_per_platform(out)
+    return sorted(out, key=lambda r: (r.get("component") or "", natural_key(r.get("shortName"))))
+
+
+def _drop_detours(services: list[dict]) -> list[dict]:
+    """Keep the quickest way through the segment and everything within reach of it."""
+    counts = [s["stops"] for s in services if isinstance(s.get("stops"), int)]
+    if not counts:
+        return services
+    limit = max(min(counts) * DETOUR_FACTOR, min(counts) + DETOUR_FLOOR)
+    return [s for s in services if not isinstance(s.get("stops"), int) or s["stops"] <= limit]
+
+
+def _dedupe_per_platform(services: list[dict]) -> list[dict]:
+    """Collapse the feed's duplicate rows, per platform.
+
+    Per platform rather than globally: two routes with the same name boarding at different vagones
+    of one station are two different instructions, and merging them would send a rider to the wrong
+    place. `merge_duplicate_routes` is the same rule the route list uses — an exact match on
+    everything a rider can see.
+    """
+    groups: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for s in services:
+        key = (s.get("boardAt") or {}).get("id") or ""
+        if key not in groups:
+            order.append(key)
+        groups.setdefault(key, []).append(s)
+    out: list[dict] = []
+    for key in order:
+        out.extend(merge_duplicate_routes(groups[key]))
+    return out

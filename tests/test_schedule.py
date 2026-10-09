@@ -3,7 +3,13 @@
 Asked for by TransMilenio against 1.16.0 (1.12): the route page showed the first and last
 departure, which answers "does it run now" and not "how long will I wait".
 """
-from app.schedule import FREQUENT_HEADWAY_MINUTES, bands, hhmm, schedule_summary
+from app.schedule import (
+    FREQUENT_HEADWAY_MINUTES,
+    bands,
+    direction_group,
+    hhmm,
+    schedule_summary,
+)
 
 
 def _at(*clock: str) -> list[int]:
@@ -92,3 +98,49 @@ def test_duplicate_departures_are_kept_as_two_buses():
     s = schedule_summary(_at("06:00", "06:00", "06:10", "06:20"))
     assert s["trips"] == 4
     assert s["bands"][0]["headwayMinutes"]["min"] == 0
+
+
+class TestDirectionsNotPatterns:
+    """What the first sandbox call taught: a feed's "pattern" is a shape, not a direction.
+
+    GA547 publishes five near-identical variants; on the day this was measured ::01, ::03 and ::04
+    ran (24, 24 and 15 departures) and ::02 and ::05 did not. Reading the schedule off the longest
+    variant answered "0 departures" for a route running every twenty minutes.
+    """
+
+    @staticmethod
+    def _p(code: str, headsign: str, stops: int, direction=None) -> dict:
+        return {"code": code, "headsign": headsign, "directionId": direction,
+                "stops": [{"gtfsId": f"s{i}"} for i in range(stops)]}
+
+    def test_every_variant_of_one_direction_is_counted(self):
+        pats = [self._p(f"r::0{i}", "Bosa San José", 112 - i) for i in range(1, 6)]
+        group = direction_group(pats, "GA547")
+        assert [p["code"] for p in group] == ["r::01", "r::02", "r::03", "r::04", "r::05"]
+
+    def test_the_longest_variant_leads(self):
+        group = direction_group([self._p("short", "Norte", 3), self._p("long", "Norte", 40)], "B74")
+        assert group[0]["code"] == "long"
+
+    def test_the_other_direction_is_a_different_group(self):
+        pats = [self._p("north", "Portal Norte", 30), self._p("south", "Portal Sur", 32)]
+        group = direction_group(pats, "B10")
+        # The main direction is the one with the longest variant, and it is alone.
+        assert [p["code"] for p in group] == ["south"]
+
+    def test_asking_for_one_variant_returns_its_whole_direction(self):
+        """The app passes the pattern the rider selected; the answer must still be the direction,
+        or it is the bug this replaced."""
+        pats = [self._p("a", "Norte", 10), self._p("b", "Norte", 9), self._p("c", "Sur", 11)]
+        assert [p["code"] for p in direction_group(pats, "X", wanted="b")] == ["a", "b"]
+        assert [p["code"] for p in direction_group(pats, "X", wanted="c")] == ["c"]
+
+    def test_direction_ids_split_a_shared_headsign(self):
+        pats = [self._p("out", "Centro", 20, direction=0), self._p("back", "Centro", 21, direction=1)]
+        assert [p["code"] for p in direction_group(pats, "X")] == ["back"]
+
+    def test_an_unknown_variant_is_not_silently_the_main_one(self):
+        assert direction_group([self._p("a", "Norte", 10)], "X", wanted="nope") == []
+
+    def test_no_patterns_no_group(self):
+        assert direction_group([], "X") == []

@@ -487,7 +487,11 @@ class StopConnections(Out):
 class PatternSchedule(Out):
     """What one direction of a route runs on one day, and what a rider can change to along it."""
     route_id: str
+    #: The longest variant of the direction — the one the stop list and the connections come from.
     pattern_id: str | None = None
+    #: Every variant of the direction whose departures were counted. A feed's "pattern" is a shape,
+    #: not a direction, and only some variants run on any given day.
+    pattern_ids: list[str] = []
     headsign: str | None = None
     direction_id: int | None = None
     date: str

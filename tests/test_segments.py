@@ -112,3 +112,45 @@ class TestStopFamily:
 def test_natural_key_sorts_digits_as_numbers():
     assert sorted(["B74", "B9", "B100"], key=natural_key) == ["B9", "B74", "B100"]
     assert sorted(["9-3", "9-10", "9-4"], key=natural_key) == ["9-3", "9-4", "9-10"]
+
+
+class TestWhatTheLiveFeedTaught:
+    """Both of these came out of the first sandbox call, against San Victorino."""
+
+    def test_a_route_that_loops_half_the_city_first_is_not_an_alternative(self):
+        """Measured: the same stop pair served in 5 calls by one route and in 31 by another.
+        Boarding the second because it came first would cost the rider the trip."""
+        out = equivalent_services(
+            [_p("GA547", ["a"] + [f"s{i}" for i in range(4)] + ["d"]),
+             _p("GA506", ["a"] + [f"x{i}" for i in range(30)] + ["d"])],
+            {"a"}, {"d"})
+        assert [s["shortName"] for s in out] == ["GA547"]
+
+    def test_a_local_is_still_an_alternative_to_an_express(self):
+        out = equivalent_services(
+            [_p("X1", ["a", "d"]), _p("X2", ["a", "m1", "m2", "d"])], {"a"}, {"d"})
+        assert {s["shortName"] for s in out} == {"X1", "X2"}
+
+    def test_the_feeds_duplicate_rows_collapse_to_one_chip(self):
+        """Bogotá lists GA506 three times with different ids; three identical chips read as a bug."""
+        dupes = [
+            {"route": {"id": f"bogota:{i}", "shortName": "GA506", "longName": "Molinos - Centro",
+                       "component": "zonal", "mode": "BUS"},
+             "headsign": None, "directionId": 0, "stops": [_s("a"), _s("m"), _s("d")]}
+            for i in (111, 222, 333)
+        ]
+        out = equivalent_services(dupes, {"a"}, {"d"})
+        assert len(out) == 1
+        assert out[0]["shortName"] == "GA506"
+
+    def test_the_same_name_at_two_platforms_stays_two_instructions(self):
+        """The reason the collapse is per platform: merging these would send a rider to the wrong
+        vagón, which is worse than showing the name twice."""
+        rows = [
+            {"route": {"id": f"bogota:{i}", "shortName": "GA506", "longName": "Molinos - Centro",
+                       "component": "zonal", "mode": "BUS"},
+             "headsign": None, "directionId": 0, "stops": [_s(board), _s("d")]}
+            for i, board in ((111, "61988"), (222, "61992"))
+        ]
+        out = equivalent_services(rows, {"61988", "61992"}, {"d"})
+        assert sorted((s["boardAt"]["id"]) for s in out) == ["61988", "61992"]

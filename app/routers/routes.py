@@ -13,7 +13,7 @@ from ..normalize import alert_from_otp, clean_headsign, pattern_from_otp, route_
 from ..otp import PATTERN_SCHEDULE_QUERY, ROUTE_QUERY, STATION_PATTERNS_QUERY, STOP_PATTERNS_QUERY
 from ..route_merge import merge_duplicate_routes
 from ..runtime import CityRuntime, city_runtime
-from ..schedule import hhmm, schedule_summary
+from ..schedule import MAX_PATTERNS_PER_DIRECTION, direction_group, hhmm, schedule_summary
 from ..segments import MAX_ORIGIN_STOPS, equivalent_services, stop_family
 
 router = APIRouter(tags=["routes"])
@@ -209,32 +209,46 @@ async def _pattern_schedule(rt: CityRuntime, pattern_code: str, day: dt.date) ->
 
 @router.get("/v1/cities/{city}/routes/{routeId}/schedule", response_model=PatternSchedule)
 async def route_schedule(routeId: str, rt: CityRuntime = Depends(city_runtime),
-                         pattern: str | None = Query(None, description="pattern code; the route's main one by default"),
+                         pattern: str | None = Query(None, description="any pattern of the direction wanted; "
+                                                                       "the route's main direction by default"),
                          date: dt.date | None = Query(None, description="service date; today in the city by default")):
-    """What this direction actually runs today: every departure, the interval per hour, and the
-    routes a rider can change to at each stop."""
+    """What one direction of a route actually runs today: every departure, the interval per hour, and
+    the routes a rider can change to at each stop.
+
+    A direction, not a pattern. Bogotá publishes five near-identical shape variants per route and only
+    some run on any given day — asking for one of them answered "0 departures" for a route running
+    every twenty minutes. The departures of every variant of the same direction are unioned, which is
+    also the number a rider waiting at the stop experiences.
+    """
     city = rt.city
     day = date or _city_today(rt)
-    code = pattern
-    if not code:
-        data = await rt.otp.graphql(ROUTE_QUERY, {"id": city.scoped(routeId)})
-        pats = [p for p in ((data.get("route") or {}).get("patterns") or []) if p and p.get("code")]
-        if not pats:
-            raise RouteNotFound(f"route '{routeId}' has no patterns")
-        # The main direction: the longest pattern, which is the one the route page opens on.
-        code = max(pats, key=lambda p: len(p.get("stops") or []))["code"]
-    p = await _pattern_schedule(rt, code, day)
-    if not p:
-        raise RouteNotFound(f"pattern '{code}' not found")
+    data = await rt.otp.graphql(ROUTE_QUERY, {"id": city.scoped(routeId)})
+    route = data.get("route")
+    if not route:
+        raise RouteNotFound(f"route '{routeId}' not found")
+    pats = [p for p in (route.get("patterns") or []) if p and p.get("code")]
+    if not pats:
+        raise RouteNotFound(f"route '{routeId}' has no patterns")
+    group = direction_group(pats, route.get("shortName"), wanted=pattern)
+    if not group:
+        raise RouteNotFound(f"pattern '{pattern}' not found on route '{routeId}'")
 
-    departures = [
-        (t.get("departureStoptime") or {}).get("scheduledDeparture")
-        for t in (p.get("tripsForDate") or []) if t
-    ]
-    summary = schedule_summary([d for d in departures if isinstance(d, int)])
-    route_id = (p.get("route") or {}).get("gtfsId") or city.scoped(routeId)
+    schedules = await asyncio.gather(
+        *[_pattern_schedule(rt, p["code"], day) for p in group[:MAX_PATTERNS_PER_DIRECTION]])
+    departures: list[int] = []
+    for sched in schedules:
+        for t in ((sched or {}).get("tripsForDate") or []):
+            d = ((t or {}).get("departureStoptime") or {}).get("scheduledDeparture")
+            if isinstance(d, int):
+                departures.append(d)
+    summary = schedule_summary(departures)
+
+    # Connections from the longest variant of the direction: the one that calls everywhere the
+    # others do. Its stop list is also the one the route page is drawing.
+    longest = max(group, key=lambda p: len(p.get("stops") or []))
+    route_id = route.get("gtfsId") or city.scoped(routeId)
     connections = []
-    for st in (p.get("stops") or []):
+    for st in (longest.get("stops") or []):
         if not st:
             continue
         others = [rt.with_window(route_ref(city, r)) for r in (st.get("routes") or [])
@@ -246,15 +260,17 @@ async def route_schedule(routeId: str, rt: CityRuntime = Depends(city_runtime),
     return JSONResponse(
         {
             "routeId": route_id,
-            "patternId": p.get("code"),
-            "headsign": clean_headsign(p.get("headsign"), (p.get("route") or {}).get("shortName")),
-            "directionId": p.get("directionId") if p.get("directionId") in (0, 1) else None,
+            "patternId": longest["code"],
+            "patternIds": [p["code"] for p in group],
+            "headsign": clean_headsign(longest.get("headsign"), route.get("shortName"))
+                        or ((longest.get("stops") or [{}])[-1] or {}).get("name"),
+            "directionId": longest.get("directionId") if longest.get("directionId") in (0, 1) else None,
             "date": day.isoformat(),
             # Computed from the published schedule — the feed does not say "every 5 minutes", and
             # claiming it published something it did not would be the wrong kind of certainty.
             "source": "schedule",
             **summary,
-            "departures": [hhmm(d) for d in sorted(d for d in departures if isinstance(d, int))],
+            "departures": [hhmm(d) for d in sorted(departures)],
             "connections": connections,
         },
         headers={"Cache-Control": "public, max-age=900"},

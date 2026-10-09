@@ -77,3 +77,42 @@ def schedule_summary(departures: list[int]) -> dict:
         "frequent": typical is not None and typical <= FREQUENT_HEADWAY_MINUTES,
         "bands": b,
     }
+
+
+#: Variants of one direction to ask OTP about. Bogotá's busiest routes publish five; the cap keeps a
+#: pathological feed from turning one route page into twenty router queries.
+MAX_PATTERNS_PER_DIRECTION = 8
+
+
+def direction_group(patterns: list[dict], route_short_name: str | None = None,
+                    wanted: str | None = None) -> list[dict]:
+    """The patterns that are the same direction as [wanted] (or the main direction).
+
+    A feed's "pattern" is a shape variant, not a direction: Bogotá publishes five near-identical
+    variants per route and only some run on a given day, so a schedule read off one of them said
+    "0 departures" for a route running every twenty minutes. Two variants are the same direction
+    when they agree on `directionId` and on the destination sign — which is exactly what a rider
+    reads on the bus and the only thing they are choosing between.
+
+    The main direction is the one holding the longest variant: the route page opens on it.
+    """
+    if not patterns:
+        return []
+
+    def key(p: dict) -> tuple:
+        d = p.get("directionId")
+        headsign = (p.get("headsign") or "").strip().casefold()
+        if not headsign and route_short_name:
+            headsign = ""
+        return (d if d in (0, 1) else None, headsign)
+
+    groups: dict[tuple, list[dict]] = {}
+    for p in patterns:
+        groups.setdefault(key(p), []).append(p)
+    if wanted:
+        for g in groups.values():
+            if any(p.get("code") == wanted for p in g):
+                return sorted(g, key=lambda p: -len(p.get("stops") or []))
+        return []
+    main = max(groups.values(), key=lambda g: max(len(p.get("stops") or []) for p in g))
+    return sorted(main, key=lambda p: -len(p.get("stops") or []))
