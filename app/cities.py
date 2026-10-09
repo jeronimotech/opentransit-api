@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 log = logging.getLogger("ot.cities")
@@ -775,12 +775,30 @@ class Landing(_Camel):
 
 
 class ServiceTile(BaseModel):
-    """Hand-off tile to a partner or agency service (recharge, PQRS...). Never a core feature."""
+    """Hand-off tile to a partner or agency service (recharge, PQRS...). Never a core feature.
+
+    `description` exists because a list of four official links tells a rider nothing about which one
+    answers their question — TransMilenio asked for the difference to be stated in the app (1.16).
+    `kind: call` carries a phone number instead of a URL, which is what an emergency line is.
+    """
     id: str
     label: str
     icon: str = "link"
-    url: str
-    kind: Literal["external", "internal", "deeplink"] = "external"
+    url: str | None = None
+    phone: str | None = None
+    description: str | None = None
+    #: Shown apart and never behind a tap more than necessary.
+    emergency: bool = False
+    kind: Literal["external", "internal", "deeplink", "call"] = "external"
+
+    @model_validator(mode="after")
+    def _target(self) -> "ServiceTile":
+        if self.kind == "call":
+            if not self.phone:
+                raise ValueError(f"service '{self.id}': kind 'call' needs a phone")
+        elif not self.url:
+            raise ValueError(f"service '{self.id}': a url is required")
+        return self
 
 
 class City(BaseModel):

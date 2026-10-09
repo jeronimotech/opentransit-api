@@ -65,6 +65,12 @@ config:
 links:
   support: https://www.atac.roma.it/contatti
   privacy: https://www.atac.roma.it/privacy
+
+# Hand-off tiles shown in the apps' services hub. The emergency line is a `call` tile:
+# it dials rather than opening a page.
+services:
+  - { id: emergency, label: Emergenze 112, icon: emergency, phone: "112", kind: call, emergency: true,
+      description: "Numero unico di emergenza europeo: polizia, ambulanza, vigili del fuoco." }
 mobility:
   on_demand:
     - id: uber

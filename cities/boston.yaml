@@ -69,6 +69,12 @@ config:
 links:
   support: https://www.mbta.com/customer-support
   privacy: https://www.mbta.com/policies/privacy-policy
+
+# Hand-off tiles shown in the apps' services hub. The emergency line is a `call` tile:
+# it dials rather than opening a page.
+services:
+  - { id: emergency, label: Emergency 911, icon: emergency, phone: "911", kind: call, emergency: true,
+      description: "Emergency line: police, ambulance and fire." }
 mobility:
   bike_share:
     - id: bluebikes

@@ -65,6 +65,12 @@ config:
 links:
   support: https://translink.com.au/contact-us
   privacy: https://translink.com.au/privacy
+
+# Hand-off tiles shown in the apps' services hub. The emergency line is a `call` tile:
+# it dials rather than opening a page.
+services:
+  - { id: emergency, label: Emergency 000, icon: emergency, phone: "000", kind: call, emergency: true,
+      description: "Australia’s emergency line: police, ambulance and fire." }
 mobility:
   on_demand:
     - id: uber

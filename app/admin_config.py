@@ -15,7 +15,7 @@ import json
 import logging
 from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from .cities import (
     AnalyticsConfig,
@@ -61,7 +61,8 @@ from .ondemand import PLACEHOLDER, is_masked, mask_credentials, mask_value
 log = logging.getLogger("ot.admin_config")
 
 EDITABLE = ("fares", "config", "links", "services", "branding", "mobility", "openMobility", "landing", "geocoder")
-SERVICE_ICONS = ("card", "report", "help", "link", "bike", "parking", "taxi", "ticket", "info", "map")
+SERVICE_ICONS = ("card", "report", "help", "link", "bike", "parking", "taxi", "ticket", "info", "map",
+                 "emergency")
 LANDING_ICONS = ("route", "live", "board", "bike", "open", "alert", "accessibility", "favorites", "offline", "map",
                  "ticket", "info",
                  # v2.3: taxi / ride-hailing, park & ride, scheduled trips, follow-along, the assistant
@@ -225,10 +226,24 @@ class ServiceCfg(_Strict):
     id: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
     label: str = Field(min_length=1, max_length=60)
     icon: Literal[SERVICE_ICONS] = "link"  # type: ignore[valid-type]
-    url: str
-    kind: Literal["external", "internal", "deeplink"] = "external"
+    url: str | None = None
+    #: `kind: call` dials instead of opening a page, which is what an emergency line is. Digits and
+    #: the few separators a printed number uses, so a tel: link cannot be smuggled a parameter.
+    phone: str | None = Field(default=None, pattern=r"^[0-9+][0-9 ()\-]{1,19}$")
+    description: str | None = Field(default=None, max_length=240)
+    emergency: bool = False
+    kind: Literal["external", "internal", "deeplink", "call"] = "external"
 
     _v = field_validator("url")(_https)
+
+    @model_validator(mode="after")
+    def _target(self) -> ServiceCfg:
+        if self.kind == "call":
+            if not self.phone:
+                raise ValueError("kind 'call' needs a phone")
+        elif not self.url:
+            raise ValueError("a url is required")
+        return self
 
 
 class BrandingCfg(_Strict):

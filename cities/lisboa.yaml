@@ -58,6 +58,12 @@ config:
 links:
   support: https://www.carrismetropolitana.pt/apoio
   privacy: https://www.carrismetropolitana.pt/privacidade
+
+# Hand-off tiles shown in the apps' services hub. The emergency line is a `call` tile:
+# it dials rather than opening a page.
+services:
+  - { id: emergency, label: Emergência 112, icon: emergency, phone: "112", kind: call, emergency: true,
+      description: "Número europeu de emergência: polícia, ambulância e bombeiros." }
 mobility:
   on_demand:
     - id: uber

@@ -44,6 +44,7 @@ from .routers import (
     pois,
     push,
     rental,
+    reports,
     routes,
     share,
     stops,
@@ -304,6 +305,9 @@ async def lifespan(app: FastAPI):
     app.state.analytics_limiter = RateLimiter(60, 60)
     app.state.share_store = PgShareStore()
     app.state.share_limiter = RateLimiter(30, 60)      # creating shares is rarer than sending events
+    # A rider files one report, thinks, and files another: ten a minute is generous for a person and
+    # closes the door on a script filling the table.
+    app.state.report_limiter = RateLimiter(10, 60)
     app.state.assistant_budget = BudgetStore()
     app.state.assistant_limiter = SessionLimiter(60)
     app.state.forecast_cache = ForecastCache()
@@ -388,7 +392,7 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     install_error_handlers(app)
     for r in (platform, plan, geocode, stops, board, routes, vehicles, alerts, health, pois, rental, ondemand,
-              landing, analytics, openmobility, share, push, watch, chat, admin):
+              landing, analytics, openmobility, share, push, watch, chat, reports, admin):
         app.include_router(r.router)
 
     @app.get("/", include_in_schema=False)

@@ -460,3 +460,22 @@ CREATE TABLE IF NOT EXISTS push_device (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS push_device_city ON push_device (city);
+
+-- v2.7 rider reports. "This stop is in the wrong place", "this ramp is blocked": what the app got
+-- wrong, from the person who found it, so the data can be fixed rather than being wrong forever.
+-- Deliberately anonymous: no device id, no account, no coordinates of the reporter. A stop or route
+-- id is here only because the rider attached one, and `contact` only if they typed it themselves.
+CREATE TABLE IF NOT EXISTS rider_report (
+  id          BIGSERIAL PRIMARY KEY,
+  city        TEXT NOT NULL,
+  kind        TEXT NOT NULL,                 -- wrong_info | barrier | other
+  message     TEXT NOT NULL,
+  stop_id     TEXT,
+  route_id    TEXT,
+  app_version TEXT,
+  locale      TEXT,
+  contact     TEXT,                           -- only what the rider typed; never derived
+  status      TEXT NOT NULL DEFAULT 'new',    -- new | seen | fixed | rejected
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS rider_report_city ON rider_report (city, created_at DESC);

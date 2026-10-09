@@ -191,10 +191,18 @@ links:
   privacy: https://www.transmilenio.gov.co/publicaciones/146028/politica-de-tratamiento-de-datos-personales
 
 # Hand-off tiles shown in the apps' services hub (open in the browser).
+# `description` says what each channel actually answers: four official links with no explanation
+# leave a rider guessing which one to use (TransMilenio, 1.16).
 services:
-  - { id: recharge, label: Recargar tullave, icon: card, url: https://www.tullaveplus.gov.co/, kind: external }
-  - { id: pqrs, label: PQRS y reportes, icon: report, url: https://www.transmilenio.gov.co/publicaciones/147212/pqrs, kind: external }
-  - { id: support, label: Canales de atención, icon: help, url: https://www.transmilenio.gov.co/publicaciones/149179, kind: external }
+  - { id: recharge, label: Recargar tullave, icon: card, url: https://www.tullaveplus.gov.co/, kind: external,
+      description: "Recarga tu tarjeta tullave en línea con tarjeta débito o crédito." }
+  - { id: pqrs, label: PQRS y reportes, icon: report, url: https://www.transmilenio.gov.co/publicaciones/147212/pqrs, kind: external,
+      description: "Peticiones, quejas, reclamos y sugerencias al operador, con respuesta formal y número de radicado." }
+  - { id: support, label: Canales de atención, icon: help, url: https://www.transmilenio.gov.co/publicaciones/149179, kind: external,
+      description: "Teléfonos, chat, redes y puntos de atención de TransMilenio, con sus horarios." }
+  # NUSE 123: línea única de emergencias de Bogotá (policía, ambulancia, bomberos).
+  - { id: emergency, label: Emergencias 123, icon: emergency, phone: "123", kind: call, emergency: true,
+      description: "Línea única de emergencias de Bogotá: policía, ambulancia y bomberos." }
 
 # ── v1.2 · shared mobility (GBFS) ───────────────────────────────────────────────
 # Tembici operates Bogotá's public bike system and publishes GBFS 3.0 (verified 2026-09-04: 252 stations).

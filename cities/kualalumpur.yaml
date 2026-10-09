@@ -68,6 +68,12 @@ config:
 links:
   support: https://myrapid.com.my/contact-us/
   privacy: https://myrapid.com.my/privacy-policy/
+
+# Hand-off tiles shown in the apps' services hub. The emergency line is a `call` tile:
+# it dials rather than opening a page.
+services:
+  - { id: emergency, label: Kecemasan 999, icon: emergency, phone: "999", kind: call, emergency: true,
+      description: "Talian kecemasan: polis, ambulans dan bomba." }
 landing:
   enabled: true
   slug: null
