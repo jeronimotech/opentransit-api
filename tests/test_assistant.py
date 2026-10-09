@@ -171,6 +171,51 @@ async def test_tool_errors_are_reported_to_the_model_as_json(bogota: City):
     assert card is None and json.loads(content)["error"] == "TOOL_FAILED"
 
 
+async def test_a_reply_that_spent_every_round_on_tools_still_says_something(bogota: City, monkeypatch):
+    """Measured in production the day the assistant was switched on: "¿cada cuánto pasa el B74?"
+    made five tool calls, painted four cards and closed the stream without one word. A rider holding
+    cards and no sentence has been answered by nobody."""
+    _stub_tools(monkeypatch)
+    # Every scripted round asks for another tool and never writes prose; the last entry is what the
+    # final no-tools round returns.
+    provider = FakeProvider([
+        ("", [ToolCall("1", "next_departures", {})]),
+        ("", [ToolCall("2", "route_info", {})]),
+        ("", [ToolCall("3", "nearby_stops", {})]),
+        ("", [ToolCall("4", "next_departures", {})]),
+        ("", [ToolCall("5", "route_info", {})]),
+        ("Cada 17 minutos aproximadamente.", []),
+    ])
+    app, _ = _app(bogota, provider)
+    events = await _events(app)
+    kinds = [e for e, _ in events]
+    assert "token" in kinds, kinds
+    text = "".join(d["text"] for e, d in events if e == "token")
+    assert "17 minutos" in text
+    # The extra round is asked without tools, so the model cannot spend another call on one.
+    assert provider.seen and len(provider.seen) == 6
+
+
+async def test_the_last_word_round_does_not_fire_when_the_model_already_spoke(bogota: City, monkeypatch):
+    _stub_tools(monkeypatch)
+    provider = FakeProvider([
+        ("", [ToolCall("1", "next_departures", {})]),
+        ("Sale a las 10:04.", []),
+    ])
+    app, _ = _app(bogota, provider)
+    await _events(app)
+    assert len(provider.seen) == 2
+
+
+async def test_a_reply_with_no_tools_and_no_text_does_not_ask_again(bogota: City, monkeypatch):
+    """Nothing to answer from: asking again would only spend another call."""
+    _stub_tools(monkeypatch)
+    provider = FakeProvider([("", [])])
+    app, _ = _app(bogota, provider)
+    await _events(app)
+    assert len(provider.seen) == 1
+
+
 async def test_the_per_reply_tool_budget_is_enforced(bogota: City, monkeypatch):
     many = [ToolCall(f"c{i}", "find_place", {"query": str(i)}) for i in range(5)]
     provider = FakeProvider([("", many), ("Listo.", [])])

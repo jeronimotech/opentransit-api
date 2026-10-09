@@ -72,6 +72,8 @@ async def converse(*, provider: Provider, ctx: ToolContext, turns: list[Turn],
     usage_total = Usage()
     tools_used: list[str] = []
     started = time.perf_counter()
+    answered = False
+    refused = False
 
     for _round in range(MAX_ROUNDS):
         text_parts: list[str] = []
@@ -81,6 +83,7 @@ async def converse(*, provider: Provider, ctx: ToolContext, turns: list[Turn],
             if isinstance(ev, TextEvent):
                 if ev.text:
                     text_parts.append(ev.text)
+                    answered = True
                     yield {"event": "token", "data": {"text": ev.text}}
             elif isinstance(ev, CallsEvent):
                 calls = ev.calls
@@ -116,7 +119,21 @@ async def converse(*, provider: Provider, ctx: ToolContext, turns: list[Turn],
         turns.append(Turn("tool_results", results=[results[c.id] for c in calls]))
 
         if stop == "refusal":
+            refused = True
             break
+
+    # The loop can end with the rider holding cards and not one word. Measured in production the day
+    # the assistant was switched on: "¿cada cuánto pasa el B74?" spent every round calling tools —
+    # five calls, four cards, no prose — and the stream closed with nothing to read. One last round
+    # with no tools on offer gets the answer the model never got around to writing; it cannot call
+    # anything, so it either answers from what it already has or says it cannot.
+    if not answered and not refused and tools_used:
+        log.info("assistant: no prose after %d tool calls; asking for the answer with no tools", len(tools_used))
+        async for ev in provider.stream(system=system, tools=[], turns=turns):
+            if isinstance(ev, TextEvent) and ev.text:
+                yield {"event": "token", "data": {"text": ev.text}}
+            elif isinstance(ev, DoneEvent):
+                usage_total = usage_total + ev.usage
 
     yield {"event": "done",
            "data": {"usage": {"inputTokens": usage_total.input_tokens,
