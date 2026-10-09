@@ -132,16 +132,45 @@ class TestWhatTheLiveFeedTaught:
         assert {s["shortName"] for s in out} == {"X1", "X2"}
 
     def test_the_feeds_duplicate_rows_collapse_to_one_chip(self):
-        """Bogotá lists GA506 three times with different ids; three identical chips read as a bug."""
+        """Bogotá lists GA506 three times with different ids; three identical chips read as a bug.
+
+        The long names differ only in ways a rider cannot act on, and the segment is already fixed,
+        so this is one instruction: take GA506 from here.
+        """
         dupes = [
-            {"route": {"id": f"bogota:{i}", "shortName": "GA506", "longName": "Molinos - Centro",
+            {"route": {"id": f"bogota:{i}", "shortName": "GA506", "longName": name,
                        "component": "zonal", "mode": "BUS"},
              "headsign": None, "directionId": 0, "stops": [_s("a"), _s("m"), _s("d")]}
-            for i in (111, 222, 333)
+            for i, name in ((111, "Molinos - Centro"), (222, "Molinos-Centro"), (333, "Molinos - Centro"))
         ]
         out = equivalent_services(dupes, {"a"}, {"d"})
         assert len(out) == 1
         assert out[0]["shortName"] == "GA506"
+        assert len(out[0]["mergedIds"]) == 2
+
+    def test_a_service_that_does_not_run_today_is_not_an_alternative(self):
+        """Measured on a Thursday: Bogotá publishes a second row per route for the Sunday ciclovía,
+        same number with "Ciclovía" appended, and it showed up as a duplicate chip — really a bus
+        that would never arrive. `hasServiceToday` already knew."""
+        rows = [
+            {"route": {"id": "bogota:12660", "shortName": "A134", "longName": "Pq. Central Bavaria",
+                       "component": "dual", "mode": "BUS",
+                       "serviceWindow": {"hasServiceToday": True, "start": "04:00", "end": "22:50"}},
+             "headsign": None, "directionId": 0, "stops": [_s("a"), _s("d")]},
+            {"route": {"id": "bogota:12661", "shortName": "A134",
+                       "longName": "Pq. Central Bavaria Ciclovía", "component": "dual", "mode": "BUS",
+                       "serviceWindow": {"hasServiceToday": False, "start": None, "end": None}},
+             "headsign": None, "directionId": 0, "stops": [_s("a"), _s("d")]},
+        ]
+        out = equivalent_services(rows, {"a"}, {"d"})
+        assert [s["id"] for s in out] == ["bogota:12660"]
+
+    def test_a_service_with_no_window_at_all_is_kept(self):
+        """Absent is not the same as not running — a city whose feed has no calendar would otherwise
+        answer nothing at all."""
+        rows = [{"route": {"id": "r1", "shortName": "X", "component": "bus", "mode": "BUS"},
+                 "headsign": None, "directionId": 0, "stops": [_s("a"), _s("d")]}]
+        assert len(equivalent_services(rows, {"a"}, {"d"})) == 1
 
     def test_the_same_name_at_two_platforms_stays_two_instructions(self):
         """The reason the collapse is per platform: merging these would send a rider to the wrong

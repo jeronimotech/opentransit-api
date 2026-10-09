@@ -14,8 +14,6 @@ honestly.
 
 import re
 
-from .route_merge import merge_duplicate_routes
-
 # A TransMilenio station is a parent with one stop per platform ("San Victorino B - 2 ó 5"), and two
 # routes along the same corridor commonly board at different platforms of it. The equivalent service
 # is still the one a rider wants, so the segment is resolved at station level and each alternative
@@ -88,9 +86,29 @@ def equivalent_services(patterns: list[dict], origins: set[str], destinations: s
         key = (rid, stops[board]["id"])
         if key not in best or item["stops"] < best[key]["stops"]:
             best[key] = item
-    out = _drop_detours(list(best.values()))
+    out = _running_today(list(best.values()))
+    out = _drop_detours(out)
     out = _dedupe_per_platform(out)
     return sorted(out, key=lambda r: (r.get("component") or "", natural_key(r.get("shortName"))))
+
+
+def _running_today(services: list[dict]) -> list[dict]:
+    """Drop what does not run today.
+
+    "Take whichever comes first" is false advice about a service that is not running. Bogotá
+    publishes a second route row per route for the Sunday ciclovía — same number, long name with
+    "Ciclovía" appended — and on a Thursday both appeared, which read as a duplicate chip and was
+    really a bus that would never arrive. `serviceWindow.hasServiceToday` already knew.
+
+    A service with no window at all is kept: absent is not the same as not running.
+    """
+    kept = []
+    for s in services:
+        window = s.get("serviceWindow") or {}
+        if window.get("hasServiceToday") is False:
+            continue
+        kept.append(s)
+    return kept
 
 
 def _drop_detours(services: list[dict]) -> list[dict]:
@@ -103,21 +121,29 @@ def _drop_detours(services: list[dict]) -> list[dict]:
 
 
 def _dedupe_per_platform(services: list[dict]) -> list[dict]:
-    """Collapse the feed's duplicate rows, per platform.
+    """Collapse rows a rider could not tell apart, keeping the ones they could.
 
     Per platform rather than globally: two routes with the same name boarding at different vagones
     of one station are two different instructions, and merging them would send a rider to the wrong
-    place. `merge_duplicate_routes` is the same rule the route list uses — an exact match on
-    everything a rider can see.
+    place.
     """
-    groups: dict[str, list[dict]] = {}
-    order: list[str] = []
+    groups: dict[tuple, list[dict]] = {}
+    order: list[tuple] = []
     for s in services:
-        key = (s.get("boardAt") or {}).get("id") or ""
+        # What the rider is being told: this number, from here, off there. Two feed rows that agree
+        # on all three are one instruction however many ids the feed has for them — unlike the route
+        # *list*, where the long name is the only thing telling two services apart, here the segment
+        # is already fixed and the long name adds nothing a rider can act on.
+        key = (s.get("shortName") or s.get("id"), (s.get("boardAt") or {}).get("id"),
+               (s.get("getOffAt") or {}).get("id"))
         if key not in groups:
             order.append(key)
         groups.setdefault(key, []).append(s)
     out: list[dict] = []
     for key in order:
-        out.extend(merge_duplicate_routes(groups[key]))
+        group = groups[key]
+        first, rest = group[0], group[1:]
+        if rest:
+            first = {**first, "mergedIds": [s["id"] for s in rest if s.get("id")]}
+        out.append(first)
     return out
