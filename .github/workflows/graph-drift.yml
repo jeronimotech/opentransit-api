@@ -47,3 +47,19 @@ jobs:
       - run: pip install -r requirements.txt
       - name: calendars running out
         run: python scripts/graph_drift.py --all --check calendar
+
+  # Third name, third job of work: this one is not about the graph at all. It asks production what
+  # it ingested. On 2026-10-14 the 24-hourly refresh read TransMilenio mid-publication and stored
+  # 110,648 trips where the finished feed had 179,919; the ingest was valid, every check was green,
+  # and because those trip ids appear nowhere in the realtime feed Bogotá showed a map of buses
+  # that never moved for a day. The fix is a re-ingest, not a rebuild, which is why it cannot share
+  # a name with `drift`.
+  feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12", cache: pip }
+      - name: a feed version that lost a large part of its service
+        run: python scripts/rt_match.py --fail-on-shrink

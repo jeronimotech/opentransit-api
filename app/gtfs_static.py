@@ -23,6 +23,7 @@ from .cities import City
 from .config import settings
 from .db import pool
 from .features import ServiceIndex, accessibility_support, accessibility_unverified, hms_to_seconds
+from .feed_shrink import feed_shrink
 from .geo import encode_polyline, rdp
 from .network_dedupe import ShapeIn, dedupe_shapes
 
@@ -326,6 +327,9 @@ async def ingest(city: City, force: bool = False) -> dict:
               dd[sid].length_m, f"{comp}|{(routes.get(rid) or {}).get('route_short_name') or rid}|{direction}",
               dd[sid].represents or None)
              for sid, rid, comp, color, n, enc, direction in shapes_out])
+        # Read before the switch: what this version is replacing, for the shrink warning below.
+        prev_trips = await c.fetchval(
+            "SELECT n_trips FROM feed_version WHERE city=$1 AND is_active LIMIT 1", city.id)
         await c.execute("UPDATE feed_version SET is_active=FALSE WHERE city=$1 AND is_active", city.id)
         await c.execute("UPDATE feed_version SET is_active=TRUE WHERE id=$1", fv)
         await c.execute(
@@ -334,8 +338,15 @@ async def ingest(city: City, force: bool = False) -> dict:
 
     log.info("[%s] static ingested v%s · %d routes · %d stops · %d trips · %d shapes, %d canonical (%d→%d pts)",
              city.id, fv, len(routes), len(stops), len(trips), len(shapes_out), n_canonical, total_in, total_out)
+    # A partial publication ingests cleanly and costs live arrivals until the next refresh, so it has
+    # to be louder than the line above. 2026-10-14: 110,648 trips stored where the finished feed had
+    # 179,919, and Bogotá showed a map of buses that never moved for a day.
+    shrink = feed_shrink(prev_trips, len(trips))
+    if shrink:
+        log.warning("[%s] static feed shrank: %s", city.id, shrink["note"])
     return {"changed": True, "sha": sha, "feedVersionId": fv, "routes": len(routes), "stops": len(stops),
-            "trips": len(trips), "shapes": len(shapes_out), "stopRoutes": len(stop_routes), **meta}
+            "trips": len(trips), "shapes": len(shapes_out), "stopRoutes": len(stop_routes),
+            "shrink": shrink, **meta}
 
 
 async def load_service_index(city: City) -> ServiceIndex:

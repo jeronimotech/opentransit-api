@@ -48,9 +48,11 @@ def sample(base: str, city: str, timeout: float = 30) -> dict:
         return {"city": city, "error": f"{type(e).__name__}: {e}"}
     rt = d.get("realtime") or {}
     g = (d.get("router") or {}).get("graphDrift") or {}
+    st = d.get("static") or {}
     return {
         "at": datetime.now(UTC).isoformat(timespec="seconds"),
         "city": city,
+        "shrink": st.get("shrink"),
         "driftPct": g.get("overlapPct"),
         "graphTrips": g.get("graphTrips"),
         "feedTrips": g.get("feedTrips"),
@@ -66,6 +68,9 @@ def main() -> int:
     ap.add_argument("cities", nargs="*", default=None)
     ap.add_argument("--base", default=DEFAULT_BASE)
     ap.add_argument("--json", action="store_true", help="one JSON object per line")
+    ap.add_argument("--fail-on-shrink", action="store_true",
+                    help="exit 1 when a city's active feed lost a large part of the previous one's "
+                         "service — a partial publication, which costs live arrivals silently")
     a = ap.parse_args()
 
     rows = [sample(a.base, c) for c in (a.cities or CITIES)]
@@ -87,7 +92,14 @@ def main() -> int:
         print(f"{r['city']:13} {('—' if d is None else f'{d:.1f}%'):>7} "
               f"{('—' if rt is None else f'{rt:.1f}%'):>7} "
               f"{(r['vehicles'] if r['vehicles'] is not None else '—'):>9} "
-              f"{(r['rescuedBySchedule'] if r['rescuedBySchedule'] is not None else '—'):>8}")
+              f"{(r['rescuedBySchedule'] if r['rescuedBySchedule'] is not None else '—'):>8}"
+              f"{'  FEED SHRANK ' + str(r['shrink']['lostPct']) + '%' if r.get('shrink') else ''}")
+
+    shrunk = [r for r in rows if r.get("shrink")]
+    for r in shrunk:
+        print(f"\n{r['city']}: {r['shrink']['note']}")
+    if a.fail_on_shrink and shrunk:
+        return 1
     return 0
 
 

@@ -589,12 +589,23 @@ class AlertsResponse(Out):
     alerts: list[Alert]
 
 
+class FeedShrink(Out):
+    """Set when this feed version lost a large part of the previous one's service. A partial
+    publication ingests cleanly and reads exactly like this."""
+    previous_trips: int
+    trips: int
+    lost_pct: float
+    note: str
+
+
 class StaticHealth(Out):
     feed_version: str | None = None
     fetched_at: str | None = None
     routes: int | None = None
     stops: int | None = None
     trips: int | None = None
+    #: Null when the feed grew, held steady, or this is a first ingest.
+    shrink: FeedShrink | None = None
 
 
 class RealtimeHealth(Out):

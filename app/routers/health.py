@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request
 
 from .. import geocode as geocode_mod
 from ..db import pool
+from ..feed_shrink import feed_shrink
 from ..geocode import ideca_health, photon_health
 from ..graph_drift import store as drift_store
 from ..models import CityHealth
@@ -16,6 +17,11 @@ async def city_health(request: Request, rt: CityRuntime = Depends(city_runtime))
     async with pool().acquire() as c:
         fv = await c.fetchrow("SELECT id, fetched_at, n_routes, n_stops, n_trips, feed_info FROM feed_version "
                               "WHERE city=$1 AND is_active LIMIT 1", rt.city.id)
+        # The version this one replaced, for the shrink check: a partial publication ingests cleanly
+        # and silently costs live arrivals until the next refresh.
+        prev = await c.fetchval(
+            "SELECT n_trips FROM feed_version WHERE city=$1 AND id < $2 ORDER BY id DESC LIMIT 1",
+            rt.city.id, fv["id"]) if fv else None
     info = await rt.otp.server_info()
     cache = rt.rt
     f = rt.city.feeds
@@ -23,7 +29,8 @@ async def city_health(request: Request, rt: CityRuntime = Depends(city_runtime))
         "static": {"feedVersion": str(fv["id"]) if fv else None,
                    "fetchedAt": fv["fetched_at"].isoformat() if fv else None,
                    "routes": fv["n_routes"] if fv else None, "stops": fv["n_stops"] if fv else None,
-                   "trips": fv["n_trips"] if fv else None},
+                   "trips": fv["n_trips"] if fv else None,
+                   "shrink": feed_shrink(prev, fv["n_trips"] if fv else None)},
         "realtime": {"enabled": bool(f.rt_positions_url or f.rt_tripupdates_url or f.rt_alerts_url),
                      "lastFetchAt": iso(cache.updated_at), **{k: v for k, v in cache.health().items()
                                                                  if k != "pctTripResolved"},
