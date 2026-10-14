@@ -14,13 +14,20 @@ name: graph-drift
 #   # otp-<city> at it and update otp.trip_ids_url in cities/<city>.yaml
 on:
   schedule:
-    - cron: "17 11 * * *"      # 06:17 in Bogotá, after the overnight feed publication
+    # GitHub runs scheduled workflows when it has capacity, not when they are due. Measured on this
+    # repo over eleven consecutive days against a single 11:17 entry: every run landed 4 to 9 hours
+    # late (15:09, 15:49, 19:38, 17:14, 17:50, 17:53, 17:27, 16:15, 16:39, 20:18, 18:21 UTC) and
+    # `rt-watch` loses about half its 3-hourly runs outright. So three entries, not for three
+    # verdicts a day but so one lost or badly delayed run does not cost a day — and nobody should
+    # read these times as "when the check runs".
+    - cron: "17 7 * * *"
+    - cron: "17 11 * * *"
+    - cron: "17 15 * * *"
   workflow_dispatch:
-# Two jobs, not two steps, because the check name is the alert. A graph that has fallen behind is
-# ours to fix today; a calendar running out is the agency's to republish and can sit for weeks.
-# When both shared one exit code the run was permanently red on Toronto's calendar, and Brisbane
-# and Bogotá crossing the threshold on 3 and 4 October changed nothing visible. Now `drift` going
-# red is news.
+# Separate jobs, because the check name is the alert. And only the two that are *ours to act on
+# today* may turn a run red: `drift` (rebuild the graph) and `feed` (re-ingest). Everything that is
+# somebody else's to fix goes to an issue instead. The rule learned the hard way: a red that cannot
+# be acted on today teaches everyone to ignore the red that can.
 jobs:
   drift:
     runs-on: ubuntu-latest
@@ -37,23 +44,58 @@ jobs:
       - name: measure every city
         run: python scripts/graph_drift.py --all --check drift
 
+  # A calendar running out is the agency's to republish: it can sit for weeks and there is nothing to
+  # do about it today. Failing on it every morning is what broke this whole alarm — 16 of 16 runs red
+  # for a fortnight, so the daily notification stopped meaning anything and Bogotá's real outage on
+  # 13 October arrived inside that noise. It now keeps ONE standing issue instead: opened when a
+  # calendar first comes inside the window, its body refreshed silently (an edit notifies nobody,
+  # unlike a comment), closed when every feed is clear again.
   calendar:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      issues: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with: { python-version: "3.12", cache: pip }
       - run: pip install -r requirements.txt
       - name: calendars running out
-        run: python scripts/graph_drift.py --all --check calendar
+        id: check
+        run: |
+          set +e
+          python scripts/graph_drift.py --all --check calendar | tee calendar.txt
+          echo "rc=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+      - name: keep one standing issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title='Feed calendars running out'
+          num="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          {
+            echo 'Feeds whose `calendar.txt` ends inside the 45-day window. The agency republishes'
+            echo 'it, not us, so it lives here instead of failing the daily run every morning —'
+            echo 'that daily red is what taught everyone to ignore this workflow.'
+            echo
+            echo "Refreshed by \`graph-drift\` on $(date -u +%F). Closes itself when every feed is clear."
+            echo
+            echo '```'
+            cat calendar.txt
+            echo '```'
+          } > body.md
+          if [ "${{ steps.check.outputs.rc }}" != "0" ]; then
+            if [ -n "$num" ]; then
+              gh issue edit "$num" --body-file body.md      # an edit notifies nobody; a comment would
+              echo "refreshed issue #$num"
+            else
+              gh issue create --title "$title" --body-file body.md
+            fi
+          elif [ -n "$num" ]; then
+            gh issue close "$num" --comment 'Every feed is clear of the 45-day window again.'
+          else
+            echo 'every calendar is clear'
+          fi
 
-  # Third name, third job of work: this one is not about the graph at all. It asks production what
-  # it ingested. On 2026-10-14 the 24-hourly refresh read TransMilenio mid-publication and stored
-  # 110,648 trips where the finished feed had 179,919; the ingest was valid, every check was green,
-  # and because those trip ids appear nowhere in the realtime feed Bogotá showed a map of buses
-  # that never moved for a day. The fix is a re-ingest, not a rebuild, which is why it cannot share
-  # a name with `drift`.
   feed:
     runs-on: ubuntu-latest
     timeout-minutes: 10
