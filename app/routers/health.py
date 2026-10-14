@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, Request
 
 from .. import geocode as geocode_mod
+from ..config import settings
 from ..db import pool
 from ..feed_shrink import feed_shrink
 from ..geocode import ideca_health, photon_health
 from ..graph_drift import store as drift_store
 from ..models import CityHealth
+from ..ops_alerts import channels
 from ..rt import iso
 from ..runtime import CityRuntime, city_runtime
 
@@ -24,6 +26,7 @@ async def city_health(request: Request, rt: CityRuntime = Depends(city_runtime))
             rt.city.id, fv["id"]) if fv else None
     info = await rt.otp.server_info()
     cache = rt.rt
+    cfg = settings()
     f = rt.city.feeds
     return {
         "static": {"feedVersion": str(fv["id"]) if fv else None,
@@ -37,6 +40,10 @@ async def city_health(request: Request, rt: CityRuntime = Depends(city_runtime))
                      "vehicles": len(cache.vehicles), "pctTripResolved": cache.health()["pctTripResolved"],
                      "alerts": len(cache.active_alerts()),
                      "stale": rt.freshness()["stale"], "staleSeconds": rt.freshness()["staleSeconds"]},
+        # Whether a person would be told if this city's feed or graph needed one. Armed is worth
+        # being able to check: the alternative is finding out on the day it matters.
+        "ops": {"channels": channels(cfg.OPS_TELEGRAM_BOT_TOKEN or None, cfg.OPS_TELEGRAM_CHAT_ID or None,
+                                     cfg.OPS_WEBHOOK_URL or None)},
         "router": {"up": info is not None, "version": rt.otp.version,
                    "graphBuiltAt": (info or {}).get("transitTimeZone") and None or _built_at(info),
                    "baseUrl": rt.city.otp.base_url,

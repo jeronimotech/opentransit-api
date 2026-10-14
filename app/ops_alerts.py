@@ -28,6 +28,16 @@ log = logging.getLogger("ot.ops")
 TELEGRAM_API = "https://api.telegram.org"
 
 
+def channels(token: str | None, chat_id: str | None, webhook: str | None) -> list[str]:
+    """Which channels are configured, by name. Never a value: /health is public."""
+    out = []
+    if token and chat_id:
+        out.append("telegram")
+    if webhook:
+        out.append("webhook")
+    return out
+
+
 def alerts_for(city_id: str, ingest: dict | None, drift: dict | None) -> list[dict]:
     """What a person needs to know about this city right now, and what to do about it.
 

@@ -735,8 +735,15 @@ class PushHealth(Out):
     with_routes: int | None = None
 
 
+class OpsHealth(Out):
+    """Alert channels by name, never a value — this endpoint is public. Empty means nobody would be
+    told if a feed or a graph needed a person."""
+    channels: list[str] = []
+
+
 class CityHealth(Out):
     static: StaticHealth
+    ops: OpsHealth = OpsHealth()
     realtime: RealtimeHealth
     router: RouterHealth
     rental: RentalHealth = RentalHealth()

@@ -99,3 +99,13 @@ async def test_a_dead_host_is_not_a_crash_either():
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as cli:
         assert await send("x", token="T", chat_id="42", webhook=None, client=cli) is False
+
+
+def test_channels_are_named_never_valued():
+    """`/health` is public: it may say that Telegram is armed, never with what."""
+    from app.ops_alerts import channels
+    assert channels("secret-token", "42", None) == ["telegram"]
+    assert channels("secret-token", None, None) == []        # half-configured is not armed
+    assert channels(None, None, "https://h/x") == ["webhook"]
+    assert channels("t", "42", "https://h/x") == ["telegram", "webhook"]
+    assert channels(None, None, None) == []
