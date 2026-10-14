@@ -242,6 +242,32 @@ each service. Keep the same graph release unless the feed changed.
   minutes; the API reports `router.up` instead.
 - Logs: `railway logs -s <service> -e <env>` (`-b` for build logs).
 
+## 7b. Being told, in the minute it happens
+
+The two October failures were both detected on time by machinery nobody was watching: a partial feed
+ingested on the 13th (a day of dead buses on Bogotá's map) and four graphs under the drift threshold
+for ten days. The daily workflow cannot be the morning alarm — measured over eleven consecutive
+days, GitHub ran it four to nine hours late every time and dropped about half of `rt-watch`'s
+3-hourly samples — but the ingest happens the moment the agency publishes, so the alarm lives there.
+
+Set either channel on the `api` service and it starts talking; unset, nothing changes:
+
+```bash
+railway variables -s api -e <env> --set OPS_TELEGRAM_BOT_TOKEN=<bot token> --set OPS_TELEGRAM_CHAT_ID=<chat id>
+# or anything that takes {"text": "..."} — Slack, Discord, your own endpoint
+railway variables -s api -e <env> --set OPS_WEBHOOK_URL=<url>
+```
+
+It fires on two conditions, both carrying what to do: a feed version that lost more than 30 % of the
+previous one's service (re-ingest), and a graph under the drift threshold (measure whether realtime
+has moved *before* rebuilding — see §8). `ops_alert_sent` holds one row per thing already said, keyed
+by city, kind and feed version, so a redeploy is silent and a new bad feed is a new alert; an
+undelivered message deletes its row so the next ingest tries again. Nothing is logged that could
+carry the token.
+
+For a Telegram bot: message @BotFather for the token, then read the chat id from
+`https://api.telegram.org/bot<token>/getUpdates` after sending the bot one message.
+
 ## 8. Keeping a graph from going stale
 
 A graph is built from one snapshot of a city's GTFS, and agencies re-issue `trip_id`s as they

@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     CITIES_DIR: Path = Path("cities")
     CORS_ORIGINS: str = "*"
     LOG_LEVEL: str = "INFO"
+
+    # Ops alerts (v2.7). Unset means no alerting, which is the behaviour this had before: a feed or
+    # a graph that needs a person is logged and shows in /health either way. Set both Telegram
+    # values, or a webhook that takes {"text": "..."}.
+    OPS_TELEGRAM_BOT_TOKEN: str = ""
+    OPS_TELEGRAM_CHAT_ID: str = ""
+    OPS_WEBHOOK_URL: str = ""
     LOG_JSON: bool = False
 
     # Background work. Turn off for tests / read-only deployments.

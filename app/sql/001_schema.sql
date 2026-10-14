@@ -479,3 +479,11 @@ CREATE TABLE IF NOT EXISTS rider_report (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS rider_report_city ON rider_report (city, created_at DESC);
+
+-- v2.7 ops alerts. One row per thing we have already told a person about, so a redeploy or a second
+-- refresh of the same condition is silent while a new bad feed is a new alert. `key` carries the
+-- city, the kind and the feed version. Nothing here is personal and nothing is a secret.
+CREATE TABLE IF NOT EXISTS ops_alert_sent (
+  key  TEXT PRIMARY KEY,
+  at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
