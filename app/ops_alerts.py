@@ -38,11 +38,35 @@ def channels(token: str | None, chat_id: str | None, webhook: str | None) -> lis
     return out
 
 
-def alerts_for(city_id: str, ingest: dict | None, drift: dict | None) -> list[dict]:
+def baseline_tag(trip_ids_url: str | None) -> str:
+    """The graph's identity, from the release its baseline came from: `graph-bogota-2026-10-13`.
+
+    This is what a drift alert is keyed on, and getting that wrong is what made the first version of
+    this noisy. See `alerts_for`.
+    """
+    if not trip_ids_url:
+        return "?"
+    parts = [p for p in trip_ids_url.split("/") if p]
+    for p in reversed(parts):
+        if p.startswith("graph-"):
+            return p
+    return parts[-2] if len(parts) > 1 else "?"
+
+
+def alerts_for(city_id: str, ingest: dict | None, drift: dict | None,
+               trip_ids_url: str | None = None) -> list[dict]:
     """What a person needs to know about this city right now, and what to do about it.
 
-    `key` is what makes it say so once: it carries the feed version, so a redeploy or a second
-    refresh of the same condition is silent while a *new* bad feed is a new alert.
+    `key` is what makes it say so once, and the two conditions key on different things because they
+    are resolved by different acts:
+
+    - a partial feed is about **that feed version**: a redeploy must stay silent, a new bad feed must
+      get through.
+    - a drifted graph is about **the graph**, so it keys on the release the baseline came from. The
+      first version of this keyed it on the feed version too, which meant a city publishing daily
+      re-alerted every day for as long as the graph stayed stale — four cities would have sent about
+      thirty-six messages in the nine days to 23 October. That is the same noise this alarm exists to
+      replace, so: once per stale graph, and again only after a rebuild has moved the baseline.
     """
     out: list[dict] = []
     fv = str((ingest or {}).get("feedVersionId") or (drift or {}).get("feedVersion") or "?")
@@ -63,7 +87,7 @@ def alerts_for(city_id: str, ingest: dict | None, drift: dict | None) -> list[di
     if drift and drift.get("rebuild"):
         out.append({
             "kind": "graph_drift",
-            "key": f"{city_id}:graph_drift:{fv}",
+            "key": f"{city_id}:graph_drift:{baseline_tag(trip_ids_url)}",
             "text": (f"⚠️ {city_id}: el grafo reconoce {drift.get('overlapPct')} % del feed "
                      f"({drift.get('sharedTrips'):,} de {drift.get('feedTrips'):,} viajes).\n\n"
                      "Qué hacer: medir primero si el realtime ya habla la numeración nueva "

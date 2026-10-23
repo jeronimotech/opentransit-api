@@ -109,3 +109,39 @@ def test_channels_are_named_never_valued():
     assert channels(None, None, "https://h/x") == ["webhook"]
     assert channels("t", "42", "https://h/x") == ["telegram", "webhook"]
     assert channels(None, None, None) == []
+
+
+class TestADriftedGraphIsToldOnce:
+    """The bug the first version shipped with, found 2026-10-23.
+
+    `graph_drift` keyed on the feed version, so Bogotá — which republishes daily — would have sent a
+    fresh alert every day for as long as the graph stayed stale. Four cities drifted for nine days:
+    about thirty-six messages, which is the noise this alarm exists to replace.
+    """
+    URL = "https://github.com/x/opentransit-api/releases/download/graph-bogota-2026-10-13/trip-ids.txt.gz"
+    DRIFT = {"rebuild": True, "overlapPct": 56.1, "sharedTrips": 101_544, "feedTrips": 181_067}
+
+    def test_a_new_feed_version_does_not_re_alert(self):
+        a = alerts_for("bogota", {"feedVersionId": 97}, self.DRIFT, self.URL)[0]
+        b = alerts_for("bogota", {"feedVersionId": 98}, self.DRIFT, self.URL)[0]
+        assert a["key"] == b["key"] == "bogota:graph_drift:graph-bogota-2026-10-13"
+
+    def test_a_rebuild_arms_it_again(self):
+        """After a rebuild the baseline moves, so the *next* time this graph falls behind it is news."""
+        newer = self.URL.replace("2026-10-13", "2026-10-24")
+        a = alerts_for("bogota", {"feedVersionId": 98}, self.DRIFT, self.URL)[0]
+        b = alerts_for("bogota", {"feedVersionId": 98}, self.DRIFT, newer)[0]
+        assert a["key"] != b["key"]
+
+    def test_a_partial_feed_still_keys_on_the_feed_version(self):
+        """The other condition is about that version, and a new bad feed must get through."""
+        shrink = {"previousTrips": 179_919, "trips": 110_648, "lostPct": 38.5, "note": ""}
+        a = alerts_for("bogota", {"feedVersionId": 93, "shrink": shrink}, None, self.URL)[0]
+        b = alerts_for("bogota", {"feedVersionId": 94, "shrink": shrink}, None, self.URL)[0]
+        assert a["key"] != b["key"]
+
+    def test_a_baseline_without_a_release_tag_still_keys_on_something(self):
+        from app.ops_alerts import baseline_tag
+        assert baseline_tag(None) == "?"
+        assert baseline_tag("https://h/x/trip-ids.txt.gz") == "x"
+        assert baseline_tag(self.URL) == "graph-bogota-2026-10-13"

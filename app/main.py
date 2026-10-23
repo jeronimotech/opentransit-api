@@ -75,13 +75,14 @@ def sync_gbfs(rt: CityRuntime) -> None:
             rt.gbfs[nid] = GbfsNetwork(rt.city.id, cfg_net, lang=rt.city.locale)
 
 
-async def _ops_alert(city_id: str, ingest_result: dict | None, drift: dict | None) -> None:
+async def _ops_alert(city_id: str, ingest_result: dict | None, drift: dict | None,
+                     trip_ids_url: str | None = None) -> None:
     """Say it once, to whoever is configured, and never let saying it break an ingest."""
     cfg = settings()
     if not ((cfg.OPS_TELEGRAM_BOT_TOKEN and cfg.OPS_TELEGRAM_CHAT_ID) or cfg.OPS_WEBHOOK_URL):
         return
     try:
-        for a in alerts_for(city_id, ingest_result, drift):
+        for a in alerts_for(city_id, ingest_result, drift, trip_ids_url):
             async with pool().acquire() as c:
                 # The insert is the lock: two workers racing the same condition send it once.
                 fresh = await c.fetchval(
@@ -116,7 +117,8 @@ async def _bootstrap_static(rt: CityRuntime, do_ingest: bool) -> None:
         await drift_store.refresh(rt.city.id, rt.city.otp.trip_ids_url, rt.rt.known_trips)
         # Last, so the alert carries both numbers, and after the state is already correct: a failure
         # here must not be able to leave the runtime half-initialised.
-        await _ops_alert(rt.city.id, ingest_result, drift_store.get(rt.city.id))
+        await _ops_alert(rt.city.id, ingest_result, drift_store.get(rt.city.id),
+                         rt.city.otp.trip_ids_url)
     except Exception as e:  # noqa: BLE001
         rt.ingest_error = str(e)
         log.exception("[%s] static bootstrap failed (continuing without it)", rt.city.id)
