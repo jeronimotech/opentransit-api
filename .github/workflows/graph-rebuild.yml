@@ -1,0 +1,104 @@
+name: graph-rebuild
+# The remediation half of graph-drift. That workflow (and app/ops_alerts.py) only *detect*; a rebuild
+# needs a 14 GB heap, more than a hosted runner has, so it runs on a self-hosted macOS runner — the
+# one workstation big enough. This decides what the city actually needs from production's own /health
+# (scripts/should-rebuild.py, which encodes the runbook so the machine does not re-learn the Oct-2026
+# lessons) and only then acts: rebuild the graph, or re-ingest a partial feed, or do nothing.
+#
+# Two guard rails, on purpose:
+#   * the `act` job runs in the `graph-deploy` Environment, so a reviewer approves before anything
+#     deploys. Set that environment's required reviewer to yourself in repo Settings → Environments.
+#   * it NEVER rebuilds on the drift number alone — rebuild only when rtById has fallen too (realtime
+#     switched to the new numbering). Rebuilding before that collapsed the match on 2026-10-06.
+#
+# One-time setup: register the runner (Settings → Actions → Runners → New self-hosted runner, macOS),
+# label it `graph-builder`; set repo secrets RAILWAY_TOKEN_PROD (a DURABLE account/team token — project
+# tokens expire) and, optionally, OPS_TELEGRAM_BOT_TOKEN / OPS_TELEGRAM_CHAT_ID.
+on:
+  workflow_dispatch:
+    inputs:
+      city:
+        description: city to check/rebuild
+        type: string
+        default: bogota
+      mode:
+        description: auto = let the guard decide · rebuild/reingest = force · measure = decide only
+        type: choice
+        options: [auto, rebuild, reingest, measure]
+        default: auto
+      dry_run:
+        description: build + report, deploy nothing
+        type: boolean
+        default: false
+  schedule:
+    # Same reasoning as graph-drift: GitHub runs these hours late and drops some, so three entries
+    # mean a missed one does not cost a day. The scheduled path only ever stages work for the default
+    # city (bogota — the one that drifts weekly); the others are run by hand when ops_alerts pings.
+    - cron: "41 11 * * *"
+    - cron: "41 16 * * *"
+
+concurrency:
+  group: graph-rebuild-${{ github.event.inputs.city || 'bogota' }}
+  cancel-in-progress: false
+
+env:
+  CITY: ${{ github.event.inputs.city || 'bogota' }}
+  MODE: ${{ github.event.inputs.mode || 'auto' }}
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      action: ${{ steps.g.outputs.action }}
+      verdict: ${{ steps.g.outputs.verdict }}
+      drift: ${{ steps.g.outputs.drift }}
+      rtById: ${{ steps.g.outputs.rtById }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - id: g
+        name: decide from /health
+        run: |
+          python scripts/should-rebuild.py "$CITY" --github-output --rt-floor 60 | tee out.txt
+          verdict="$(grep -E '^verdict=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)"
+          # The forced modes override the guard; `measure` never acts.
+          case "$MODE" in
+            rebuild|reingest) action="$MODE" ;;
+            measure)          action="none" ;;
+            *) case "$verdict" in rebuild|reingest) action="$verdict" ;; *) action="none" ;; esac ;;
+          esac
+          echo "action=$action" >> "$GITHUB_OUTPUT"
+          echo "mode=$MODE verdict=$verdict -> action=$action"
+
+  act:
+    needs: decide
+    if: needs.decide.outputs.action == 'rebuild' || needs.decide.outputs.action == 'reingest'
+    runs-on: [self-hosted, macOS, graph-builder]
+    environment: graph-deploy          # the approval gate — a reviewer must release this job
+    timeout-minutes: 45
+    permissions:
+      contents: write                   # gh release create/upload + the trip_ids_url commit
+    env:
+      RAILWAY_TOKEN_PROD: ${{ secrets.RAILWAY_TOKEN_PROD }}
+      OPS_TELEGRAM_BOT_TOKEN: ${{ secrets.OPS_TELEGRAM_BOT_TOKEN }}
+      OPS_TELEGRAM_CHAT_ID: ${{ secrets.OPS_TELEGRAM_CHAT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: rebuild + deploy
+        if: needs.decide.outputs.action == 'rebuild'
+        run: scripts/rebuild-deploy.sh "$CITY"
+      - name: re-ingest (redeploy api on a partial feed)
+        if: needs.decide.outputs.action == 'reingest'
+        run: |
+          : "${RAILWAY_TOKEN_PROD:?set the RAILWAY_TOKEN_PROD secret}"
+          RAILWAY_TOKEN="$RAILWAY_TOKEN_PROD" railway up -s "${API_SERVICE:-api}" -e "${RAILWAY_ENV:-production}" -d -c
+          if [ -n "$OPS_TELEGRAM_BOT_TOKEN" ] && [ -n "$OPS_TELEGRAM_CHAT_ID" ]; then
+            curl -sS --max-time 10 -o /dev/null \
+              "https://api.telegram.org/bot${OPS_TELEGRAM_BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${OPS_TELEGRAM_CHAT_ID}" \
+              --data-urlencode "text=♻️ ${CITY}: re-ingested a partial feed (api redeployed). verdict=${{ needs.decide.outputs.verdict }}" || true
+          fi
