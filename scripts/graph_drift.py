@@ -28,10 +28,12 @@ import csv
 import datetime as dt
 import gzip
 import io
+import json
 import os
 import re
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -41,6 +43,16 @@ sys.path.insert(0, str(ROOT))
 
 UA = {"User-Agent": "opentransit-graph-drift/1.0 (+https://opentransit.tech)"}
 DEFAULT_THRESHOLD = 85.0
+DEFAULT_BASE = "https://api.opentransit.tech"
+# The overlap number can't see the one thing that decides whether a drop is ours to fix today:
+# has realtime moved to the new numbering? These mirror should-rebuild.py so this alarm and the
+# automation never disagree. A drifted graph is worth rebuilding TODAY only when rtById has fallen
+# below RT_FLOOR on a live positions feed. At or above it, realtime still speaks the old graph's ids
+# and a rebuild would collapse the match (the 2026-10-06 trap); on a stale or empty feed a low
+# rtById is an upstream outage, not drift (the 2026-11-19 lesson).
+RT_FLOOR = 60.0
+RT_MAX_AGE = 1800.0
+RT_MIN_VEHICLES = 10
 # How close the feed's last service date may come before it is worth saying so. A month is enough
 # notice to notice, and short enough that it is not shouting all year.
 CALENDAR_WARN_DAYS = 45
@@ -179,6 +191,54 @@ def check(city_id: str, threshold: float) -> dict:
             "calendarWarning": days_left is not None and days_left <= CALENDAR_WARN_DAYS}
 
 
+# ----------------------------------------------- is a measured drift actionable *today*?
+def fetch_health(base: str, city_id: str, timeout: float = 30) -> dict:
+    """The API's own /health for a city; {'__error__': ...} if it can't be read."""
+    url = f"{base}/v1/cities/{city_id}/health"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as r:
+            return json.loads(r.read())
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        return {"__error__": f"{type(e).__name__}: {e}"}
+
+
+def realtime_signal(health: dict, rt_floor: float = RT_FLOOR,
+                    rt_max_age: float = RT_MAX_AGE, rt_min_vehicles: int = RT_MIN_VEHICLES) -> str:
+    """Does realtime confirm the graph has actually fallen behind? Mirrors should-rebuild.py.
+
+        moved     rtById below the floor on a live feed — realtime switched to the new numbering, so
+                  the graph is genuinely behind and a rebuild is the fix. Actionable today.
+        steady    rtById still at/above the floor — realtime has NOT moved; rebuilding now could
+                  collapse the match (the 2026-10-06 trap). Hold, don't alarm.
+        feeddown  the positions feed is stale (median age > rt_max_age) or nearly empty
+                  (< rt_min_vehicles) — a low rtById then measures a dead feed, not drift (the
+                  2026-11-19 lesson). The feed's problem, not the graph's.
+        unknown   no rtById, or /health unreadable — can't tell, so the caller fails loud.
+    """
+    if health.get("__error__"):
+        return "unknown"
+    rt = health.get("realtime") or {}
+    rt_by_id = rt.get("pctTripResolvedById")
+    rt_age = rt.get("entityAgeP50Seconds")
+    rt_vehicles = rt.get("vehicles")
+    if rt_by_id is None:
+        return "unknown"
+    if (rt_age is not None and rt_age > rt_max_age) or \
+       (rt_vehicles is not None and rt_vehicles < rt_min_vehicles):
+        return "feeddown"
+    return "moved" if rt_by_id < rt_floor else "steady"
+
+
+def drift_is_actionable(signals: list[str]) -> bool:
+    """Given the realtime signal of every below-threshold city, is a rebuild owed today?
+
+    A drop in overlap is the agency re-issuing trip ids; it only costs riders — and is only ours to
+    fix today — once realtime has followed. 'moved' is that confirmation; 'unknown' fails loud so an
+    unreachable API on a drifted city never goes silent. 'steady' and 'feeddown' are not ours today.
+    """
+    return any(s in ("moved", "unknown") for s in signals)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("city", nargs="?", help="city id, e.g. bogota")
@@ -194,6 +254,16 @@ def main() -> int:
     # this only chooses what counts as failure.
     ap.add_argument("--check", choices=("drift", "calendar", "both"), default="both",
                     help="which signal decides the exit code (default both)")
+    ap.add_argument("--base", default=DEFAULT_BASE,
+                    help=f"API base for the realtime cross-check (default {DEFAULT_BASE})")
+    ap.add_argument("--rt-floor", type=float, default=RT_FLOOR,
+                    help="rtById below this, on a live feed, means realtime has moved — so a drifted "
+                         f"graph is worth rebuilding today (default {RT_FLOOR:g})")
+    ap.add_argument("--rt-max-age", type=float, default=RT_MAX_AGE,
+                    help="median realtime entity age (s) above which a low rtById is read as a "
+                         f"positions-feed outage, not drift (default {RT_MAX_AGE:g})")
+    ap.add_argument("--rt-min-vehicles", type=int, default=RT_MIN_VEHICLES,
+                    help=f"vehicle count below which a low rtById is a feed outage (default {RT_MIN_VEHICLES})")
     a = ap.parse_args()
 
     if a.write_baseline:
@@ -207,7 +277,8 @@ def main() -> int:
     if not cities:
         ap.error("name a city or pass --all")
 
-    worst = 100.0
+    want_drift = a.check in ("drift", "both")
+    drift_signals: list[str] = []
     calendar_alarm = False
     for cid in cities:
         try:
@@ -219,15 +290,28 @@ def main() -> int:
             if not a.all:
                 print(f"{cid:14} skipped: {r['skipped']}")
             continue
-        flag = "  REBUILD" if r["rebuild"] else ""
+
+        flag = ""
+        if r["rebuild"]:
+            # The overlap says the feed moved; ask realtime whether that has reached riders yet —
+            # but only pay the /health call when a drift verdict can actually use it.
+            if want_drift:
+                sig = realtime_signal(fetch_health(a.base, cid),
+                                      a.rt_floor, a.rt_max_age, a.rt_min_vehicles)
+                drift_signals.append(sig)
+                flag += {"moved": "  REBUILD",
+                         "steady": "  drift (realtime steady — hold)",
+                         "feeddown": "  drift (positions feed down — not ours)",
+                         "unknown": "  REBUILD? (realtime unreadable — check)"}[sig]
+            else:
+                flag += "  REBUILD"
         if r.get("calendarWarning"):
             flag += f"  CALENDAR ENDS IN {r['calendarDaysLeft']}d ({r['calendarEnds']})"
+            calendar_alarm = True
         print(f"{cid:14} {r['overlapPct']:5.1f}%  graph {r['graphTrips']:>7,} · feed {r['feedTrips']:>7,}"
               f" · shared {r['sharedTrips']:>7,}{flag}")
-        worst = min(worst, r["overlapPct"])
-        if r.get("calendarWarning"):
-            calendar_alarm = True
-    drift_alarm = worst < a.threshold
+
+    drift_alarm = drift_is_actionable(drift_signals)
     failing = {"drift": drift_alarm, "calendar": calendar_alarm,
                "both": drift_alarm or calendar_alarm}[a.check]
     return 1 if failing else 0
