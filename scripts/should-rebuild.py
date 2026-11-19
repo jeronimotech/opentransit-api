@@ -20,7 +20,11 @@ cost October 2026. The verdict is one of:
               of the `api` service does; a graph rebuild would make it worse.
     rebuild   drift is below threshold AND rtById has fallen below the floor: realtime has switched
               to the new numbering, so the graph is genuinely behind and a rebuild is both safe and
-              overdue.
+              overdue. BUT only when the positions feed is actually flowing — a low rtById measured
+              over a stale or empty feed (median entity age > --rt-max-age, or fewer than
+              --rt-min-vehicles vehicles) is an upstream outage, not drift, so that holds instead
+              (the 2026-11-19 lesson: TransMilenio's VehiclePositions feed served ~7 fossils and the
+              cron kept asking for a rebuild that could not possibly help).
     unknown   /health could not be read, or reported too little to decide.
 
 The thresholds mirror app/ops_alerts.py so the ingest alarm and this guard never disagree:
@@ -57,7 +61,8 @@ def sample(base: str, city: str, timeout: float = 30) -> dict:
         return {"__error__": f"{type(e).__name__}: {e}"}
 
 
-def decide(health: dict, rt_floor: float) -> dict:
+def decide(health: dict, rt_floor: float,
+           rt_max_age: float = 1800.0, rt_min_vehicles: int = 10) -> dict:
     """Map one city's /health to a verdict. Pure, so it is unit-testable without a network."""
     if health.get("__error__"):
         return {"verdict": "unknown", "why": health["__error__"]}
@@ -68,10 +73,13 @@ def decide(health: dict, rt_floor: float) -> dict:
 
     drift_pct = drift.get("overlapPct")
     rt_by_id = rt.get("pctTripResolvedById")
+    rt_age = rt.get("entityAgeP50Seconds")
+    rt_vehicles = rt.get("vehicles")
     shrink = st.get("shrink")
     rebuild_flag = bool(drift.get("rebuild"))
 
-    out = {"driftPct": drift_pct, "rtByIdPct": rt_by_id,
+    out = {"driftPct": drift_pct, "rtByIdPct": rt_by_id, "rtAgeSeconds": rt_age,
+           "rtVehicles": rt_vehicles,
            "shrink": shrink["lostPct"] if shrink else None, "rebuildFlag": rebuild_flag}
 
     # 1. A partial feed is its own illness and comes first: rtById can read 0% purely because we
@@ -98,6 +106,26 @@ def decide(health: dict, rt_floor: float) -> dict:
         out["why"] = f"drift {drift_pct}% but no realtime feed to feel it — low priority refresh"
         return out
     if rt_by_id < rt_floor:
+        # Guard: a low rtById only means "realtime moved to the new numbering" when the realtime
+        # positions feed is actually flowing. When it is stale or collapsed — as on 2026-11-19, when
+        # TransMilenio's VehiclePositions feed served 7 fossils a median ~12 days old — rtById is
+        # measured over a dead feed and says nothing about graph drift. Rebuilding then is wasted
+        # work (and on a self-hosted runner, hours of it). Treat it as an upstream outage: hold.
+        feed_stale = rt_age is not None and rt_age > rt_max_age
+        feed_empty = rt_vehicles is not None and rt_vehicles < rt_min_vehicles
+        if feed_stale or feed_empty:
+            why = []
+            if feed_stale:
+                why.append(f"median vehicle age {rt_age:.0f}s > {rt_max_age:.0f}s")
+            if feed_empty:
+                why.append(f"only {rt_vehicles} vehicles (< {rt_min_vehicles})")
+            out["verdict"] = "hold"
+            out["feedDown"] = True
+            out["why"] = (f"drift {drift_pct}% and rtById {rt_by_id}% < {rt_floor}%, but the realtime "
+                          f"positions feed is down ({', '.join(why)}). A low rtById on a stale or "
+                          "empty feed is an upstream outage, not graph drift — a rebuild would not "
+                          "move it. Wait for the feed to recover; escalate to the agency if it does not.")
+            return out
         out["verdict"] = "rebuild"
         out["why"] = (f"drift {drift_pct}% AND rtById {rt_by_id}% < {rt_floor}% — realtime has "
                       "moved to the new numbering; rebuild is safe and overdue")
@@ -115,6 +143,11 @@ def main() -> int:
     ap.add_argument("--base", default=DEFAULT_BASE)
     ap.add_argument("--rt-floor", type=float, default=60.0,
                     help="how far rtById must fall before a drifted graph is worth rebuilding")
+    ap.add_argument("--rt-max-age", type=float, default=1800.0,
+                    help="median realtime entity age (s) above which a low rtById is read as an "
+                         "upstream positions-feed outage, not drift — hold instead of rebuild")
+    ap.add_argument("--rt-min-vehicles", type=int, default=10,
+                    help="vehicle count below which a low rtById is read as a feed outage, not drift")
     ap.add_argument("--json", action="store_true", help="one JSON object per line")
     ap.add_argument("--github-output", action="store_true",
                     help="append verdict=/city= to $GITHUB_OUTPUT (single-city runs)")
@@ -123,7 +156,8 @@ def main() -> int:
     a = ap.parse_args()
 
     cities = a.cities or CITIES
-    rows = [{"city": c, **decide(sample(a.base, c), a.rt_floor)} for c in cities]
+    rows = [{"city": c, **decide(sample(a.base, c), a.rt_floor, a.rt_max_age, a.rt_min_vehicles)}
+            for c in cities]
 
     if a.json:
         for r in rows:
