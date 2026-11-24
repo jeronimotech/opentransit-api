@@ -70,3 +70,34 @@ def test_alarm_fails_loud_when_health_is_unreadable():
 
 def test_alarm_silent_when_no_city_is_below_threshold():
     assert drift_is_actionable([]) is False
+
+
+# --- 2026-11-23 Roma lesson: rtById noisy on a small fleet; one dip must not redden the alarm. ---
+
+def test_consolidate_realtime_takes_best_rtbyid():
+    merged = graph_drift.consolidate_realtime([
+        health(rt_by_id=33.0, vehicles=200),
+        health(rt_by_id=97.0, vehicles=201),
+    ])
+    assert merged["realtime"]["pctTripResolvedById"] == 97.0
+    assert merged["realtime"]["vehicles"] == 201
+
+
+def test_consolidate_realtime_ignores_errors_and_keeps_min_age():
+    merged = graph_drift.consolidate_realtime([
+        {"__error__": "boom"}, health(age=300.0), health(age=90.0)])
+    assert merged["realtime"]["entityAgeP50Seconds"] == 90.0
+
+
+def test_a_recovering_dip_reads_steady_not_moved():
+    # Roma: one read 33%, one 97% -> best read says realtime has not moved -> no alarm.
+    merged = graph_drift.consolidate_realtime([
+        health(rt_by_id=33.0, vehicles=200), health(rt_by_id=97.0, vehicles=200)])
+    assert graph_drift.realtime_signal(merged) == "steady"
+
+
+def test_a_persistent_low_reads_moved():
+    # bogota: low on every read -> genuinely moved -> alarm stands.
+    merged = graph_drift.consolidate_realtime([
+        health(rt_by_id=27.0, vehicles=6900), health(rt_by_id=28.0, vehicles=6900)])
+    assert graph_drift.realtime_signal(merged) == "moved"

@@ -24,7 +24,10 @@ cost October 2026. The verdict is one of:
               over a stale or empty feed (median entity age > --rt-max-age, or fewer than
               --rt-min-vehicles vehicles) is an upstream outage, not drift, so that holds instead
               (the 2026-11-19 lesson: TransMilenio's VehiclePositions feed served ~7 fossils and the
-              cron kept asking for a rebuild that could not possibly help).
+              cron kept asking for a rebuild that could not possibly help). And because rtById is
+              noisy on a small fleet, a rebuild verdict is re-sampled (--samples) and judged by the
+              best read before it stands — Roma's ~200-vehicle feed dipped to 33% and recovered to
+              97% minutes later on 2026-11-23, and that single dip must not rebuild a healthy graph.
     unknown   /health could not be read, or reported too little to decide.
 
 The thresholds mirror app/ops_alerts.py so the ingest alarm and this guard never disagree:
@@ -39,6 +42,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -59,6 +63,59 @@ def sample(base: str, city: str, timeout: float = 30) -> dict:
             return json.loads(r.read())
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         return {"__error__": f"{type(e).__name__}: {e}"}
+
+
+def consolidate(samples: list[dict]) -> dict:
+    """Merge repeated /health reads into one best-case view, to filter realtime noise.
+
+    rtById is measured over whatever vehicles happen to be reporting in that instant, so on a small
+    fleet it swings hard: Roma's ~200-vehicle feed read 33% and 97% minutes apart on 2026-11-23, and
+    the single 33% nearly triggered a needless rebuild. A graph that has truly fallen behind reads
+    low on EVERY sample; noise only dips on some. So rtById is judged by its best (max) reading
+    across the samples, vehicles by the max and feed age by the min — the most favourable view, so a
+    rebuild is confirmed only when even that still says realtime has moved. Drift and shrink come
+    from the last readable sample; those do not flicker.
+    """
+    readable = [s for s in samples if not s.get("__error__")]
+    if not readable:
+        return samples[-1] if samples else {"__error__": "no samples"}
+    merged = dict(readable[-1])
+    rts = [s.get("realtime") or {} for s in readable]
+
+    def across(key, fn):
+        vals = [rt.get(key) for rt in rts if rt.get(key) is not None]
+        return fn(vals) if vals else None
+
+    rt = dict(merged.get("realtime") or {})
+    rt["pctTripResolvedById"] = across("pctTripResolvedById", max)
+    rt["vehicles"] = across("vehicles", max)
+    rt["entityAgeP50Seconds"] = across("entityAgeP50Seconds", min)
+    merged["realtime"] = rt
+    return merged
+
+
+def decide_sampled(base: str, city: str, rt_floor: float, rt_max_age: float, rt_min_vehicles: int,
+                   samples: int = 3, interval: float = 20.0, timeout: float = 30) -> dict:
+    """decide() for a live city, re-sampling a would-be rebuild to confirm it is not fleet noise.
+
+    Only a `rebuild` verdict is noise-sensitive (every other verdict already holds), so the common
+    case pays for a single read; the extra samples are spent only when the first read would send a
+    machine to rebuild a graph. If the dip does not survive, it downgrades to `hold`.
+    """
+    first = sample(base, city, timeout)
+    verdict = decide(first, rt_floor, rt_max_age, rt_min_vehicles)
+    if verdict.get("verdict") != "rebuild" or samples <= 1:
+        return verdict
+    reads = [first]
+    for _ in range(samples - 1):
+        time.sleep(interval)
+        reads.append(sample(base, city, timeout))
+    confirmed = decide(consolidate(reads), rt_floor, rt_max_age, rt_min_vehicles)
+    if confirmed.get("verdict") != "rebuild":
+        confirmed["why"] = (f"rtById fell below {rt_floor}% on one read but recovered across "
+                            f"{samples} samples — unstable on a small fleet, not a drifted graph "
+                            f"(the 2026-11-23 Roma lesson). {confirmed.get('why', '')}")
+    return confirmed
 
 
 def decide(health: dict, rt_floor: float,
@@ -148,6 +205,11 @@ def main() -> int:
                          "upstream positions-feed outage, not drift — hold instead of rebuild")
     ap.add_argument("--rt-min-vehicles", type=int, default=10,
                     help="vehicle count below which a low rtById is read as a feed outage, not drift")
+    ap.add_argument("--samples", type=int, default=3,
+                    help="/health reads used to confirm a rebuild; rtById is judged by its best read "
+                         "across them, so one noisy dip on a small fleet cannot trigger a rebuild")
+    ap.add_argument("--sample-interval", type=float, default=20.0,
+                    help="seconds between the confirmation samples (default 20)")
     ap.add_argument("--json", action="store_true", help="one JSON object per line")
     ap.add_argument("--github-output", action="store_true",
                     help="append verdict=/city= to $GITHUB_OUTPUT (single-city runs)")
@@ -156,7 +218,8 @@ def main() -> int:
     a = ap.parse_args()
 
     cities = a.cities or CITIES
-    rows = [{"city": c, **decide(sample(a.base, c), a.rt_floor, a.rt_max_age, a.rt_min_vehicles)}
+    rows = [{"city": c, **decide_sampled(a.base, c, a.rt_floor, a.rt_max_age, a.rt_min_vehicles,
+                                         a.samples, a.sample_interval)}
             for c in cities]
 
     if a.json:

@@ -74,3 +74,54 @@ def test_rebuild_survives_a_lower_staleness_threshold():
                60.0, rt_max_age=60.0)
     # age 120 > 60 -> now treated as stale -> hold (guard is tunable and does fire)
     assert r["verdict"] == "hold" and r["feedDown"] is True
+
+
+# --- 2026-11-23 Roma lesson: rtById is noisy on a small fleet; one dip must not rebuild. ---
+
+def test_consolidate_takes_best_rtbyid_across_samples():
+    merged = should_rebuild.consolidate([
+        health(rebuild=True, rt_by_id=33.0, vehicles=200),
+        health(rebuild=True, rt_by_id=97.0, vehicles=201),
+    ])
+    assert merged["realtime"]["pctTripResolvedById"] == 97.0
+    assert merged["realtime"]["vehicles"] == 201          # max vehicles
+    # drift/shrink still come from the last readable sample
+    assert merged["router"]["graphDrift"]["rebuild"] is True
+
+
+def test_consolidate_keeps_min_age():
+    merged = should_rebuild.consolidate([
+        health(age=120.0), health(age=90.0), health(age=300.0)])
+    assert merged["realtime"]["entityAgeP50Seconds"] == 90.0
+
+
+def test_consolidate_ignores_errored_samples():
+    merged = should_rebuild.consolidate([
+        {"__error__": "URLError: boom"},
+        health(rt_by_id=88.0, vehicles=200),
+    ])
+    assert merged["realtime"]["pctTripResolvedById"] == 88.0
+
+
+def test_consolidate_all_errors_returns_last():
+    merged = should_rebuild.consolidate([{"__error__": "a"}, {"__error__": "b"}])
+    assert merged.get("__error__") == "b"
+
+
+def test_a_single_dip_that_recovers_holds_not_rebuilds():
+    # Roma: overlap below threshold, one read at 33% then 97% — the best read says realtime is steady.
+    merged = should_rebuild.consolidate([
+        health(rebuild=True, rt_by_id=33.0, vehicles=200),
+        health(rebuild=True, rt_by_id=97.0, vehicles=200),
+    ])
+    assert decide(merged, 60.0)["verdict"] == "hold"
+
+
+def test_a_persistently_low_rtbyid_still_rebuilds():
+    # bogota: 6908 vehicles, rtById low on every read -> the graph is genuinely behind.
+    merged = should_rebuild.consolidate([
+        health(rebuild=True, rt_by_id=27.0, vehicles=6900),
+        health(rebuild=True, rt_by_id=28.0, vehicles=6900),
+        health(rebuild=True, rt_by_id=27.5, vehicles=6900),
+    ])
+    assert decide(merged, 60.0)["verdict"] == "rebuild"

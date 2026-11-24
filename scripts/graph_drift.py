@@ -33,6 +33,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -229,6 +230,49 @@ def realtime_signal(health: dict, rt_floor: float = RT_FLOOR,
     return "moved" if rt_by_id < rt_floor else "steady"
 
 
+def consolidate_realtime(samples: list[dict]) -> dict:
+    """Best-case realtime across repeated /health reads — mirrors should-rebuild.py:consolidate().
+
+    rtById is measured over whoever is reporting that instant, so on a small fleet it swings (Roma's
+    ~200-vehicle feed read 33% then 97% minutes apart on 2026-11-23). A graph that has really fallen
+    behind reads low on every sample; noise only dips on some. So a 'moved' signal is judged by the
+    best rtById across the samples before it fails the daily alarm.
+    """
+    readable = [s for s in samples if not s.get("__error__")]
+    if not readable:
+        return samples[-1] if samples else {"__error__": "no samples"}
+    rts = [s.get("realtime") or {} for s in readable]
+
+    def across(key, fn):
+        vals = [rt.get(key) for rt in rts if rt.get(key) is not None]
+        return fn(vals) if vals else None
+
+    merged = dict(readable[-1])
+    merged["realtime"] = {**(merged.get("realtime") or {}),
+                          "pctTripResolvedById": across("pctTripResolvedById", max),
+                          "vehicles": across("vehicles", max),
+                          "entityAgeP50Seconds": across("entityAgeP50Seconds", min)}
+    return merged
+
+
+def confirmed_signal(base: str, city_id: str, rt_floor: float, rt_max_age: float,
+                     rt_min_vehicles: int, samples: int = 3, interval: float = 20.0) -> str:
+    """realtime_signal for a live city, re-sampling a 'moved' read to rule out fleet noise.
+
+    Only 'moved' sends the alarm red, so it is the only signal worth confirming; every other read
+    returns on the first fetch. A dip that recovers across the samples reads as 'steady' and holds.
+    """
+    first = fetch_health(base, city_id)
+    sig = realtime_signal(first, rt_floor, rt_max_age, rt_min_vehicles)
+    if sig != "moved" or samples <= 1:
+        return sig
+    reads = [first]
+    for _ in range(samples - 1):
+        time.sleep(interval)
+        reads.append(fetch_health(base, city_id))
+    return realtime_signal(consolidate_realtime(reads), rt_floor, rt_max_age, rt_min_vehicles)
+
+
 def drift_is_actionable(signals: list[str]) -> bool:
     """Given the realtime signal of every below-threshold city, is a rebuild owed today?
 
@@ -264,6 +308,11 @@ def main() -> int:
                          f"positions-feed outage, not drift (default {RT_MAX_AGE:g})")
     ap.add_argument("--rt-min-vehicles", type=int, default=RT_MIN_VEHICLES,
                     help=f"vehicle count below which a low rtById is a feed outage (default {RT_MIN_VEHICLES})")
+    ap.add_argument("--samples", type=int, default=3,
+                    help="/health reads used to confirm a 'moved' signal; rtById is judged by its "
+                         "best read, so one noisy dip on a small fleet cannot redden the alarm")
+    ap.add_argument("--sample-interval", type=float, default=20.0,
+                    help="seconds between the confirmation samples (default 20)")
     a = ap.parse_args()
 
     if a.write_baseline:
@@ -296,8 +345,8 @@ def main() -> int:
             # The overlap says the feed moved; ask realtime whether that has reached riders yet —
             # but only pay the /health call when a drift verdict can actually use it.
             if want_drift:
-                sig = realtime_signal(fetch_health(a.base, cid),
-                                      a.rt_floor, a.rt_max_age, a.rt_min_vehicles)
+                sig = confirmed_signal(a.base, cid, a.rt_floor, a.rt_max_age, a.rt_min_vehicles,
+                                       a.samples, a.sample_interval)
                 drift_signals.append(sig)
                 flag += {"moved": "  REBUILD",
                          "steady": "  drift (realtime steady — hold)",
