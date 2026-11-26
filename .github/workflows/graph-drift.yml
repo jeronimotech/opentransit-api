@@ -23,13 +23,28 @@ on:
     - cron: "17 7 * * *"
     - cron: "17 11 * * *"
     - cron: "17 15 * * *"
+    # `freshness` only — hourly through Bogotá's service day (05:00–23:00 local = 10:00–04:00 UTC).
+    # A frozen feed is a within-the-hour problem, not a once-a-day one, so this check runs far more
+    # often than the daily trio above. GitHub still fires scheduled runs hours late and drops some
+    # (see the eleven-day measurement below), so this is best-effort coverage, not a guarantee; the
+    # reliable sub-hour path is a cloud routine hitting the same `rt_match.py --fail-on-stale`.
+    - cron: "41 10-23 * * *"
+    - cron: "41 0-4 * * *"
   workflow_dispatch:
-# Separate jobs, because the check name is the alert. And only the two that are *ours to act on
-# today* may turn a run red: `drift` (rebuild the graph) and `feed` (re-ingest). Everything that is
-# somebody else's to fix goes to an issue instead. The rule learned the hard way: a red that cannot
-# be acted on today teaches everyone to ignore the red that can.
+# Separate jobs, because the check name is the alert. And only the ones that are *ours to know about
+# today* may turn a run red: `drift` (rebuild the graph), `feed` (re-ingest) and `freshness` (the
+# upstream feed froze — ours to report and route, even when the fix is the agency's). Everything
+# that is somebody else's to fix and can wait goes to an issue instead. The rule learned the hard
+# way: a red that cannot be acted on today teaches everyone to ignore the red that can.
+#
+# The two hourly crons above are for `freshness` alone. A workflow can't bind a cron to one job, so
+# the daily trio gate themselves to their own three entries (and to manual dispatch); `freshness`
+# carries no gate and runs on every trigger.
 jobs:
   drift:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(fromJSON('["17 7 * * *","17 11 * * *","17 15 * * *"]'), github.event.schedule)
     runs-on: ubuntu-latest
     # Measuring nine cities takes about a minute. The 2026-10-05 scheduled run sat for fifteen and
     # ended "cancelled", which reads like neither success nor failure and left no log to look at.
@@ -51,6 +66,9 @@ jobs:
   # calendar first comes inside the window, its body refreshed silently (an edit notifies nobody,
   # unlike a comment), closed when every feed is clear again.
   calendar:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(fromJSON('["17 7 * * *","17 11 * * *","17 15 * * *"]'), github.event.schedule)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -97,6 +115,9 @@ jobs:
           fi
 
   feed:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(fromJSON('["17 7 * * *","17 11 * * *","17 15 * * *"]'), github.event.schedule)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -105,3 +126,17 @@ jobs:
         with: { python-version: "3.12", cache: pip }
       - name: a feed version that lost a large part of its service
         run: python scripts/rt_match.py --fail-on-shrink
+
+  # The outage no other check here can see: a positions feed that keeps answering 200 with a full
+  # fleet while its timestamps stop advancing. Overlap stays 100 % and rtById stays high on the
+  # fossils, so `drift` and `feed` both read healthy — only entity age betrays it. Runs hourly (it is
+  # the one check with no gate), and is cheap: one /health per city, stdlib only, no pip install.
+  freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "3.12" }
+      - name: a positions feed that froze — a fleet on stale timestamps
+        run: python scripts/rt_match.py --fail-on-stale
